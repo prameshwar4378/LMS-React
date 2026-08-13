@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getChargeTypesApi } from '../api/billingApi';
+import { Clock, Calendar, RefreshCw } from 'lucide-react';
+import { formatDate } from '../utils/dateUtils';
 
 const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
   const [chargeTypes, setChargeTypes] = useState([]);
@@ -8,13 +10,29 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
   const [quantity, setQuantity] = useState(1);
   const [unitPrice, setUnitPrice] = useState(0);
 
+  // Date & Time States
+  const [chargeDate, setChargeDate] = useState('');
+  const [chargeTime, setChargeTime] = useState('');
+
+  const setToLiveDateTime = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const mins = String(now.getMinutes()).padStart(2, '0');
+
+    setChargeDate(`${year}-${month}-${day}`);
+    setChargeTime(`${hours}:${mins}`);
+  };
+
   useEffect(() => {
     if (show) {
+      setToLiveDateTime();
       getChargeTypesApi()
         .then((data) => {
           setChargeTypes(data);
           if (data && data.length > 0) {
-            // Default to custom or first charge type
             setSelectedChargeTypeId('CUSTOM');
           }
         })
@@ -40,13 +58,21 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!description.trim()) return;
-    onSubmit({
+
+    const payload = {
       stay: stayId,
       charge_type: selectedChargeTypeId && selectedChargeTypeId !== 'CUSTOM' ? parseInt(selectedChargeTypeId) : null,
       description: description.trim(),
       quantity: parseInt(quantity || 1),
       unit_price: parseFloat(unitPrice || 0),
-    });
+    };
+
+    if (chargeDate) {
+      const timeStr = chargeTime || '12:00';
+      payload.charge_date = `${chargeDate}T${timeStr}:00`;
+    }
+
+    onSubmit(payload);
   };
 
   if (!show) return null;
@@ -55,19 +81,66 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
   const isCustom = !selectedChargeTypeId || selectedChargeTypeId === 'CUSTOM';
 
   return (
-    <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-      <div className="modal-dialog modal-dialog-centered">
-        <div className="modal-content border-0 shadow">
-          <div className="modal-header bg-warning text-dark">
-            <h5 className="modal-title fw-bold">
-              <i className="bi bi-cart-plus-fill me-2"></i>Add Extra Charge / Service
+    <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1" onClick={onClose}>
+      <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '540px' }} onClick={(e) => e.stopPropagation()}>
+        <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
+          
+          <div className="modal-header bg-warning text-dark py-3.5 px-4">
+            <h5 className="modal-title fw-bold d-flex align-items-center gap-2 m-0" style={{ fontSize: '1.1rem' }}>
+              <i className="bi bi-cart-plus-fill me-1"></i> Add Extra Charge / Service
             </h5>
             <button type="button" className="btn-close" onClick={onClose}></button>
           </div>
+
           <form onSubmit={handleSubmit}>
-            <div className="modal-body p-4">
+            <div className="modal-body p-4 bg-white">
+              
+              {/* Editable Charge Date & Time Section */}
+              <div className="p-3 bg-light rounded-3 border mb-3">
+                <div className="d-flex justify-content-between align-items-center mb-2">
+                  <label className="form-label small fw-bold text-dark m-0 d-flex align-items-center gap-1.5">
+                    <Calendar size={15} className="text-warning-emphasis" /> Charge Date & Time *
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-outline-dark py-0.5 px-2 rounded-2 text-decoration-none d-flex align-items-center gap-1"
+                    style={{ fontSize: '0.725rem' }}
+                    onClick={setToLiveDateTime}
+                    title="Reset to current live system datetime"
+                  >
+                    <RefreshCw size={12} /> Set Live Time
+                  </button>
+                </div>
+
+                <div className="row g-2">
+                  <div className="col-7">
+                    <label className="form-label extra-small text-muted mb-1">Date</label>
+                    <input
+                      type="date"
+                      className="form-control form-control-sm font-semibold"
+                      required
+                      value={chargeDate}
+                      onChange={(e) => setChargeDate(e.target.value)}
+                    />
+                  </div>
+                  <div className="col-5">
+                    <label className="form-label extra-small text-muted mb-1">Time</label>
+                    <input
+                      type="time"
+                      className="form-control form-control-sm font-semibold"
+                      required
+                      value={chargeTime}
+                      onChange={(e) => setChargeTime(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="extra-small text-muted mt-1.5">
+                  🕒 Recorded Datetime: <strong>{formatDate(chargeDate)} @ {chargeTime || '12:00'}</strong>
+                </div>
+              </div>
+
               <div className="mb-3">
-                <label className="form-label fw-semibold">Select Charge Item / Category</label>
+                <label className="form-label small fw-semibold text-dark">Select Charge Item / Category</label>
                 <select className="form-select border-warning-subtle" value={selectedChargeTypeId} onChange={handleChargeTypeSelect}>
                   <option value="CUSTOM">✨ + Enter Custom Item / Other Charge</option>
                   {chargeTypes.map((ct) => (
@@ -79,7 +152,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
               </div>
 
               <div className="mb-3">
-                <label className="form-label fw-semibold">
+                <label className="form-label small fw-semibold text-dark">
                   {isCustom ? 'Custom Charge Title / Service Name *' : 'Item Description / Title *'}
                 </label>
                 <input
@@ -95,7 +168,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
                   }
                 />
                 {isCustom && (
-                  <div className="form-text text-primary">
+                  <div className="form-text text-primary extra-small mt-1">
                     <i className="bi bi-info-circle me-1"></i>
                     You can type any custom charge or service name here.
                   </div>
@@ -104,7 +177,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
 
               <div className="row g-3 mb-3">
                 <div className="col-6">
-                  <label className="form-label fw-semibold">Quantity *</label>
+                  <label className="form-label small fw-semibold text-dark">Quantity *</label>
                   <input
                     type="number"
                     min="1"
@@ -115,7 +188,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
                   />
                 </div>
                 <div className="col-6">
-                  <label className="form-label fw-semibold">Unit Price (₹) *</label>
+                  <label className="form-label small fw-semibold text-dark">Unit Price (₹) *</label>
                   <input
                     type="number"
                     step="0.01"
@@ -128,20 +201,22 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 </div>
               </div>
 
-              <div className="p-3 bg-light rounded border text-end">
-                <span className="text-muted me-2">Total Amount:</span>
+              <div className="p-3 bg-light rounded-3 border text-end">
+                <span className="text-muted me-2 small">Total Amount:</span>
                 <span className="fs-4 fw-bold text-success">₹{totalAmount}</span>
               </div>
             </div>
-            <div className="modal-footer bg-light">
-              <button type="button" className="btn btn-secondary" onClick={onClose}>
+
+            <div className="modal-footer bg-light px-4 py-3 d-flex justify-content-between">
+              <button type="button" className="btn btn-light border fw-semibold px-4" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-warning fw-bold">
+              <button type="submit" className="btn btn-warning fw-bold px-4 shadow-sm">
                 <i className="bi bi-plus-lg me-1"></i> Add Charge to Bill
               </button>
             </div>
           </form>
+
         </div>
       </div>
     </div>

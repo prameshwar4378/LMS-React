@@ -435,3 +435,63 @@ body {
     padding-right: 4px !important;
   }
 }
+
+/* ========================================================= */
+/* DIALOGUE BOX POPUP MODAL ANIMATIONS                       */
+/* ========================================================= */
+.modal-backdrop-animated {
+  animation: swalBackdropFadeIn 0.25s ease-out forwards;
+}
+
+.modal-dialog-animated {
+  animation: swalPopIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  transform-origin: center center;
+}
+
+.modal-icon-animated {
+  animation: swalIconPop 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 0.08s both;
+}
+
+.modal-content-animated {
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+}
+
+@keyframes swalBackdropFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes swalPopIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.65) translateY(-20px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.03) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes swalIconPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotate(-15deg);
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.18) rotate(6deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+

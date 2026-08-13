@@ -6,6 +6,7 @@ import { createBookingApi } from '../api/bookingApi';
 import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import { formatCurrency } from '../utils/formatCurrency';
+import { useNotification } from '../context/NotificationContext';
 import {
   Calendar,
   Clock,
@@ -33,6 +34,7 @@ import {
 
 const BookingCreate = () => {
   const navigate = useNavigate();
+  const { showError, showWarning, showSuccess } = useNotification();
 
   // STEP WIZARD STATE (1 to 4)
   const [currentStep, setCurrentStep] = useState(1);
@@ -245,7 +247,9 @@ const BookingCreate = () => {
     setError('');
 
     if (selectedRoomIds.length === 0) {
-      setError('Please select at least one available room.');
+      const msg = 'Please select at least one available room.';
+      setError(msg);
+      showWarning(msg, 'Room Selection Required');
       return;
     }
 
@@ -253,7 +257,9 @@ const BookingCreate = () => {
 
     if (isNewCustomer) {
       if (!custFirstName || !custMobile) {
-        setError('First name and mobile number are required for new customer.');
+        const msg = 'First name and mobile number are required for new customer.';
+        setError(msg);
+        showWarning(msg, 'Guest Details Required');
         return;
       }
       try {
@@ -266,13 +272,17 @@ const BookingCreate = () => {
         });
         customerIdToUse = newCust.id;
       } catch (err) {
-        setError(extractErrorMessage(err, 'Failed to create customer profile.'));
+        const errMsg = extractErrorMessage(err, 'Failed to create customer profile.');
+        setError(errMsg);
+        showError(errMsg, 'Profile Creation Failed');
         return;
       }
     }
 
     if (!customerIdToUse) {
-      setError('Please select or create a customer.');
+      const msg = 'Please select or create a customer.';
+      setError(msg);
+      showWarning(msg, 'Customer Required');
       return;
     }
 
@@ -306,10 +316,13 @@ const BookingCreate = () => {
         });
       }
 
+      showSuccess('Advance reservation created successfully!', 'Reservation Created');
       navigate('/bookings');
     } catch (err) {
       console.error(err);
-      setError(extractErrorMessage(err, 'Error creating reservation.'));
+      const errMsg = extractErrorMessage(err, 'Error creating reservation.');
+      setError(errMsg);
+      showError(errMsg, 'Reservation Failed');
     } finally {
       setSubmitting(false);
     }
@@ -391,12 +404,7 @@ const BookingCreate = () => {
         </div>
       </div>
 
-      {error && (
-        <div className="alert alert-danger shadow-sm mb-4 rounded-3 d-flex align-items-center gap-2" style={{ borderLeft: '4px solid #ef4444' }}>
-          <AlertTriangle size={20} className="text-danger flex-shrink-0" />
-          <div>{error}</div>
-        </div>
-      )}
+
 
       {/* Main Layout Grid */}
       <form onSubmit={handleSubmit}>
@@ -787,7 +795,7 @@ const BookingCreate = () => {
                         {selectedRoomsObjs.map((r) => `Room ${r.room_number}`).join(', ')}
                       </div>
                       <div className="small text-muted">{selectedRoomsObjs.length} Room{selectedRoomsObjs.length > 1 ? 's' : ''} Selected</div>
-                      <div className="small text-dark mt-2"><strong>Dates:</strong> {checkInDate} to {checkoutDate} ({nights} Night)</div>
+                      <div className="small text-dark mt-2"><strong>Dates:</strong> {formatDate(checkInDate)} to {formatDate(checkoutDate)} ({nights} Night)</div>
                     </div>
                   </div>
 

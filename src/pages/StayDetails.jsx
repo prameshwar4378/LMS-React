@@ -19,7 +19,7 @@ import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import ConfirmModal from '../components/ConfirmModal';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import { formatCurrency } from '../utils/formatCurrency';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, formatDateTime } from '../utils/dateUtils';
 
 const StayDetails = () => {
   const { id } = useParams();
@@ -836,6 +836,7 @@ const StayDetails = () => {
                   <thead className="table-light">
                     <tr>
                       <th style={{ minWidth: '150px' }}>Item / Service</th>
+                      <th style={{ minWidth: '180px' }}>Date & Time</th>
                       <th style={{ minWidth: '200px' }}>Description</th>
                       <th className="text-center" style={{ width: '80px' }}>Qty</th>
                       <th className="text-end" style={{ minWidth: '120px' }}>Unit Price</th>
@@ -850,6 +851,7 @@ const StayDetails = () => {
                           <i className="bi bi-tag-fill me-2 text-primary"></i>
                           {c.charge_type_name || 'Extra Charge'}
                         </td>
+                        <td className="text-dark font-medium">{formatDateTime(c.charge_date)}</td>
                         <td className="text-secondary">{c.description || '-'}</td>
                         <td className="text-center fw-semibold">{c.quantity}</td>
                         <td className="text-end">{formatCurrency(c.unit_price)}</td>
@@ -912,7 +914,7 @@ const StayDetails = () => {
                     {stay.payments.map((p) => (
                       <tr key={p.id}>
                         <td className="fw-bold text-primary">{p.payment_number}</td>
-                        <td>{formatDate(p.payment_date)}</td>
+                        <td>{formatDateTime(p.payment_date)}</td>
                         <td><span className="badge bg-secondary">{p.payment_method}</span></td>
                         <td>{p.transaction_reference || 'N/A'}</td>
                         <td className="text-end fw-bold text-success fs-6">{formatCurrency(p.amount)}</td>
@@ -1177,38 +1179,35 @@ const StayDetails = () => {
                         onChange={(e) => setEditDiscountValue(e.target.value)}
                       />
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Discount Reason</label>
-                      <div className="input-group">
-                        <select
-                          className="form-select border-end-0"
-                          style={{ maxWidth: '140px' }}
-                          onChange={(e) => {
-                            if (e.target.value) setEditDiscountReason(e.target.value);
-                          }}
-                        >
-                          <option value="">-- Preset --</option>
-                          <option value="Special Guest">Special Guest</option>
-                          <option value="VIP Guest">VIP Guest</option>
-                          <option value="Corporate Partner">Corporate Partner</option>
-                          <option value="Long Stay Discount">Long Stay Discount</option>
-                          <option value="Management Offer">Management Offer</option>
-                        </select>
+                    <div className="col-md-12">
+                      <label className="form-label small fw-bold text-dark">Discount Reason / Description</label>
+                      <div className="input-group mb-1.5">
                         <input
                           type="text"
                           className="form-control"
-                          placeholder="e.g. Special Guest / Corporate"
+                          placeholder="e.g. Special Guest / Corporate Partner / Management Offer"
                           value={editDiscountReason}
                           onChange={(e) => setEditDiscountReason(e.target.value)}
                         />
+                        {editDiscountReason && (
+                          <button
+                            type="button"
+                            className="btn btn-outline-secondary"
+                            onClick={() => setEditDiscountReason('')}
+                            title="Clear"
+                          >
+                            <i className="bi bi-x-lg"></i>
+                          </button>
+                        )}
                       </div>
-                      <div className="d-flex gap-1 mt-1.5 flex-wrap">
-                        {['Special Guest', 'VIP Guest', 'Corporate Partner', 'Management Offer'].map((preset) => (
+                      <div className="d-flex gap-1.5 flex-wrap align-items-center">
+                        <span className="extra-small text-muted me-1">Quick Presets:</span>
+                        {['Special Guest', 'VIP Guest', 'Corporate Partner', 'Management Offer', 'Long Stay'].map((preset) => (
                           <button
                             key={preset}
                             type="button"
-                            className={`btn btn-sm ${editDiscountReason === preset ? 'btn-primary' : 'btn-outline-secondary'} py-0 px-2`}
-                            style={{ fontSize: '0.75rem' }}
+                            className={`btn btn-xs rounded-pill ${editDiscountReason === preset ? 'btn-primary shadow-xs fw-semibold' : 'btn-outline-secondary'} py-0.5 px-2.5`}
+                            style={{ fontSize: '0.725rem' }}
                             onClick={() => setEditDiscountReason(preset)}
                           >
                             + {preset}

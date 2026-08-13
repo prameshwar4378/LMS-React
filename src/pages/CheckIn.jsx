@@ -6,8 +6,9 @@ import { getCustomersApi, searchCustomersApi } from '../api/customerApi';
 import { createWalkInStayApi } from '../api/stayApi';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import PageLoader from '../components/PageLoader';
-import { getTodayDateString, getTomorrowDateString } from '../utils/dateUtils';
+import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
 import { formatCurrency } from '../utils/formatCurrency';
+import { useNotification } from '../context/NotificationContext';
 import {
   DoorOpen,
   UserCheck,
@@ -45,6 +46,7 @@ const CheckIn = () => {
   const [searchParams] = useSearchParams();
   const bookingIdParam = searchParams.get('booking_id');
   const navigate = useNavigate();
+  const { showError, showWarning, showSuccess } = useNotification();
 
   const [mode, setMode] = useState(bookingIdParam ? 'advance' : 'walkin');
 
@@ -64,6 +66,7 @@ const CheckIn = () => {
   const [showAdvanceDropdown, setShowAdvanceDropdown] = useState(false);
   const [reallocatedRoomId, setReallocatedRoomId] = useState('');
   const [advanceAvailableRooms, setAdvanceAvailableRooms] = useState([]);
+  const [showAdvanceConfirmModal, setShowAdvanceConfirmModal] = useState(false);
 
   // Walk-In Rooms & Filter
   const [availableRooms, setAvailableRooms] = useState([]);
@@ -256,10 +259,34 @@ const CheckIn = () => {
   const handleSelectAdvanceBooking = (b) => {
     setSelectedBooking(b);
     setReallocatedRoomId(b.room);
-    setCheckInDate(b.check_in_date);
-    if (b.check_in_time) setCheckInTime(b.check_in_time.substring(0, 5));
-    setCheckoutDate(b.expected_checkout_date);
-    if (b.expected_checkout_time) setCheckoutTime(b.expected_checkout_time.substring(0, 5));
+
+    // Actual Check-In Date & Time automatically set to today's date & current time
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+    const hours = String(now.getHours()).padStart(2, '0');
+    const mins = String(now.getMinutes()).padStart(2, '0');
+    const currentTimeStr = `${hours}:${mins}`;
+
+    setCheckInDate(todayStr);
+    setCheckInTime(currentTimeStr);
+
+    // Default expected checkout: check if original booked checkout datetime is still in the future relative to Actual Check-In
+    const origCheckoutDateStr = b.expected_checkout_date || todayStr;
+    const origCheckoutTimeStr = b.expected_checkout_time ? b.expected_checkout_time.substring(0, 5) : '11:00';
+
+    const actualInDt = new Date(`${todayStr}T${currentTimeStr}:00`);
+    const origCheckoutDt = new Date(`${origCheckoutDateStr}T${origCheckoutTimeStr}:00`);
+
+    if (!isNaN(origCheckoutDt.getTime()) && origCheckoutDt > actualInDt) {
+      setCheckoutDate(origCheckoutDateStr);
+      setCheckoutTime(origCheckoutTimeStr);
+    } else {
+      // If original booked checkout is today or in the past relative to actual check-in, set expected checkout to tomorrow @ 11:00 AM
+      const tomDate = new Date(Date.now() + 86400000);
+      const tomStr = tomDate.toISOString().split('T')[0];
+      setCheckoutDate(tomStr);
+      setCheckoutTime('11:00');
+    }
 
     if (b.customer_detail) {
       setFirstName(b.customer_detail.first_name || '');
@@ -315,13 +342,17 @@ const CheckIn = () => {
     setError('');
     if (currentStep === 1) {
       if (!selectedRoomId) {
-        setError('Please select an available room before proceeding to Guest Details.');
+        const msg = 'Please select an available room before proceeding to Guest Details.';
+        setError(msg);
+        showWarning(msg, 'Room Selection Required');
         return;
       }
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (!firstName || !mobile) {
-        setError('Guest First Name and Mobile Number are required before proceeding.');
+        const msg = 'Guest First Name and Mobile Number are required before proceeding.';
+        setError(msg);
+        showWarning(msg, 'Guest Details Required');
         return;
       }
       setCurrentStep(3);
@@ -337,21 +368,42 @@ const CheckIn = () => {
     setCurrentStep((prev) => Math.max(1, prev - 1));
   };
 
-  // Submit Advance Booking Check-In
-  const handleAdvanceCheckInSubmit = async (e) => {
+  // Validate and Trigger Confirmation Modal for Advance Booking Check-In
+  const handleAdvanceCheckInSubmit = (e) => {
     if (e) e.preventDefault();
     setError('');
 
     if (!selectedBooking) {
-      setError('Please search and select a confirmed advance booking first.');
+      const msg = 'Please search and select a confirmed advance booking first.';
+      setError(msg);
+      showWarning(msg, 'Booking Required');
       return;
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
-    if (checkInDate > todayStr) {
-      setError(`Invalid Check-In Date: Cannot process check-in for a future date (${checkInDate}). Today is ${todayStr}. Check-In Date must be set to today (${todayStr}) or earlier.`);
+    const actualInDt = new Date(`${checkInDate}T${checkInTime}:00`);
+    const expOutDt = new Date(`${checkoutDate}T${checkoutTime}:00`);
+
+    if (isNaN(actualInDt.getTime()) || isNaN(expOutDt.getTime())) {
+      const msg = 'Invalid Check-In or Checkout date/time format.';
+      setError(msg);
+      showWarning(msg, 'Invalid Datetime Format');
       return;
     }
+
+    if (expOutDt <= actualInDt) {
+      const msg = `Expected Checkout Datetime (${formatDate(checkoutDate)} ${checkoutTime}) must be strictly later than Actual Check-In Datetime (${formatDate(checkInDate)} ${checkInTime}).`;
+      setError(msg);
+      showWarning(msg, 'Invalid Checkout Schedule');
+      return;
+    }
+
+    setShowAdvanceConfirmModal(true);
+  };
+
+  // Execute Final API Call After Confirmation Modal Approval
+  const executeAdvanceCheckIn = async () => {
+    setError('');
+    setShowAdvanceConfirmModal(false);
 
     try {
       const payload = {
@@ -363,10 +415,13 @@ const CheckIn = () => {
       };
       const res = await checkInBookingApi(selectedBooking.id, payload);
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
+      showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
       navigate(`/stays/${stayId}`);
     } catch (err) {
       console.error(err);
-      setError(extractErrorMessage(err, 'Error processing advance booking check-in.'));
+      const errMsg = extractErrorMessage(err, 'Error processing advance booking check-in.');
+      setError(errMsg);
+      showError(errMsg, 'Check-In Failed');
     }
   };
 
@@ -376,11 +431,15 @@ const CheckIn = () => {
     setError('');
 
     if (!selectedRoomId) {
-      setError('Please select an available room.');
+      const msg = 'Please select an available room.';
+      setError(msg);
+      showWarning(msg, 'Room Required');
       return;
     }
     if (!firstName || !mobile) {
-      setError('Guest First Name and Mobile Number are required.');
+      const msg = 'Guest First Name and Mobile Number are required.';
+      setError(msg);
+      showWarning(msg, 'Guest Details Required');
       return;
     }
 
@@ -410,6 +469,7 @@ const CheckIn = () => {
       if (docBackFile) formData.append('id_document_back', docBackFile);
 
       const res = await createWalkInStayApi(formData);
+      showSuccess(`Walk-In Check-In for ${firstName} ${lastName} completed successfully!`, 'Check-In Successful');
       const stayId = res?.data?.id || res?.id || res?.data?.stay_id || res?.stay_id;
       if (stayId) {
         navigate(`/stays/${stayId}`);
@@ -418,7 +478,9 @@ const CheckIn = () => {
       }
     } catch (err) {
       console.error(err);
-      setError(extractErrorMessage(err, 'Error processing walk-in check-in.'));
+      const errMsg = extractErrorMessage(err, 'Error processing walk-in check-in.');
+      setError(errMsg);
+      showError(errMsg, 'Check-In Failed');
     }
   };
 
@@ -577,12 +639,7 @@ const CheckIn = () => {
         </div>
       )}
 
-      {error && (
-        <div className="alert alert-danger shadow-sm mb-4 rounded-3 d-flex align-items-center gap-2" style={{ borderLeft: '4px solid #ef4444' }}>
-          <AlertTriangle size={20} className="text-danger flex-shrink-0" />
-          <div>{error}</div>
-        </div>
-      )}
+
 
       {earlyArrivalNotice && (
         <div className="alert alert-info shadow-sm mb-4 rounded-3 d-flex align-items-center gap-2">
@@ -707,7 +764,7 @@ const CheckIn = () => {
                     <div className="col-md-3 col-6">
                       <div className="p-3 bg-light rounded-3 border">
                         <div className="text-muted small">Scheduled Check-In</div>
-                        <div className="fw-bold text-dark mt-1">{selectedBooking.check_in_date}</div>
+                        <div className="fw-bold text-dark mt-1">{formatDate(selectedBooking.check_in_date)}</div>
                         <div className="text-muted small">@ {selectedBooking.check_in_time || '12:00'}</div>
                       </div>
                     </div>
@@ -715,7 +772,7 @@ const CheckIn = () => {
                     <div className="col-md-3 col-6">
                       <div className="p-3 bg-light rounded-3 border">
                         <div className="text-muted small">Scheduled Check-Out</div>
-                        <div className="fw-bold text-dark mt-1">{selectedBooking.expected_checkout_date}</div>
+                        <div className="fw-bold text-dark mt-1">{formatDate(selectedBooking.expected_checkout_date)}</div>
                         <div className="text-muted small">@ {selectedBooking.expected_checkout_time || '11:00'}</div>
                       </div>
                     </div>
@@ -917,11 +974,11 @@ const CheckIn = () => {
                     <div className="mb-3 small">
                       <div className="d-flex justify-content-between text-muted mb-1">
                         <span>Actual Check-In:</span>
-                        <strong className="text-dark">{checkInDate} @ {checkInTime}</strong>
+                        <strong className="text-dark">{formatDate(checkInDate)} @ {checkInTime}</strong>
                       </div>
                       <div className="d-flex justify-content-between text-muted mb-1">
                         <span>Check-Out:</span>
-                        <strong className="text-dark">{checkoutDate} @ {checkoutTime}</strong>
+                        <strong className="text-dark">{formatDate(checkoutDate)} @ {checkoutTime}</strong>
                       </div>
                     </div>
 
@@ -1509,7 +1566,7 @@ const CheckIn = () => {
                         <div className="fw-bold text-primary mb-1">Allocated Room</div>
                         <div className="fs-5 fw-bold text-dark">{selectedRoomObj ? `Room ${selectedRoomObj.room_number}` : 'No Room Selected'}</div>
                         <div className="small text-muted">{selectedRoomObj?.room_type_name}</div>
-                        <div className="small text-dark mt-2"><strong>Dates:</strong> {checkInDate} to {checkoutDate} ({nightsCount} Night)</div>
+                        <div className="small text-dark mt-2"><strong>Dates:</strong> {formatDate(checkInDate)} to {formatDate(checkoutDate)} ({nightsCount} Night)</div>
                       </div>
                     </div>
 
@@ -1577,11 +1634,11 @@ const CheckIn = () => {
                   <div className="mb-3 small">
                     <div className="d-flex justify-content-between text-muted mb-1">
                       <span>Check-In:</span>
-                      <strong className="text-dark">{checkInDate} @ {checkInTime}</strong>
+                      <strong className="text-dark">{formatDate(checkInDate)} @ {checkInTime}</strong>
                     </div>
                     <div className="d-flex justify-content-between text-muted mb-1">
                       <span>Check-Out:</span>
-                      <strong className="text-dark">{checkoutDate} @ {checkoutTime}</strong>
+                      <strong className="text-dark">{formatDate(checkoutDate)} @ {checkoutTime}</strong>
                     </div>
                     <div className="d-flex justify-content-between text-muted">
                       <span>Occupancy:</span>
@@ -1663,6 +1720,154 @@ const CheckIn = () => {
           setPhotoPreview(previewUrl);
         }}
       />
+
+      {/* ADVANCE CHECK-IN CONFIRMATION MODAL (LUXURY ANIMATED SAAS) */}
+      {showAdvanceConfirmModal && selectedBooking && (() => {
+        const todayStr = getTodayDateString();
+        const isDifferentFromToday = checkInDate !== todayStr;
+        const isDifferentFromOrig = checkInDate !== selectedBooking.check_in_date;
+
+        return (
+          <div
+            className="modal fade show d-block modal-backdrop-animated"
+            style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }}
+            tabIndex="-1"
+            onClick={() => setShowAdvanceConfirmModal(false)}
+          >
+            <div
+              className="modal-dialog modal-dialog-centered modal-dialog-animated"
+              style={{ maxWidth: '560px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
+                {/* Header */}
+                <div
+                  className="modal-header text-white py-3.5 px-4"
+                  style={{ background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)' }}
+                >
+                  <div className="d-flex align-items-center gap-2.5">
+                    <div className="p-2 bg-info bg-opacity-20 text-info rounded-3">
+                      <KeyRound size={22} />
+                    </div>
+                    <div>
+                      <h5 className="modal-title fw-bold m-0" style={{ fontSize: '1.1rem' }}>
+                        Confirm Advance Booking Check-In
+                      </h5>
+                      <span className="text-info-subtle extra-small">
+                        Booking #{selectedBooking.booking_number}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-close btn-close-white"
+                    onClick={() => setShowAdvanceConfirmModal(false)}
+                  ></button>
+                </div>
+
+                {/* Body */}
+                <div className="modal-body p-4 bg-white">
+                  {/* Dynamic Datetime Notice / Warning Banner */}
+                  {isDifferentFromToday ? (
+                    <div className="alert alert-warning border-warning-subtle bg-warning-subtle text-warning-emphasis rounded-3 p-3 mb-4 d-flex align-items-start gap-2.5 shadow-xs">
+                      <AlertTriangle size={22} className="text-warning flex-shrink-0 mt-0.5" />
+                      <div>
+                        <div className="fw-bold small text-uppercase tracking-wider">⚠️ WARNING: Date Customization Notice</div>
+                        <div className="small mt-0.5">
+                          Actual check-in date (<strong>{formatDate(checkInDate)}</strong>) differs from today’s system date (<strong>{formatDate(todayStr)}</strong>). Please confirm guest arrival datetime.
+                        </div>
+                      </div>
+                    </div>
+                  ) : isDifferentFromOrig ? (
+                    <div className="alert alert-info border-info-subtle bg-info-subtle text-info-emphasis rounded-3 p-3 mb-4 d-flex align-items-start gap-2.5 shadow-xs">
+                      <Info size={22} className="text-info flex-shrink-0 mt-0.5" />
+                      <div>
+                        <div className="fw-bold small text-uppercase tracking-wider">Schedule Adjustment Notice</div>
+                        <div className="small mt-0.5">
+                          Original reservation was booked for <strong>{formatDate(selectedBooking.check_in_date)}</strong>. Actual check-in is being recorded for today (<strong>{formatDate(checkInDate)} @ {checkInTime}</strong>).
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="alert alert-success border-success-subtle bg-success-subtle text-success-emphasis rounded-3 p-3 mb-4 d-flex align-items-center gap-2.5 shadow-xs">
+                      <CheckCircle2 size={20} className="text-success flex-shrink-0" />
+                      <div className="small fw-semibold">
+                        Actual check-in is set to current system date & time ({formatDate(todayStr)} @ {checkInTime}).
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Timeline Breakdown Card */}
+                  <div className="bg-light p-3.5 rounded-3 border mb-4">
+                    {/* 1. Original Booking Schedule */}
+                    <div className="pb-3 mb-3 border-bottom d-flex align-items-center justify-content-between">
+                      <div>
+                        <div className="text-muted small fw-semibold text-uppercase tracking-wider" style={{ fontSize: '0.675rem' }}>
+                          Original Booking Schedule
+                        </div>
+                        <div className="fw-bold text-dark mt-0.5" style={{ fontSize: '0.95rem' }}>
+                          {formatDate(selectedBooking.check_in_date)} – {formatDate(selectedBooking.expected_checkout_date)}
+                        </div>
+                      </div>
+                      <span className="badge bg-secondary-subtle text-secondary rounded-pill px-2.5 py-1 extra-small">
+                        Reservation History
+                      </span>
+                    </div>
+
+                    {/* 2. Actual Check-In */}
+                    <div className="pb-3 mb-3 border-bottom d-flex align-items-center justify-content-between">
+                      <div>
+                        <div className="text-muted small fw-semibold text-uppercase tracking-wider" style={{ fontSize: '0.675rem' }}>
+                          Actual Check-In (Recorded)
+                        </div>
+                        <div className="fw-bold text-primary mt-0.5" style={{ fontSize: '0.95rem' }}>
+                          {formatDate(checkInDate)}, {checkInTime}
+                        </div>
+                      </div>
+                      <span className="badge bg-primary-subtle text-primary rounded-pill px-2.5 py-1 extra-small fw-semibold">
+                        Actual Guest Arrival
+                      </span>
+                    </div>
+
+                    {/* 3. Expected Checkout */}
+                    <div className="d-flex align-items-center justify-content-between">
+                      <div>
+                        <div className="text-muted small fw-semibold text-uppercase tracking-wider" style={{ fontSize: '0.675rem' }}>
+                          Expected Checkout
+                        </div>
+                        <div className="fw-bold text-success mt-0.5" style={{ fontSize: '0.95rem' }}>
+                          {formatDate(checkoutDate)}, {checkoutTime}
+                        </div>
+                      </div>
+                      <span className="badge bg-success-subtle text-success rounded-pill px-2.5 py-1 extra-small fw-semibold">
+                        Departure Schedule
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between">
+                  <button
+                    type="button"
+                    className="btn btn-light border fw-semibold px-4 py-2"
+                    onClick={() => setShowAdvanceConfirmModal(false)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-success fw-bold px-4 py-2 shadow-sm d-flex align-items-center gap-2"
+                    onClick={executeAdvanceCheckIn}
+                  >
+                    <KeyRound size={18} /> Confirm Check-In & Issue Key
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
     </div>
   );

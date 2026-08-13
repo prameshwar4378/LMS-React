@@ -4,10 +4,12 @@ import { getStayByIdApi, checkoutStayApi } from '../api/stayApi';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
+import { useNotification } from '../context/NotificationContext';
 
 const Checkout = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { showError, showSuccess } = useNotification();
 
   const [stay, setStay] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -128,10 +130,13 @@ const Checkout = () => {
       };
 
       const res = await checkoutStayApi(id, payload);
+      showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
       setShowInvoice(true);
     } catch (err) {
       console.error(err);
-      setError(extractErrorMessage(err, 'Error completing checkout.'));
+      const errMsg = extractErrorMessage(err, 'Error completing checkout.');
+      setError(errMsg);
+      showError(errMsg, 'Checkout Failed');
     }
   };
 
@@ -160,7 +165,7 @@ const Checkout = () => {
           </button>
         </div>
 
-        {error && <div className="alert alert-danger shadow-sm mb-4">{error}</div>}
+
 
         <form onSubmit={handleCheckoutSubmit}>
           {/* Guest & Stay Summary */}
@@ -210,14 +215,26 @@ const Checkout = () => {
                 </div>
                 <div className="col-md-4">
                   <label className="form-label fw-semibold">Discount Reason</label>
-                  <select className="form-select" value={discountReason} onChange={(e) => setDiscountReason(e.target.value)}>
-                    <option value="">-- Select Reason --</option>
-                    <option value="Regular Customer">Regular Customer</option>
-                    <option value="Corporate Customer">Corporate Customer</option>
-                    <option value="Manager Discount">Manager Discount</option>
-                    <option value="Festival Offer">Festival Offer</option>
-                    <option value="Other">Other</option>
-                  </select>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="e.g. Regular Customer / Corporate / Festival Offer"
+                    value={discountReason}
+                    onChange={(e) => setDiscountReason(e.target.value)}
+                  />
+                  <div className="d-flex gap-1 mt-1 flex-wrap">
+                    {['Regular Customer', 'Corporate Customer', 'Manager Discount', 'Festival Offer'].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        className={`btn btn-xs ${discountReason === preset ? 'btn-primary' : 'btn-outline-secondary'} py-0 px-2`}
+                        style={{ fontSize: '0.725rem' }}
+                        onClick={() => setDiscountReason(preset)}
+                      >
+                        + {preset}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 

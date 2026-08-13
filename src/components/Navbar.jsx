@@ -41,7 +41,11 @@ const Navbar = ({ title }) => {
     const updateTime = () => {
       const now = new Date();
       setTimeStr(now.toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-      setDateStr(now.toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' }));
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const weekday = now.toLocaleDateString('en-IN', { weekday: 'short' });
+      setDateStr(`${weekday}, ${day}/${month}/${year}`);
     };
     updateTime();
     const interval = setInterval(updateTime, 1000);

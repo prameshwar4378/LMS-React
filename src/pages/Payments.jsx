@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getPaymentsApi } from '../api/billingApi';
 import { formatCurrency } from '../utils/formatCurrency';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, formatDateTime } from '../utils/dateUtils';
 
 const Payments = () => {
   const [payments, setPayments] = useState([]);
@@ -64,7 +64,7 @@ const Payments = () => {
                         <td className="fw-semibold">{p.stay_number}</td>
                         <td>{p.customer_name}</td>
                         <td><span className="badge bg-primary">Room {p.room_number}</span></td>
-                        <td>{formatDate(p.payment_date)}</td>
+                        <td>{formatDateTime(p.payment_date)}</td>
                         <td><span className="badge bg-light text-dark border">{p.payment_method}</span></td>
                         <td>{p.transaction_reference || 'N/A'}</td>
                         <td>{p.received_by_name || 'Staff'}</td>

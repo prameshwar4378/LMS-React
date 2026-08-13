@@ -168,7 +168,7 @@ const RoomCalendar = () => {
                     const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
                     return (
                       <th key={d} style={{ minWidth: '110px' }}>
-                        <div className="fw-bold">{dateObj.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}</div>
+                        <div className="fw-bold">{formatDate(d)}</div>
                         <div className="text-muted fw-normal" style={{ fontSize: '0.75rem' }}>
                           {dateObj.toLocaleDateString('en-IN', { weekday: 'short' })}
                         </div>

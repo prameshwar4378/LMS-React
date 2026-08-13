@@ -380,7 +380,7 @@ const Bookings = () => {
                         <td className="ps-4">
                           <span className="fw-bold text-primary">{b.booking_number}</span>
                           <span className="d-block text-muted extra-small">
-                            {new Date(b.created_at).toLocaleDateString('en-IN')}
+                            {formatDate(b.created_at)}
                           </span>
                         </td>
 

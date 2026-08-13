@@ -105,7 +105,7 @@ const Dashboard = () => {
             {greeting}, {user?.first_name || user?.username || 'Receptionist'}! 👋
           </h2>
           <p className="text-muted m-0 small mt-1">
-            Today is {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: '2-digit', month: 'long', year: 'numeric' })}. Here is your lodge operational pulse.
+            Today is {formatDate(new Date())}. Here is your lodge operational pulse.
           </p>
         </div>
 
