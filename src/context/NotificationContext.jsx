@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 import NotificationModal from '../components/NotificationModal';
+import { CheckCircle2, X } from 'lucide-react';
 
 const NotificationContext = createContext();
 
@@ -44,6 +45,7 @@ export const cleanErrorMessage = (err, defaultMsg = 'An unexpected error occurre
 };
 
 export const NotificationProvider = ({ children }) => {
+  // Centered Modal State (Used ONLY for Warning, Error, Info, and Confirmations)
   const [modalState, setModalState] = useState({
     show: false,
     type: 'error',
@@ -56,10 +58,34 @@ export const NotificationProvider = ({ children }) => {
     onCancel: null,
   });
 
+  // Top-Right Toast Notifications State (Used ONLY for Success messages)
+  const [toasts, setToasts] = useState([]);
+
   const closeModal = () => {
     setModalState(prev => ({ ...prev, show: false }));
   };
 
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
+
+  // SUCCESS → Top Right Toast Message
+  const showSuccess = (msg, customTitle = 'Success!') => {
+    const id = Date.now() + Math.random();
+    const newToast = {
+      id,
+      title: customTitle,
+      message: msg || 'Operation completed successfully.',
+    };
+    setToasts(prev => [...prev, newToast]);
+
+    // Auto dismiss after 3.5 seconds
+    setTimeout(() => {
+      removeToast(id);
+    }, 3500);
+  };
+
+  // ERROR → Centered Modal Dialogue
   const showError = (msg, customTitle = 'Action Failed') => {
     const text = typeof msg === 'object' ? cleanErrorMessage(msg) : msg;
     setModalState({
@@ -73,18 +99,7 @@ export const NotificationProvider = ({ children }) => {
     });
   };
 
-  const showSuccess = (msg, customTitle = 'Success!') => {
-    setModalState({
-      show: true,
-      type: 'success',
-      title: customTitle,
-      message: msg || 'Operation completed successfully.',
-      confirmText: 'OK',
-      onConfirm: closeModal,
-      onCancel: closeModal,
-    });
-  };
-
+  // WARNING → Centered Modal Dialogue
   const showWarning = (msg, customTitle = 'Attention Required') => {
     const text = typeof msg === 'object' ? cleanErrorMessage(msg) : msg;
     setModalState({
@@ -98,6 +113,7 @@ export const NotificationProvider = ({ children }) => {
     });
   };
 
+  // INFO → Centered Modal Dialogue
   const showInfo = (msg, customTitle = 'Information') => {
     setModalState({
       show: true,
@@ -110,6 +126,7 @@ export const NotificationProvider = ({ children }) => {
     });
   };
 
+  // CONFIRMATION → Centered Modal Dialogue
   const showConfirm = ({
     title = 'Confirm Action',
     message = 'Are you sure you want to proceed?',
@@ -151,6 +168,37 @@ export const NotificationProvider = ({ children }) => {
       }}
     >
       {children}
+
+      {/* TOP-RIGHT TOAST CONTAINER (For Success Notifications) */}
+      <div className="toast-container-top-right">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className="toast-item-animated bg-white rounded-3 overflow-hidden border-start border-4 border-success p-3 position-relative"
+          >
+            <div className="d-flex align-items-start justify-content-between gap-3">
+              <div className="d-flex align-items-center gap-2.5">
+                <div className="p-1.5 bg-success-subtle text-success rounded-circle d-flex align-items-center justify-content-center">
+                  <CheckCircle2 size={18} />
+                </div>
+                <div>
+                  <h6 className="fw-bold text-dark m-0 small">{toast.title}</h6>
+                  <p className="text-secondary extra-small m-0 mt-0.5">{toast.message}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-close btn-close-xs text-muted shadow-none"
+                onClick={() => removeToast(toast.id)}
+                aria-label="Close"
+              ></button>
+            </div>
+            <div className="toast-progress-bar position-absolute bottom-0 start-0"></div>
+          </div>
+        ))}
+      </div>
+
+      {/* CENTERED MODAL DIALOGUE (For Warning, Error, Info, & Confirmations) */}
       <NotificationModal
         show={modalState.show}
         type={modalState.type}
