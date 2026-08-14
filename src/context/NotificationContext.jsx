@@ -44,6 +44,92 @@ export const cleanErrorMessage = (err, defaultMsg = 'An unexpected error occurre
   return defaultMsg;
 };
 
+// Interactive Toast Item with Hover-to-Pause functionality
+const ToastItem = ({ toast, onRemove }) => {
+  const TOTAL_TIME = 4000;
+  const [remainingTime, setRemainingTime] = useState(TOTAL_TIME);
+  const [isPaused, setIsPaused] = useState(false);
+
+  useEffect(() => {
+    if (isPaused) return;
+
+    const interval = setInterval(() => {
+      setRemainingTime((prev) => {
+        if (prev <= 100) {
+          clearInterval(interval);
+          onRemove(toast.id);
+          return 0;
+        }
+        return prev - 100;
+      });
+    }, 100);
+
+    return () => clearInterval(interval);
+  }, [isPaused, toast.id, onRemove]);
+
+  return (
+    <div
+      className="toast-item-animated bg-white rounded-3 overflow-hidden position-relative p-3 shadow-lg"
+      style={{
+        border: '1px solid #e2e8f0',
+        borderLeft: '4px solid #10b981',
+        boxShadow: '0 14px 30px -6px rgba(15, 23, 42, 0.16), 0 4px 10px -2px rgba(15, 23, 42, 0.06)',
+      }}
+      onMouseEnter={() => setIsPaused(true)}
+      onMouseLeave={() => setIsPaused(false)}
+    >
+      <div className="d-flex align-items-start justify-content-between gap-3">
+        <div className="d-flex align-items-center gap-3">
+          <div
+            className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+            style={{
+              width: '38px',
+              height: '38px',
+              backgroundColor: '#ecfdf5',
+              border: '1px solid #a7f3d0',
+            }}
+          >
+            <CheckCircle2 size={20} style={{ color: '#059669' }} />
+          </div>
+          <div>
+            <div className="d-flex align-items-center gap-2">
+              <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.875rem', letterSpacing: '-0.01em' }}>
+                {toast.title}
+              </h6>
+              {isPaused && (
+                <span className="badge bg-light text-muted border px-1.5 py-0.5 extra-small font-normal">
+                  Paused
+                </span>
+              )}
+            </div>
+            <p className="text-secondary extra-small m-0 mt-0.5" style={{ lineHeight: 1.35 }}>
+              {toast.message}
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="btn-close btn-close-xs text-muted shadow-none opacity-75"
+          onClick={() => onRemove(toast.id)}
+          aria-label="Close"
+        ></button>
+      </div>
+
+      {/* PAUSABLE SMOOTH PROGRESS BAR */}
+      <div
+        className="position-absolute bottom-0 start-0"
+        style={{
+          height: '3px',
+          width: `${(remainingTime / TOTAL_TIME) * 100}%`,
+          backgroundColor: '#10b981',
+          transition: isPaused ? 'none' : 'width 0.1s linear',
+        }}
+      />
+    </div>
+  );
+};
+
 export const NotificationProvider = ({ children }) => {
   // Centered Modal State (Used ONLY for Warning, Error, Info, and Confirmations)
   const [modalState, setModalState] = useState({
@@ -69,7 +155,7 @@ export const NotificationProvider = ({ children }) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // SUCCESS → Top Right Toast Message
+  // SUCCESS → Top Right Toast Message with Hover Pause
   const showSuccess = (msg, customTitle = 'Success!') => {
     const id = Date.now() + Math.random();
     const newToast = {
@@ -78,11 +164,6 @@ export const NotificationProvider = ({ children }) => {
       message: msg || 'Operation completed successfully.',
     };
     setToasts(prev => [...prev, newToast]);
-
-    // Auto dismiss after 3.5 seconds
-    setTimeout(() => {
-      removeToast(id);
-    }, 3500);
   };
 
   // ERROR → Centered Modal Dialogue
@@ -172,29 +253,7 @@ export const NotificationProvider = ({ children }) => {
       {/* TOP-RIGHT TOAST CONTAINER (For Success Notifications) */}
       <div className="toast-container-top-right">
         {toasts.map(toast => (
-          <div
-            key={toast.id}
-            className="toast-item-animated bg-white rounded-3 overflow-hidden border-start border-4 border-success p-3 position-relative"
-          >
-            <div className="d-flex align-items-start justify-content-between gap-3">
-              <div className="d-flex align-items-center gap-2.5">
-                <div className="p-1.5 bg-success-subtle text-success rounded-circle d-flex align-items-center justify-content-center">
-                  <CheckCircle2 size={18} />
-                </div>
-                <div>
-                  <h6 className="fw-bold text-dark m-0 small">{toast.title}</h6>
-                  <p className="text-secondary extra-small m-0 mt-0.5">{toast.message}</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="btn-close btn-close-xs text-muted shadow-none"
-                onClick={() => removeToast(toast.id)}
-                aria-label="Close"
-              ></button>
-            </div>
-            <div className="toast-progress-bar position-absolute bottom-0 start-0"></div>
-          </div>
+          <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
         ))}
       </div>
 
