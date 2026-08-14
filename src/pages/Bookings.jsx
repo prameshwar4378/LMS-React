@@ -8,9 +8,11 @@ import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 const Bookings = () => {
   const { user } = useAuth();
+  const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
   const [bookings, setBookings] = useState([]);
@@ -202,9 +204,10 @@ const Bookings = () => {
         try {
           await deleteBookingApi(booking.id);
           setConfirmModal({ show: false });
+          showSuccess(`Booking #${booking.booking_number} deleted successfully.`, 'Booking Deleted');
           loadBookings();
         } catch (err) {
-          alert(err.response?.data?.error || 'Error deleting booking record.');
+          showError(err.response?.data?.error || 'Error deleting booking record.', 'Deletion Failed');
           setConfirmModal({ show: false });
         }
       },

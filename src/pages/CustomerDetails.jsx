@@ -8,11 +8,13 @@ import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useAuth } from '../context/AuthContext';
+import { useNotification } from '../context/NotificationContext';
 
 const CustomerDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
   const [customer, setCustomer] = useState(null);
@@ -137,9 +139,10 @@ const CustomerDetails = () => {
         try {
           await deleteCustomerApi(customer.id);
           setConfirmModal({ show: false });
+          showSuccess(`Customer profile '${customer.full_name}' deleted successfully.`, 'Customer Deleted');
           navigate('/customers');
         } catch (err) {
-          alert(err.response?.data?.error || 'Error deleting customer record.');
+          showError(err.response?.data?.error || 'Error deleting customer record.', 'Deletion Failed');
           setConfirmModal({ show: false });
         }
       },

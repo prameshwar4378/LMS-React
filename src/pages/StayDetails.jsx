@@ -23,6 +23,7 @@ import { formatDate, formatDateTime } from '../utils/dateUtils';
 
 const StayDetails = () => {
   const { id } = useParams();
+  const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
   const { isAdmin } = useAuth();
 
@@ -267,9 +268,10 @@ const StayDetails = () => {
         try {
           await removeCustomerPhotoApi(stay.primary_customer);
           setConfirmModal({ show: false });
+          showSuccess('Guest photo snapshot removed successfully.', 'Photo Removed');
           loadStayDetails();
         } catch (err) {
-          alert('Error removing photo.');
+          showError('Error removing photo.', 'Removal Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -289,9 +291,10 @@ const StayDetails = () => {
         try {
           await removeCustomerIdFrontApi(stay.primary_customer);
           setConfirmModal({ show: false });
+          showSuccess('Front ID document removed successfully.', 'Document Removed');
           loadStayDetails();
         } catch (err) {
-          alert('Error removing Front ID document.');
+          showError('Error removing Front ID document.', 'Removal Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -311,9 +314,10 @@ const StayDetails = () => {
         try {
           await removeCustomerIdBackApi(stay.primary_customer);
           setConfirmModal({ show: false });
+          showSuccess('Back ID document removed successfully.', 'Document Removed');
           loadStayDetails();
         } catch (err) {
-          alert('Error removing Back ID document.');
+          showError('Error removing Back ID document.', 'Removal Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -333,9 +337,10 @@ const StayDetails = () => {
         try {
           await deleteCustomerDocumentApi(docId);
           setConfirmModal({ show: false });
+          showSuccess(`Document '${title}' deleted successfully.`, 'Document Deleted');
           loadStayDetails();
         } catch (err) {
-          alert('Error deleting document.');
+          showError('Error deleting document.', 'Deletion Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -367,9 +372,10 @@ const StayDetails = () => {
         try {
           await deleteStayGuestApi(guestId);
           setConfirmModal({ show: false });
+          showSuccess(`Guest '${guestName}' removed from stay roster.`, 'Guest Removed');
           loadStayDetails();
         } catch (err) {
-          alert('Error removing guest.');
+          showError('Error removing guest from roster.', 'Removal Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -381,9 +387,10 @@ const StayDetails = () => {
     try {
       await createExtraChargeApi(chargeData);
       setShowChargeModal(false);
+      showSuccess('Extra charge added to bill successfully.', 'Charge Added');
       loadStayDetails();
     } catch (err) {
-      alert('Error adding charge.');
+      showError('Error adding extra charge.', 'Failed');
     }
   };
 
@@ -401,9 +408,10 @@ const StayDetails = () => {
         try {
           await deleteExtraChargeApi(chargeId);
           setConfirmModal({ show: false });
+          showSuccess(`Extra charge '${chargeName || 'item'}' deleted from bill.`, 'Charge Deleted');
           loadStayDetails();
         } catch (err) {
-          alert('Error deleting charge.');
+          showError('Error deleting charge.', 'Deletion Failed');
           setConfirmModal({ show: false });
         }
       },
@@ -430,14 +438,16 @@ const StayDetails = () => {
     try {
       if (editPayment) {
         await updatePaymentApi(editPayment.id, payData);
+        showSuccess('Payment transaction record updated successfully.', 'Payment Updated');
       } else {
         await createPaymentApi(payData);
+        showSuccess('Payment transaction recorded successfully.', 'Payment Recorded');
       }
       setShowPaymentModal(false);
       setEditPayment(null);
       loadStayDetails();
     } catch (err) {
-      alert('Error saving payment record.');
+      showError('Error saving payment record.', 'Payment Failed');
     }
   };
 
@@ -455,9 +465,10 @@ const StayDetails = () => {
         try {
           await deletePaymentApi(paymentId);
           setConfirmModal({ show: false });
+          showSuccess(`Payment transaction #${paymentNumber} deleted.`, 'Payment Deleted');
           loadStayDetails();
         } catch (err) {
-          alert('Error deleting payment transaction.');
+          showError('Error deleting payment transaction.', 'Deletion Failed');
           setConfirmModal({ show: false });
         }
       },
