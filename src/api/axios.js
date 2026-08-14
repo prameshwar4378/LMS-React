@@ -1,6 +1,20 @@
 import axios from 'axios';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
+// Dynamic API Base URL Config:
+// Local Development: http://127.0.0.1:8000/api
+// Live Production: https://lmsdjangobackend.pythonanywhere.com/api
+
+const isLocalhost = Boolean(
+  window.location.hostname === 'localhost' ||
+  window.location.hostname === '127.0.0.1' ||
+  window.location.hostname === '[::1]'
+);
+
+export const API_HOST_URL = isLocalhost
+  ? 'http://127.0.0.1:8000'
+  : 'https://lmsdjangobackend.pythonanywhere.com';
+
+export const API_BASE_URL = `${API_HOST_URL}/api`;
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -34,7 +48,7 @@ api.interceptors.response.use(
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user');
-          window.location.href = '/login';
+          window.location.hash = '#/login';
         }
       }
     }
