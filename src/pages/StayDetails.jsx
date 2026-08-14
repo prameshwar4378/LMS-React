@@ -25,7 +25,8 @@ const StayDetails = () => {
   const { id } = useParams();
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
   const [stay, setStay] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1472,17 +1473,21 @@ const StayDetails = () => {
       />
 
       {/* Shared Modals */}
-      <GuestFormModal show={showGuestModal} onClose={() => setShowGuestModal(false)} onSubmit={handleAddGuest} stayId={stay.id} />
-      <ChargeFormModal show={showChargeModal} onClose={() => setShowChargeModal(false)} onSubmit={handleAddCharge} stayId={stay.id} />
-      <PaymentFormModal
-        show={showPaymentModal}
-        onClose={() => { setShowPaymentModal(false); setEditPayment(null); }}
-        onSubmit={handleAddOrUpdatePayment}
-        stayId={stay.id}
-        currentBalance={bill.balance}
-        initialData={editPayment}
-      />
-      <InvoicePreviewModal show={showInvoiceModal} onClose={() => setShowInvoiceModal(false)} stayId={stay.id} />
+      {stay && (
+        <>
+          <GuestFormModal show={showGuestModal} onClose={() => setShowGuestModal(false)} onSubmit={handleAddGuest} stayId={stay.id} />
+          <ChargeFormModal show={showChargeModal} onClose={() => setShowChargeModal(false)} onSubmit={handleAddCharge} stayId={stay.id} />
+          <PaymentFormModal
+            show={showPaymentModal}
+            onClose={() => { setShowPaymentModal(false); setEditPayment(null); }}
+            onSubmit={handleAddOrUpdatePayment}
+            stayId={stay.id}
+            currentBalance={bill.balance}
+            initialData={editPayment}
+          />
+          <InvoicePreviewModal show={showInvoiceModal} onClose={() => setShowInvoiceModal(false)} stayId={stay.id} />
+        </>
+      )}
     </div>
   );
 };
