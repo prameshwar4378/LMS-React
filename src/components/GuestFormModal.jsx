@@ -128,12 +128,10 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
         className="modal fade show d-block modal-backdrop-animated"
         style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }}
         tabIndex="-1"
-        onClick={onClose}
       >
         <div
           className="modal-dialog modal-dialog-centered modal-dialog-animated"
           style={{ maxWidth: '760px' }}
-          onClick={(e) => e.stopPropagation()}
         >
           <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
             
@@ -165,10 +163,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
               <div className="modal-body p-4 bg-white" style={{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
                 
                 {/* SECTION 1: GUEST INFORMATION */}
-                <div className="mb-4">
-                  <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
-                    <User size={14} /> Guest Information
-                  </div>
+                <div className="mb-4"> 
 
                   <div className="row g-3">
                     {/* Full Name */}
@@ -239,11 +234,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 </div>
 
                 {/* SECTION 2: CONTACT & RELATIONSHIP */}
-                <div className="mb-4">
-                  <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
-                    <Phone size={14} /> Contact & Relationship
-                  </div>
-
+                <div className="mb-4"> 
                   <div className="row g-3">
                     {/* Mobile Number */}
                     <div className="col-md-6">
@@ -291,13 +282,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
 
                 {/* SECTION 3: IDENTITY VERIFICATION */}
                 <div className="mb-4">
-                  <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-1 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
-                    <CreditCard size={14} /> Identity Verification
-                  </div>
-                  <div className="text-muted extra-small mb-2.5">
-                    Provide a valid statutory identity document for the additional guest.
-                  </div>
-
+    
                   <div className="row g-3">
                     {/* ID Proof Type */}
                     <div className="col-md-6">
@@ -336,11 +321,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 </div>
 
                 {/* SECTION 4: GUEST PHOTO & DOCUMENTS */}
-                <div>
-                  <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
-                    <FileText size={14} /> Guest Photo & ID Document
-                  </div>
-
+                <div> 
                   <div className="row g-3">
                     {/* Left Column: Guest Photo */}
                     <div className="col-md-6">

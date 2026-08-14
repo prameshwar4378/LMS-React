@@ -81,8 +81,8 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
   const isEdit = Boolean(initialData);
 
   return (
-    <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1" onClick={onClose}>
-      <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '520px' }} onClick={(e) => e.stopPropagation()}>
+    <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+      <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '520px' }}>
         <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
           
           <div className="modal-header bg-success text-white py-3 px-4">
