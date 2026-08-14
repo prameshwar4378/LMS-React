@@ -174,45 +174,71 @@ const RoomTypes = () => {
 
       {/* Room Type Modal */}
       {showModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title">{editingId ? 'Edit Room Type' : 'Create Room Type'}</h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowModal(false)}></button>
-              </div>
-              <form onSubmit={handleSubmit}>
-                <div className="modal-body p-4">
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold">Room Type Name *</label>
-                    <input type="text" className="form-control" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Deluxe AC Room" />
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '620px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-tags-fill fs-5"></i>
                   </div>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold">Base Price (₹ / Night) *</label>
-                    <input type="number" step="0.01" className="form-control" required value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="1800.00" />
-                  </div>
-                  <div className="row g-3 mb-3">
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Max Adults</label>
-                      <input type="number" min="1" className="form-control" value={maxAdults} onChange={(e) => setMaxAdults(e.target.value)} />
-                    </div>
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Max Children</label>
-                      <input type="number" min="0" className="form-control" value={maxChildren} onChange={(e) => setMaxChildren(e.target.value)} />
-                    </div>
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold">Amenities (Comma-separated)</label>
-                    <textarea className="form-control" rows="2" value={amenities} onChange={(e) => setAmenities(e.target.value)} placeholder="AC, Smart TV, WiFi, Geyser, Attached Bathroom"></textarea>
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold">Description</label>
-                    <textarea className="form-control" rows="2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description"></textarea>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      {editingId ? 'Edit Room Type Category' : 'Create Room Type Category'}
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Define room category name, base daily rate, max guest occupancy, and amenities.
+                    </span>
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary"><i className="bi bi-check-circle me-1"></i> Save Room Type</button>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowModal(false)}></button>
+              </div>
+
+              <form onSubmit={handleSubmit}>
+                <div className="modal-body p-4 bg-white">
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark mb-1">Room Type Name *</label>
+                    <input type="text" className="form-control py-2.5 font-bold" style={{ height: '46px' }} required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Deluxe AC Room" />
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark mb-1">Base Price (₹ / Night) *</label>
+                    <div className="input-group">
+                      <span className="input-group-text bg-light border-end-0 text-muted">₹</span>
+                      <input type="number" step="0.01" className="form-control border-start-0 py-2.5 font-bold text-success" style={{ height: '46px' }} required value={basePrice} onChange={(e) => setBasePrice(e.target.value)} placeholder="1800.00" />
+                    </div>
+                  </div>
+
+                  <div className="row g-3 mb-3">
+                    <div className="col-6">
+                      <label className="form-label small fw-semibold text-dark mb-1">Max Adults</label>
+                      <input type="number" min="1" className="form-control py-2.5" style={{ height: '46px' }} value={maxAdults} onChange={(e) => setMaxAdults(e.target.value)} />
+                    </div>
+                    <div className="col-6">
+                      <label className="form-label small fw-semibold text-dark mb-1">Max Children</label>
+                      <input type="number" min="0" className="form-control py-2.5" style={{ height: '46px' }} value={maxChildren} onChange={(e) => setMaxChildren(e.target.value)} />
+                    </div>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark mb-1">Included Amenities (Comma-separated)</label>
+                    <textarea className="form-control p-2.5" rows="2" value={amenities} onChange={(e) => setAmenities(e.target.value)} placeholder="AC, Smart TV, WiFi, Geyser, Attached Bathroom"></textarea>
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark mb-1">Category Description</label>
+                    <textarea className="form-control p-2.5" rows="2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Brief description of room type benefits..."></textarea>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2">
+                    <i className="bi bi-check-circle-fill"></i> Save Room Type
+                  </button>
                 </div>
               </form>
             </div>

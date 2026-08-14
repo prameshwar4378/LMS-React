@@ -227,22 +227,37 @@ const Rooms = () => {
 
       {/* Add Room Modal */}
       {showModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-primary text-white">
-                <h5 className="modal-title"><i className="bi bi-door-open me-2"></i>Add New Room</h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowModal(false)}></button>
-              </div>
-              <form onSubmit={handleCreateRoom}>
-                <div className="modal-body p-4">
-                  <div className="mb-3">
-                    <label className="form-label fw-semibold">Room Number *</label>
-                    <input type="text" className="form-control" required value={roomNumber} onChange={(e) => setRoomNumber(e.target.value)} placeholder="e.g. 104 or 205" />
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '580px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-door-open fs-5"></i>
                   </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Add New Room Inventory
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Define room number, assign room category type, and floor level.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowModal(false)}></button>
+              </div>
+
+              <form onSubmit={handleCreateRoom}>
+                <div className="modal-body p-4 bg-white">
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">Room Type *</label>
-                    <select className="form-select" required value={roomTypeId} onChange={(e) => setRoomTypeId(e.target.value)}>
+                    <label className="form-label small fw-semibold text-dark mb-1">Room Number *</label>
+                    <input type="text" className="form-control py-2.5 font-bold" style={{ height: '46px' }} required value={roomNumber} onChange={(e) => setRoomNumber(e.target.value)} placeholder="e.g. 104 or 205" />
+                  </div>
+                  
+                  <div className="mb-3">
+                    <label className="form-label small fw-semibold text-dark mb-1">Room Category Type *</label>
+                    <select className="form-select py-2.5 font-semibold" style={{ height: '46px' }} required value={roomTypeId} onChange={(e) => setRoomTypeId(e.target.value)}>
                       {roomTypes.map((rt) => (
                         <option key={rt.id} value={rt.id}>
                           {rt.name} (₹{rt.base_price}/night)
@@ -250,18 +265,25 @@ const Rooms = () => {
                       ))}
                     </select>
                   </div>
+
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">Floor</label>
-                    <input type="text" className="form-control" value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="e.g. 1st Floor" />
+                    <label className="form-label small fw-semibold text-dark mb-1">Floor Level</label>
+                    <input type="text" className="form-control py-2.5" style={{ height: '46px' }} value={floor} onChange={(e) => setFloor(e.target.value)} placeholder="e.g. 1st Floor / Ground Floor" />
                   </div>
+
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">Description</label>
-                    <textarea className="form-control" rows="2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional room description"></textarea>
+                    <label className="form-label small fw-semibold text-dark mb-1">Room Description / Notes</label>
+                    <textarea className="form-control p-2.5" rows="2" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional room description or features..."></textarea>
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary"><i className="bi bi-check-circle me-1"></i> Save Room</button>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowModal(false)}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2">
+                    <i className="bi bi-check-circle-fill"></i> Save Room
+                  </button>
                 </div>
               </form>
             </div>

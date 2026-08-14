@@ -623,176 +623,214 @@ const Bookings = () => {
 
       {/* EDIT BOOKING MODAL */}
       {editBooking && (
-        <div className="modal fade show d-block tab-modal-backdrop" tabIndex="-1" style={{ backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1050 }}>
-          <div className="modal-dialog modal-dialog-centered modal-lg">
-            <div className="modal-content border-0 shadow-lg rounded-3">
-              <form onSubmit={handleSaveEdit}>
-                <div className="modal-header bg-primary text-white p-3">
-                  <h5 className="modal-title fw-bold">
-                    <i className="bi bi-pencil-square me-2"></i>Edit Reservation Booking — #{editBooking.booking_number}
-                  </h5>
-                  <button type="button" className="btn-close btn-close-white" onClick={() => setEditBooking(null)}></button>
+        <div className="modal fade show d-block modal-backdrop-animated" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }}>
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '780px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-pencil-square fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Edit Reservation Booking — #{editBooking.booking_number}
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Modify reservation room assignment, schedule dates, agreed rate, and deposit details.
+                    </span>
+                  </div>
                 </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setEditBooking(null)}></button>
+              </div>
 
-                <div className="modal-body p-4">
+              <form onSubmit={handleSaveEdit}>
+                <div className="modal-body p-4 bg-white" style={{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
                   {editError && (
-                    <div className="alert alert-danger d-flex align-items-center mb-3">
-                      <i className="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
-                      <div>{editError}</div>
+                    <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
+                      <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{editError}
                     </div>
                   )}
 
-                  <div className="row g-3">
-                    {/* Guest Name Readonly */}
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-muted">Guest Name</label>
-                      <input type="text" className="form-control bg-light" value={editBooking.customer_detail?.full_name || ''} readOnly />
+                  <div className="mb-4">
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-person"></i> Guest & Room Assignment
                     </div>
+                    <div className="row g-3">
+                      {/* Guest Name Readonly */}
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Primary Guest Name</label>
+                        <input type="text" className="form-control py-2.5 bg-light" style={{ height: '46px' }} value={editBooking.customer_detail?.full_name || ''} readOnly />
+                      </div>
 
-                    {/* Room Selection */}
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-muted">
-                        Reassign Room {editLoadingRooms && <span className="spinner-border spinner-border-sm text-primary ms-1"></span>}
-                      </label>
-                      <select
-                        className="form-select fw-bold"
-                        value={editForm.room}
-                        onChange={(e) => handleEditInputChange('room', e.target.value)}
-                        required
-                      >
-                        {editAvailableRooms.map((r) => (
-                          <option key={r.id} value={r.id}>
-                            Room {r.room_number} — {r.room_type_name} (₹{parseFloat(r.base_price).toLocaleString('en-IN')}/night)
-                          </option>
-                        ))}
-                      </select>
+                      {/* Room Selection */}
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">
+                          Reassign Room {editLoadingRooms && <span className="spinner-border spinner-border-sm text-primary ms-1"></span>}
+                        </label>
+                        <select
+                          className="form-select py-2.5 font-semibold"
+                          style={{ height: '46px' }}
+                          value={editForm.room}
+                          onChange={(e) => handleEditInputChange('room', e.target.value)}
+                          required
+                        >
+                          {editAvailableRooms.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              Room {r.room_number} — {r.room_type_name} (₹{parseFloat(r.base_price).toLocaleString('en-IN')}/night)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                     </div>
+                  </div>
 
-                    {/* Check-In Date & Time */}
-                    <div className="col-md-3 col-6">
-                      <label className="form-label small fw-bold text-muted">Check-In Date</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={editForm.check_in_date}
-                        onChange={(e) => handleEditInputChange('check_in_date', e.target.value)}
-                        required
-                      />
+                  <div className="mb-4">
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-calendar-range"></i> Reservation Schedule
                     </div>
-
-                    <div className="col-md-3 col-6">
-                      <label className="form-label small fw-bold text-muted">Check-In Time</label>
-                      <input
-                        type="time"
-                        className="form-control"
-                        value={editForm.check_in_time}
-                        onChange={(e) => handleEditInputChange('check_in_time', e.target.value)}
-                      />
-                    </div>
-
-                    {/* Check-Out Date & Time */}
-                    <div className="col-md-3 col-6">
-                      <label className="form-label small fw-bold text-muted">Check-Out Date</label>
-                      <input
-                        type="date"
-                        className="form-control"
-                        value={editForm.expected_checkout_date}
-                        onChange={(e) => handleEditInputChange('expected_checkout_date', e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div className="col-md-3 col-6">
-                      <label className="form-label small fw-bold text-muted">Check-Out Time</label>
-                      <input
-                        type="time"
-                        className="form-control"
-                        value={editForm.expected_checkout_time}
-                        onChange={(e) => handleEditInputChange('expected_checkout_time', e.target.value)}
-                      />
-                    </div>
-
-                    {/* Agreed Daily Rate & Advance Amount */}
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-muted">Agreed Daily Room Rate (₹/night)</label>
-                      <div className="input-group">
-                        <span className="input-group-text">₹</span>
+                    <div className="row g-3">
+                      {/* Check-In Date & Time */}
+                      <div className="col-md-3 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-In Date *</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          className="form-control fw-bold"
-                          value={editForm.room_rate}
-                          onChange={(e) => handleEditInputChange('room_rate', e.target.value)}
+                          type="date"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.check_in_date}
+                          onChange={(e) => handleEditInputChange('check_in_date', e.target.value)}
                           required
                         />
                       </div>
-                    </div>
 
-                    <div className="col-md-6">
-                      <label className="form-label small fw-bold text-muted">Advance Deposit Paid (₹)</label>
-                      <div className="input-group">
-                        <span className="input-group-text">₹</span>
+                      <div className="col-md-3 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-In Time *</label>
                         <input
-                          type="number"
-                          step="0.01"
-                          className="form-control fw-bold text-success"
-                          value={editForm.advance_amount}
-                          onChange={(e) => handleEditInputChange('advance_amount', e.target.value)}
+                          type="time"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.check_in_time}
+                          onChange={(e) => handleEditInputChange('check_in_time', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Check-Out Date & Time */}
+                      <div className="col-md-3 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-Out Date *</label>
+                        <input
+                          type="date"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.expected_checkout_date}
+                          onChange={(e) => handleEditInputChange('expected_checkout_date', e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="col-md-3 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-Out Time *</label>
+                        <input
+                          type="time"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.expected_checkout_time}
+                          onChange={(e) => handleEditInputChange('expected_checkout_time', e.target.value)}
                         />
                       </div>
                     </div>
+                  </div>
 
-                    {/* Guests Count */}
-                    <div className="col-md-6 col-6">
-                      <label className="form-label small fw-bold text-muted">Adults</label>
-                      <input
-                        type="number"
-                        min="1"
-                        className="form-control"
-                        value={editForm.adults}
-                        onChange={(e) => handleEditInputChange('adults', e.target.value)}
-                        required
-                      />
+                  <div className="mb-4">
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-currency-rupee"></i> Pricing & Advance Deposit
                     </div>
+                    <div className="row g-3">
+                      {/* Agreed Daily Rate & Advance Amount */}
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Agreed Daily Room Rate (₹/night) *</label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light border-end-0 text-muted">₹</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="form-control border-start-0 py-2.5 font-bold"
+                            style={{ height: '46px' }}
+                            value={editForm.room_rate}
+                            onChange={(e) => handleEditInputChange('room_rate', e.target.value)}
+                            required
+                          />
+                        </div>
+                      </div>
 
-                    <div className="col-md-6 col-6">
-                      <label className="form-label small fw-bold text-muted">Children</label>
-                      <input
-                        type="number"
-                        min="0"
-                        className="form-control"
-                        value={editForm.children}
-                        onChange={(e) => handleEditInputChange('children', e.target.value)}
-                      />
-                    </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Advance Deposit Paid (₹)</label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light border-end-0 text-muted">₹</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="form-control border-start-0 py-2.5 font-bold text-success"
+                            style={{ height: '46px' }}
+                            value={editForm.advance_amount}
+                            onChange={(e) => handleEditInputChange('advance_amount', e.target.value)}
+                          />
+                        </div>
+                      </div>
 
-                    {/* Notes */}
-                    <div className="col-12">
-                      <label className="form-label small fw-bold text-muted">Reservation Notes</label>
-                      <textarea
-                        className="form-control"
-                        rows="2"
-                        value={editForm.notes}
-                        onChange={(e) => handleEditInputChange('notes', e.target.value)}
-                        placeholder="Add optional notes..."
-                      ></textarea>
+                      {/* Guests Count */}
+                      <div className="col-md-6 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Adults</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.adults}
+                          onChange={(e) => handleEditInputChange('adults', e.target.value)}
+                          required
+                        />
+                      </div>
+
+                      <div className="col-md-6 col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Children</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="form-control py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.children}
+                          onChange={(e) => handleEditInputChange('children', e.target.value)}
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div className="col-12">
+                        <label className="form-label small fw-semibold text-dark mb-1">Reservation Notes</label>
+                        <textarea
+                          className="form-control p-2.5"
+                          rows="2"
+                          value={editForm.notes}
+                          onChange={(e) => handleEditInputChange('notes', e.target.value)}
+                          placeholder="Add optional notes..."
+                        ></textarea>
+                      </div>
                     </div>
                   </div>
                 </div>
 
-                <div className="modal-footer bg-light p-3">
-                  <button type="button" className="btn btn-secondary" onClick={() => setEditBooking(null)}>
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setEditBooking(null)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary fw-bold px-4" disabled={editSubmitting}>
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={editSubmitting}>
                     {editSubmitting ? (
                       <>
-                        <span className="spinner-border spinner-border-sm me-2" role="status"></span>
+                        <span className="spinner-border spinner-border-sm me-1" role="status"></span>
                         Saving Changes...
                       </>
                     ) : (
                       <>
-                        <i className="bi bi-check-circle me-1"></i>Save Changes
+                        <i className="bi bi-check-circle-fill"></i> Save Reservation Changes
                       </>
                     )}
                   </button>

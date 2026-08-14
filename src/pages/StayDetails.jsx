@@ -1151,99 +1151,159 @@ const StayDetails = () => {
 
       {/* 1. Edit Stay & Pricing Modal */}
       {showEditStayModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-dark text-white">
-                <h5 className="modal-title fw-bold">
-                  <i className="bi bi-sliders me-2 text-primary"></i>Edit Room Rate, Discount & Occupancy
-                </h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowEditStayModal(false)}></button>
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '680px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-sliders fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Edit Room Rate, Discount & Occupancy
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Update stay rate, apply discounts, and adjust guest occupancy counts.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowEditStayModal(false)}></button>
               </div>
+
               <form onSubmit={handleSaveStayDetails}>
-                <div className="modal-body p-4">
-                  {actionError && <div className="alert alert-danger py-2">{actionError}</div>}
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Room Night Rate (₹) *</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="form-control fw-bold"
-                        required
-                        value={editRoomRate}
-                        onChange={(e) => setEditRoomRate(e.target.value)}
-                      />
+                <div className="modal-body p-4 bg-white" style={{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+                  {actionError && (
+                    <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
+                      <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{actionError}
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Discount Type</label>
-                      <select className="form-select" value={editDiscountType} onChange={(e) => setEditDiscountType(e.target.value)}>
-                        <option value="FIXED">Fixed Amount (₹)</option>
-                        <option value="PERCENTAGE">Percentage (%)</option>
-                      </select>
+                  )}
+
+                  <div className="mb-4">
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-currency-rupee"></i> Room Rate & Discount Settings
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Discount Value</label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        className="form-control"
-                        value={editDiscountValue}
-                        onChange={(e) => setEditDiscountValue(e.target.value)}
-                      />
-                    </div>
-                    <div className="col-md-12">
-                      <label className="form-label small fw-bold text-dark">Discount Reason / Description</label>
-                      <div className="input-group mb-1.5">
+
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Room Night Rate (₹) *</label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light border-end-0 text-muted">₹</span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            className="form-control border-start-0 py-2.5 font-bold"
+                            style={{ height: '46px', fontSize: '0.95rem' }}
+                            required
+                            value={editRoomRate}
+                            onChange={(e) => setEditRoomRate(e.target.value)}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Discount Type</label>
+                        <select
+                          className="form-select py-2.5 font-medium"
+                          style={{ height: '46px', fontSize: '0.925rem' }}
+                          value={editDiscountType}
+                          onChange={(e) => setEditDiscountType(e.target.value)}
+                        >
+                          <option value="FIXED">Fixed Amount (₹)</option>
+                          <option value="PERCENTAGE">Percentage (%)</option>
+                        </select>
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Discount Value</label>
                         <input
-                          type="text"
-                          className="form-control"
-                          placeholder="e.g. Special Guest / Corporate Partner / Management Offer"
-                          value={editDiscountReason}
-                          onChange={(e) => setEditDiscountReason(e.target.value)}
+                          type="number"
+                          step="0.01"
+                          className="form-control py-2.5 font-medium"
+                          style={{ height: '46px', fontSize: '0.925rem' }}
+                          value={editDiscountValue}
+                          onChange={(e) => setEditDiscountValue(e.target.value)}
                         />
-                        {editDiscountReason && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-secondary"
-                            onClick={() => setEditDiscountReason('')}
-                            title="Clear"
-                          >
-                            <i className="bi bi-x-lg"></i>
-                          </button>
-                        )}
                       </div>
-                      <div className="d-flex gap-1.5 flex-wrap align-items-center">
-                        <span className="extra-small text-muted me-1">Quick Presets:</span>
-                        {['Special Guest', 'VIP Guest', 'Corporate Partner', 'Management Offer', 'Long Stay'].map((preset) => (
-                          <button
-                            key={preset}
-                            type="button"
-                            className={`btn btn-xs rounded-pill ${editDiscountReason === preset ? 'btn-primary shadow-xs fw-semibold' : 'btn-outline-secondary'} py-0.5 px-2.5`}
-                            style={{ fontSize: '0.725rem' }}
-                            onClick={() => setEditDiscountReason(preset)}
-                          >
-                            + {preset}
-                          </button>
-                        ))}
+
+                      <div className="col-md-12">
+                        <label className="form-label small fw-semibold text-dark mb-1">Discount Reason / Description</label>
+                        <div className="input-group mb-2">
+                          <input
+                            type="text"
+                            className="form-control py-2.5"
+                            style={{ height: '46px', fontSize: '0.925rem' }}
+                            placeholder="e.g. Special Guest / Corporate Partner / Management Offer"
+                            value={editDiscountReason}
+                            onChange={(e) => setEditDiscountReason(e.target.value)}
+                          />
+                          {editDiscountReason && (
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary px-3"
+                              onClick={() => setEditDiscountReason('')}
+                              title="Clear"
+                            >
+                              <i className="bi bi-x-lg"></i>
+                            </button>
+                          )}
+                        </div>
+                        <div className="d-flex gap-1.5 flex-wrap align-items-center">
+                          <span className="extra-small text-muted me-1">Quick Presets:</span>
+                          {['Special Guest', 'VIP Guest', 'Corporate Partner', 'Management Offer', 'Long Stay'].map((preset) => (
+                            <button
+                              key={preset}
+                              type="button"
+                              className={`btn btn-xs rounded-pill ${editDiscountReason === preset ? 'btn-primary shadow-xs fw-semibold' : 'btn-outline-secondary'} py-1 px-2.5`}
+                              style={{ fontSize: '0.725rem' }}
+                              onClick={() => setEditDiscountReason(preset)}
+                            >
+                              + {preset}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Adults</label>
-                      <input type="number" min="1" className="form-control" value={editAdults} onChange={(e) => setEditAdults(e.target.value)} />
+                  </div>
+
+                  <div>
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-people"></i> Guest Occupancy
                     </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Children</label>
-                      <input type="number" min="0" className="form-control" value={editChildren} onChange={(e) => setEditChildren(e.target.value)} />
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Adults</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="form-control py-2.5"
+                          style={{ height: '46px', fontSize: '0.925rem' }}
+                          value={editAdults}
+                          onChange={(e) => setEditAdults(e.target.value)}
+                        />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Children</label>
+                        <input
+                          type="number"
+                          min="0"
+                          className="form-control py-2.5"
+                          style={{ height: '46px', fontSize: '0.925rem' }}
+                          value={editChildren}
+                          onChange={(e) => setEditChildren(e.target.value)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowEditStayModal(false)}>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowEditStayModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-success fw-bold" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : 'Save & Update Bill'}
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
+                    {actionLoading ? 'Saving...' : <><i className="bi bi-check-circle-fill"></i> Save & Update Bill</>}
                   </button>
                 </div>
               </form>
@@ -1254,43 +1314,74 @@ const StayDetails = () => {
 
       {/* 2. Edit Check-In / Out Dates & Times Modal */}
       {showEditDatesModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-dark text-white">
-                <h5 className="modal-title fw-bold">
-                  <i className="bi bi-clock-history me-2 text-primary"></i>Edit Check-In / Out Dates & Times
-                </h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowEditDatesModal(false)}></button>
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '620px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-clock-history fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Edit Check-In / Out Dates & Times
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Adjust actual check-in datetime and expected checkout schedule.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowEditDatesModal(false)}></button>
               </div>
+
               <form onSubmit={handleSaveDates}>
-                <div className="modal-body p-4">
-                  {actionError && <div className="alert alert-danger py-2">{actionError}</div>}
-                  <div className="row g-3">
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Check-In Date</label>
-                      <input type="date" className="form-control" required value={editCheckInDate} onChange={(e) => setEditCheckInDate(e.target.value)} />
+                <div className="modal-body p-4 bg-white">
+                  {actionError && (
+                    <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
+                      <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{actionError}
                     </div>
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Check-In Time</label>
-                      <input type="time" className="form-control" required value={editCheckInTime} onChange={(e) => setEditCheckInTime(e.target.value)} />
+                  )}
+
+                  <div className="mb-4">
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-box-arrow-in-right"></i> Check-In Schedule
                     </div>
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Check-Out Date</label>
-                      <input type="date" className="form-control" required value={editCheckoutDate} onChange={(e) => setEditCheckoutDate(e.target.value)} />
+                    <div className="row g-3">
+                      <div className="col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-In Date *</label>
+                        <input type="date" className="form-control py-2.5" style={{ height: '46px' }} required value={editCheckInDate} onChange={(e) => setEditCheckInDate(e.target.value)} />
+                      </div>
+                      <div className="col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-In Time *</label>
+                        <input type="time" className="form-control py-2.5" style={{ height: '46px' }} required value={editCheckInTime} onChange={(e) => setEditCheckInTime(e.target.value)} />
+                      </div>
                     </div>
-                    <div className="col-6">
-                      <label className="form-label fw-semibold">Check-Out Time</label>
-                      <input type="time" className="form-control" required value={editCheckoutTime} onChange={(e) => setEditCheckoutTime(e.target.value)} />
+                  </div>
+
+                  <div>
+                    <div className="text-uppercase tracking-wider extra-small font-bold text-primary mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.725rem', letterSpacing: '0.05em' }}>
+                      <i className="bi bi-box-arrow-right"></i> Expected Check-Out Schedule
+                    </div>
+                    <div className="row g-3">
+                      <div className="col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-Out Date *</label>
+                        <input type="date" className="form-control py-2.5" style={{ height: '46px' }} required value={editCheckoutDate} onChange={(e) => setEditCheckoutDate(e.target.value)} />
+                      </div>
+                      <div className="col-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Check-Out Time *</label>
+                        <input type="time" className="form-control py-2.5" style={{ height: '46px' }} required value={editCheckoutTime} onChange={(e) => setEditCheckoutTime(e.target.value)} />
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowEditDatesModal(false)}>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowEditDatesModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-success fw-bold" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : 'Save & Update Bill'}
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
+                    {actionLoading ? 'Saving...' : <><i className="bi bi-calendar-check-fill"></i> Save Schedule</>}
                   </button>
                 </div>
               </form>
@@ -1301,110 +1392,139 @@ const StayDetails = () => {
 
       {/* 3. Edit Primary Guest Profile & Photo / Front & Back ID Document Modal */}
       {showEditGuestModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered modal-lg">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-dark text-white">
-                <h5 className="modal-title fw-bold">
-                  <i className="bi bi-person-gear me-2 text-primary"></i>Edit Primary Guest & Front/Back Documents
-                </h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowEditGuestModal(false)}></button>
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '760px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-person-gear fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Edit Primary Guest Profile & ID Proofs
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Update guest personal information, photo snapshot, and statutory ID document files.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowEditGuestModal(false)}></button>
               </div>
-              <form onSubmit={handleSavePrimaryGuest}>
-                <div className="modal-body p-4">
-                  {actionError && <div className="alert alert-danger py-2">{actionError}</div>}
-                  <div className="row g-3">
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">First Name *</label>
-                      <input type="text" className="form-control" required value={guestFirstName} onChange={(e) => setGuestFirstName(e.target.value)} />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Last Name</label>
-                      <input type="text" className="form-control" value={guestLastName} onChange={(e) => setGuestLastName(e.target.value)} />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Mobile *</label>
-                      <input type="text" className="form-control" required value={guestMobile} onChange={(e) => setGuestMobile(e.target.value)} />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">Email</label>
-                      <input type="email" className="form-control" value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} />
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">ID Proof Type</label>
-                      <select className="form-select" value={guestIdType} onChange={(e) => setGuestIdType(e.target.value)}>
-                        <option value="Aadhaar">Aadhaar</option>
-                        <option value="PAN">PAN</option>
-                        <option value="Passport">Passport</option>
-                        <option value="Driving Licence">Driving Licence</option>
-                        <option value="Voter ID">Voter ID</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </div>
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold">ID Proof Number</label>
-                      <input type="text" className="form-control" value={guestIdNumber} onChange={(e) => setGuestIdNumber(e.target.value)} />
-                    </div>
-                    <div className="col-md-12">
-                      <label className="form-label fw-semibold">Address</label>
-                      <textarea className="form-control" rows="2" value={guestAddress} onChange={(e) => setGuestAddress(e.target.value)}></textarea>
-                    </div>
 
-                    {/* Camera Capture / Photo Upload */}
-                    <div className="col-md-12">
-                      <label className="form-label fw-semibold d-block">Update Guest Photo</label>
-                      <div className="d-flex align-items-center gap-2">
-                        <button type="button" className="btn btn-outline-primary btn-sm" onClick={() => setShowGuestCamera(true)}>
-                          <i className="bi bi-camera me-1"></i> Open Webcam
-                        </button>
+              <form onSubmit={handleSavePrimaryGuest}>
+                <div className="modal-body p-4 bg-white" style={{ maxHeight: 'calc(100vh - 180px)', overflowY: 'auto' }}>
+                  {actionError && (
+                    <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
+                      <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{actionError}
+                    </div>
+                  )}
+
+                  <div className="mb-4"> 
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">First Name *</label>
+                        <input type="text" className="form-control py-2.5" style={{ height: '46px' }} required value={guestFirstName} onChange={(e) => setGuestFirstName(e.target.value)} />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Last Name</label>
+                        <input type="text" className="form-control py-2.5" style={{ height: '46px' }} value={guestLastName} onChange={(e) => setGuestLastName(e.target.value)} />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Mobile Number *</label>
+                        <input type="text" className="form-control py-2.5" style={{ height: '46px' }} required value={guestMobile} onChange={(e) => setGuestMobile(e.target.value)} />
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Email Address</label>
+                        <input type="email" className="form-control py-2.5" style={{ height: '46px' }} value={guestEmail} onChange={(e) => setGuestEmail(e.target.value)} />
+                      </div>
+                      <div className="col-md-12">
+                        <label className="form-label small fw-semibold text-dark mb-1">Permanent Residential Address</label>
+                        <textarea className="form-control p-2.5" rows="2" value={guestAddress} onChange={(e) => setGuestAddress(e.target.value)}></textarea>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mb-4"> 
+                    <div className="row g-3">
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">ID Proof Type</label>
+                        <select className="form-select py-2.5" style={{ height: '46px' }} value={guestIdType} onChange={(e) => setGuestIdType(e.target.value)}>
+                          <option value="Aadhaar">Aadhaar Card</option>
+                          <option value="PAN">PAN Card</option>
+                          <option value="Passport">Passport</option>
+                          <option value="Driving Licence">Driving Licence</option>
+                          <option value="Voter ID">Voter ID</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">ID Proof Number</label>
+                        <input type="text" className="form-control py-2.5" style={{ height: '46px' }} value={guestIdNumber} onChange={(e) => setGuestIdNumber(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div> 
+                    <div className="row g-3">
+                      <div className="col-md-12">
+                        <label className="form-label small fw-semibold text-dark mb-1 d-block">Update Guest Photo</label>
+                        <div className="d-flex align-items-center gap-2">
+                          <button type="button" className="btn btn-outline-primary py-2 px-3 rounded-3 fw-semibold" onClick={() => setShowGuestCamera(true)}>
+                            <i className="bi bi-camera me-1"></i> Open Webcam
+                          </button>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="form-control py-2"
+                            style={{ height: '44px' }}
+                            onChange={(e) => {
+                              if (e.target.files[0]) {
+                                setGuestPhotoFile(e.target.files[0]);
+                                setGuestPhotoPreview(URL.createObjectURL(e.target.files[0]));
+                              }
+                            }}
+                          />
+                        </div>
+                        {guestPhotoPreview && (
+                          <div className="mt-2">
+                            <img src={guestPhotoPreview} alt="Guest Preview" className="img-thumbnail rounded-3 border" style={{ height: '75px', objectFit: 'cover' }} />
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
                         <input
                           type="file"
-                          accept="image/*"
-                          className="form-control form-control-sm"
-                          onChange={(e) => {
-                            if (e.target.files[0]) {
-                              setGuestPhotoFile(e.target.files[0]);
-                              setGuestPhotoPreview(URL.createObjectURL(e.target.files[0]));
-                            }
-                          }}
+                          accept="image/*,application/pdf"
+                          className="form-control py-2"
+                          style={{ height: '44px' }}
+                          onChange={(e) => setGuestDocFile(e.target.files[0] || null)}
                         />
                       </div>
-                      {guestPhotoPreview && (
-                        <div className="mt-2">
-                          <img src={guestPhotoPreview} alt="Guest Preview" className="img-thumbnail rounded" style={{ height: '75px', objectFit: 'cover' }} />
-                        </div>
-                      )}
-                    </div>
 
-                    {/* ID Document Upload - Front Side */}
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold d-block">ID Document (Front Side)</label>
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="form-control form-control-sm"
-                        onChange={(e) => setGuestDocFile(e.target.files[0] || null)}
-                      />
-                    </div>
-
-                    {/* ID Document Upload - Back Side */}
-                    <div className="col-md-6">
-                      <label className="form-label fw-semibold d-block">ID Document (Back Side)</label>
-                      <input
-                        type="file"
-                        accept="image/*,application/pdf"
-                        className="form-control form-control-sm"
-                        onChange={(e) => setGuestDocBackFile(e.target.files[0] || null)}
-                      />
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="form-control py-2"
+                          style={{ height: '44px' }}
+                          onChange={(e) => setGuestDocBackFile(e.target.files[0] || null)}
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowEditGuestModal(false)}>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowEditGuestModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-success fw-bold" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : 'Save Profile & Documents'}
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
+                    {actionLoading ? 'Saving...' : <><i className="bi bi-person-check-fill"></i> Save Profile & Documents</>}
                   </button>
                 </div>
               </form>
@@ -1415,46 +1535,67 @@ const StayDetails = () => {
 
       {/* 4. Upload Extra Document Modal */}
       {showExtraDocModal && (
-        <div className="modal fade show d-block" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered">
-            <div className="modal-content border-0 shadow">
-              <div className="modal-header bg-dark text-white">
-                <h5 className="modal-title fw-bold">
-                  <i className="bi bi-file-earmark-plus me-2 text-primary"></i>Upload Additional Document
-                </h5>
-                <button type="button" className="btn-close btn-close-white" onClick={() => setShowExtraDocModal(false)}></button>
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '560px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-file-earmark-plus fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Upload Additional Document
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Attach supplementary statutory or reservation document files.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowExtraDocModal(false)}></button>
               </div>
+
               <form onSubmit={handleUploadExtraDoc}>
-                <div className="modal-body p-4">
-                  {actionError && <div className="alert alert-danger py-2">{actionError}</div>}
+                <div className="modal-body p-4 bg-white">
+                  {actionError && (
+                    <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
+                      <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{actionError}
+                    </div>
+                  )}
+
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">Document Title *</label>
+                    <label className="form-label small fw-semibold text-dark mb-1">Document Title *</label>
                     <input
                       type="text"
-                      className="form-control"
+                      className="form-control py-2.5"
+                      style={{ height: '46px' }}
                       required
                       placeholder="e.g. Passport Back / Company ID / Visa"
                       value={extraDocTitle}
                       onChange={(e) => setExtraDocTitle(e.target.value)}
                     />
                   </div>
+
                   <div className="mb-3">
-                    <label className="form-label fw-semibold">Select File (PDF or Image) *</label>
+                    <label className="form-label small fw-semibold text-dark mb-1">Select File (PDF or Image) *</label>
                     <input
                       type="file"
-                      className="form-control"
+                      className="form-control py-2"
+                      style={{ height: '44px' }}
                       accept="image/*,application/pdf"
                       required
                       onChange={(e) => setExtraDocFile(e.target.files[0] || null)}
                     />
                   </div>
                 </div>
-                <div className="modal-footer bg-light">
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowExtraDocModal(false)}>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowExtraDocModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary fw-bold" disabled={actionLoading}>
-                    {actionLoading ? 'Uploading...' : 'Upload Document'}
+                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
+                    {actionLoading ? 'Uploading...' : <><i className="bi bi-cloud-upload-fill"></i> Upload Document</>}
                   </button>
                 </div>
               </form>
