@@ -32,6 +32,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [docFile, setDocFile] = useState(null);
+  const [docBackFile, setDocBackFile] = useState(null);
   
   const [showCamera, setShowCamera] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -52,6 +53,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
       setPhotoFile(null);
       setPhotoPreview('');
       setDocFile(null);
+      setDocBackFile(null);
       setNameError('');
       setMobileError('');
       setAgeError('');
@@ -110,6 +112,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
       if (idNumber) formData.append('id_number', idNumber);
       if (photoFile) formData.append('photo', photoFile);
       if (docFile) formData.append('id_document', docFile);
+      if (docBackFile) formData.append('id_document_back', docBackFile);
 
       await onSubmit(formData);
       showSuccess('Additional guest added successfully.', 'Guest Added');
@@ -324,8 +327,9 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 <div> 
                   <div className="row g-3">
                     {/* Left Column: Guest Photo */}
-                    <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark mb-1 d-block">Guest Photo</label>
+                    {/* Guest Photo Row */}
+                    <div className="col-md-12 mb-3">
+                      <label className="form-label small fw-semibold text-dark mb-1 d-block">Guest Photo Snapshot</label>
                       
                       {photoPreview ? (
                         <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
@@ -364,7 +368,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                           </div>
                         </div>
                       ) : (
-                        <div className="d-flex gap-2">
+                        <div className="d-flex gap-2" style={{ maxWidth: '400px' }}>
                           <button
                             type="button"
                             className="btn btn-outline-primary fw-semibold py-2.5 px-3 rounded-3 w-50 d-flex align-items-center justify-content-center gap-1.5"
@@ -395,9 +399,9 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                       )}
                     </div>
 
-                    {/* Right Column: Upload ID Document Dropzone */}
+                    {/* ID Document (Front Side) Dropzone */}
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark mb-1 d-block">Upload ID Document</label>
+                      <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
                       
                       {docFile ? (
                         <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-2">
@@ -443,7 +447,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                           style={{ borderColor: '#cbd5e1' }}
                         >
                           <FileText size={22} className="text-primary mb-1" />
-                          <div className="fw-semibold text-dark small">Upload ID Document</div>
+                          <div className="fw-semibold text-dark small">Upload Front Side</div>
                           <div className="text-muted extra-small">Click or drag & drop JPG, PNG or PDF</div>
                           <input
                             type="file"
@@ -451,6 +455,68 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                             className="d-none"
                             onChange={(e) => {
                               if (e.target.files[0]) setDocFile(e.target.files[0]);
+                            }}
+                          />
+                        </label>
+                      )}
+                    </div>
+
+                    {/* ID Document (Back Side) Dropzone */}
+                    <div className="col-md-6">
+                      <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
+                      
+                      {docBackFile ? (
+                        <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-2">
+                          <div className="d-flex align-items-center gap-2.5 min-w-0">
+                            <div className="p-2 bg-primary-subtle text-primary rounded-2">
+                              <FileText size={20} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="fw-semibold text-dark small text-truncate" style={{ maxWidth: '140px' }}>
+                                {docBackFile.name}
+                              </div>
+                              <div className="text-muted extra-small">
+                                {(docBackFile.size / 1024).toFixed(1)} KB
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="d-flex gap-1">
+                            <label className="btn btn-sm btn-outline-primary py-1 px-2 rounded-2 extra-small m-0 cursor-pointer" title="Replace File">
+                              Replace
+                              <input
+                                type="file"
+                                accept="image/*,application/pdf"
+                                className="d-none"
+                                onChange={(e) => {
+                                  if (e.target.files[0]) setDocBackFile(e.target.files[0]);
+                                }}
+                              />
+                            </label>
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-danger py-1 px-2 rounded-2 extra-small"
+                              onClick={() => setDocBackFile(null)}
+                              title="Remove File"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <label
+                          className="border border-2 border-dashed rounded-3 p-3 text-center d-block bg-light bg-opacity-50 cursor-pointer hover-bg-light transition-all"
+                          style={{ borderColor: '#cbd5e1' }}
+                        >
+                          <FileText size={22} className="text-primary mb-1" />
+                          <div className="fw-semibold text-dark small">Upload Back Side</div>
+                          <div className="text-muted extra-small">Click or drag & drop JPG, PNG or PDF</div>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="d-none"
+                            onChange={(e) => {
+                              if (e.target.files[0]) setDocBackFile(e.target.files[0]);
                             }}
                           />
                         </label>

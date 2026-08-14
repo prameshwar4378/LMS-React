@@ -35,6 +35,7 @@ const Customers = () => {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [docFile, setDocFile] = useState(null);
+  const [docBackFile, setDocBackFile] = useState(null);
   const [showCamera, setShowCamera] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -66,15 +67,34 @@ const Customers = () => {
     }
   };
 
-  const handleOpenCreate = () => {
+  const resetForm = () => {
+    setFirstName('');
+    setMiddleName('');
+    setLastName('');
+    setMobile('');
+    setAltMobile('');
+    setEmail('');
+    setGender('Male');
+    setAddress('');
+    setCity('');
+    setState('');
+    setIdType('Aadhaar');
+    setIdNumber('');
+    setPhotoFile(null);
+    setPhotoPreview('');
+    setDocFile(null);
+    setDocBackFile(null);
     setEditingCustomer(null);
+    setFormError('');
+  };
+
+  const handleOpenCreate = () => {
     resetForm();
     setShowModal(true);
   };
 
   const handleOpenEdit = (c) => {
     setEditingCustomer(c);
-    setFormError('');
     setFirstName(c.first_name || '');
     setMiddleName(c.middle_name || '');
     setLastName(c.last_name || '');
@@ -90,6 +110,7 @@ const Customers = () => {
     setPhotoFile(null);
     setPhotoPreview(c.photo || '');
     setDocFile(null);
+    setDocBackFile(null);
     setShowModal(true);
   };
 
@@ -119,6 +140,7 @@ const Customers = () => {
 
     if (photoFile) formData.append('photo', photoFile);
     if (docFile) formData.append('id_document', docFile);
+    if (docBackFile) formData.append('id_document_back', docBackFile);
 
     try {
       if (editingCustomer) {
@@ -157,25 +179,6 @@ const Customers = () => {
         }
       },
     });
-  };
-
-  const resetForm = () => {
-    setFirstName('');
-    setMiddleName('');
-    setLastName('');
-    setMobile('');
-    setAltMobile('');
-    setEmail('');
-    setGender('Male');
-    setAddress('');
-    setCity('');
-    setState('');
-    setIdType('Aadhaar');
-    setIdNumber('');
-    setPhotoFile(null);
-    setPhotoPreview('');
-    setDocFile(null);
-    setFormError('');
   };
 
   return (
@@ -465,15 +468,27 @@ const Customers = () => {
                         )}
                       </div>
 
-                      {/* ID Document Upload */}
+                      {/* ID Document (Front Side) */}
                       <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">Statutory ID Document</label>
+                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
                         <input
                           type="file"
                           accept="image/*,application/pdf"
                           className="form-control py-2"
                           style={{ height: '44px' }}
                           onChange={(e) => setDocFile(e.target.files[0] || null)}
+                        />
+                      </div>
+
+                      {/* ID Document (Back Side) */}
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
+                        <input
+                          type="file"
+                          accept="image/*,application/pdf"
+                          className="form-control py-2"
+                          style={{ height: '44px' }}
+                          onChange={(e) => setDocBackFile(e.target.files[0] || null)}
                         />
                       </div>
                     </div>
