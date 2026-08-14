@@ -96,11 +96,6 @@ const ToastItem = ({ toast, onRemove }) => {
               <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.875rem', letterSpacing: '-0.01em' }}>
                 {toast.title}
               </h6>
-              {isPaused && (
-                <span className="badge bg-light text-muted border px-1.5 py-0.5 extra-small font-normal">
-                  Paused
-                </span>
-              )}
             </div>
             <p className="text-secondary extra-small m-0 mt-0.5" style={{ lineHeight: 1.35 }}>
               {toast.message}
