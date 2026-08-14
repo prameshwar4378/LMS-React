@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { getRoomTypesApi, createRoomTypeApi, updateRoomTypeApi, deleteRoomTypeApi } from '../api/roomApi';
 import { formatCurrency } from '../utils/formatCurrency';
+import { useNotification } from '../context/NotificationContext';
 
 const RoomTypes = () => {
+  const { showConfirm, showError, showSuccess } = useNotification();
   const [roomTypes, setRoomTypes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -76,15 +78,23 @@ const RoomTypes = () => {
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this room type?')) {
-      try {
-        await deleteRoomTypeApi(id);
-        loadRoomTypes();
-      } catch (err) {
-        alert('Cannot delete room type in use.');
-      }
-    }
+  const handleDelete = (rt) => {
+    showConfirm({
+      title: 'Delete Room Type',
+      message: `Are you sure you want to permanently DELETE room type "${rt.name}"? This action cannot be undone.`,
+      confirmText: 'Yes, Delete Room Type',
+      cancelText: 'Cancel',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteRoomTypeApi(rt.id);
+          showSuccess(`Room type "${rt.name}" deleted successfully!`, 'Deleted');
+          loadRoomTypes();
+        } catch (err) {
+          showError('Cannot delete room type in use.', 'Deletion Failed');
+        }
+      },
+    });
   };
 
   return (
@@ -151,7 +161,7 @@ const RoomTypes = () => {
                     <button className="btn btn-sm btn-outline-primary" onClick={() => handleOpenModal(rt)}>
                       <i className="bi bi-pencil me-1"></i> Edit
                     </button>
-                    <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(rt.id)}>
+                    <button className="btn btn-sm btn-outline-danger" onClick={() => handleDelete(rt)}>
                       <i className="bi bi-trash"></i>
                     </button>
                   </div>

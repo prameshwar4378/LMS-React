@@ -4,8 +4,10 @@ import StatusBadge from '../components/StatusBadge';
 import RoomCalendar from '../components/RoomCalendar';
 import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
+import { useNotification } from '../context/NotificationContext';
 
 const Rooms = () => {
+  const { showConfirm, showError, showSuccess } = useNotification();
   const [rooms, setRooms] = useState([]);
   const [roomTypes, setRoomTypes] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -59,8 +61,27 @@ const Rooms = () => {
       await updateRoomStatusApi(roomId, newStatus);
       loadData();
     } catch (err) {
-      alert('Error updating room status.');
+      showError('Error updating room status.', 'Status Update Failed');
     }
+  };
+
+  const handleDeleteRoom = (room) => {
+    showConfirm({
+      title: 'Delete Room Record',
+      message: `Are you sure you want to permanently DELETE Room ${room.room_number}? This action cannot be undone.`,
+      confirmText: 'Yes, Delete Room',
+      cancelText: 'Cancel',
+      confirmVariant: 'danger',
+      onConfirm: async () => {
+        try {
+          await deleteRoomApi(room.id);
+          showSuccess(`Room ${room.room_number} deleted successfully!`, 'Room Deleted');
+          loadData();
+        } catch (err) {
+          showError('Cannot delete room with active stays or reservations.', 'Deletion Failed');
+        }
+      },
+    });
   };
 
   const filteredRooms = rooms.filter((r) => {
