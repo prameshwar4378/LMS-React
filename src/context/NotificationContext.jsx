@@ -44,7 +44,7 @@ export const cleanErrorMessage = (err, defaultMsg = 'An unexpected error occurre
   return defaultMsg;
 };
 
-// Interactive Toast Item with Hover-to-Pause functionality
+// Compact Luxury SaaS Toast Item with Hover-to-Pause
 const ToastItem = ({ toast, onRemove }) => {
   const TOTAL_TIME = 4000;
   const [remainingTime, setRemainingTime] = useState(TOTAL_TIME);
@@ -69,35 +69,35 @@ const ToastItem = ({ toast, onRemove }) => {
 
   return (
     <div
-      className="toast-item-animated bg-white rounded-3 overflow-hidden position-relative p-3 shadow-lg"
+      className="toast-item-animated bg-white overflow-hidden position-relative mb-2.5"
       style={{
-        border: '1px solid #e2e8f0',
+        borderRadius: '14px',
+        padding: '12px 16px',
+        border: '1px solid #f1f5f9',
         borderLeft: '4px solid #10b981',
-        boxShadow: '0 14px 30px -6px rgba(15, 23, 42, 0.16), 0 4px 10px -2px rgba(15, 23, 42, 0.06)',
+        boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.12), 0 4px 6px -2px rgba(15, 23, 42, 0.04)',
       }}
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
     >
-      <div className="d-flex align-items-start justify-content-between gap-3">
-        <div className="d-flex align-items-center gap-3">
+      <div className="d-flex align-items-center justify-content-between gap-3">
+        <div className="d-flex align-items-center gap-2.5 min-w-0">
           <div
             className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
             style={{
-              width: '38px',
-              height: '38px',
+              width: '28px',
+              height: '28px',
               backgroundColor: '#ecfdf5',
-              border: '1px solid #a7f3d0',
+              border: '1px solid #d1fae5',
             }}
           >
-            <CheckCircle2 size={20} style={{ color: '#059669' }} />
+            <CheckCircle2 size={16} style={{ color: '#059669' }} />
           </div>
-          <div>
-            <div className="d-flex align-items-center gap-2">
-              <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.875rem', letterSpacing: '-0.01em' }}>
-                {toast.title}
-              </h6>
-            </div>
-            <p className="text-secondary extra-small m-0 mt-0.5" style={{ lineHeight: 1.35 }}>
+          <div className="min-w-0">
+            <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.85rem', letterSpacing: '-0.01em', lineHeight: 1.2 }}>
+              {toast.title}
+            </h6>
+            <p className="text-muted m-0 mt-0.5 text-truncate" style={{ fontSize: '0.78rem', lineHeight: 1.3, color: '#64748b' }}>
               {toast.message}
             </p>
           </div>
@@ -105,17 +105,20 @@ const ToastItem = ({ toast, onRemove }) => {
 
         <button
           type="button"
-          className="btn-close btn-close-xs text-muted shadow-none opacity-75"
+          className="btn p-0 border-0 text-secondary bg-transparent d-flex align-items-center justify-content-center flex-shrink-0 opacity-60 hover-opacity-100 transition-all"
+          style={{ width: '22px', height: '22px', borderRadius: '6px' }}
           onClick={() => onRemove(toast.id)}
           aria-label="Close"
-        ></button>
+        >
+          <X size={14} />
+        </button>
       </div>
 
-      {/* PAUSABLE SMOOTH PROGRESS BAR */}
+      {/* SUBTLE GREEN PROGRESS INDICATOR LINE */}
       <div
         className="position-absolute bottom-0 start-0"
         style={{
-          height: '3px',
+          height: '2.5px',
           width: `${(remainingTime / TOTAL_TIME) * 100}%`,
           backgroundColor: '#10b981',
           transition: isPaused ? 'none' : 'width 0.1s linear',
@@ -150,7 +153,7 @@ export const NotificationProvider = ({ children }) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // SUCCESS → Top Right Toast Message with Hover Pause
+  // SUCCESS → Top Right Toast Message
   const showSuccess = (msg, customTitle = 'Success!') => {
     const id = Date.now() + Math.random();
     const newToast = {
@@ -245,7 +248,7 @@ export const NotificationProvider = ({ children }) => {
     >
       {children}
 
-      {/* TOP-RIGHT TOAST CONTAINER (For Success Notifications) */}
+      {/* TOP-RIGHT COMPACT LUXURY TOAST CONTAINER */}
       <div className="toast-container-top-right">
         {toasts.map(toast => (
           <ToastItem key={toast.id} toast={toast} onRemove={removeToast} />
