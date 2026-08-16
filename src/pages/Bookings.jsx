@@ -77,6 +77,20 @@ const Bookings = () => {
   const checkedInBookings = bookings.filter((b) => b.status === 'CHECKED_IN').length;
   const totalAdvancePaid = bookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
 
+  // Helper to determine if a checked-in booking is overdue for checkout
+  const isBookingOverdue = (b) => {
+    if (b.status !== 'CHECKED_IN') return false;
+    const expDateStr = b.expected_checkout_date || b.check_in_date;
+    const expTimeStr = b.expected_checkout_time || '11:00';
+    if (!expDateStr) return false;
+
+    const expDateTimeStr = `${expDateStr}T${expTimeStr.length === 5 ? expTimeStr + ':00' : expTimeStr}`;
+    const expDt = new Date(expDateTimeStr);
+    const now = new Date();
+
+    return now > expDt;
+  };
+
   // Open Edit Modal
   const handleOpenEdit = async (booking) => {
     setEditBooking(booking);
@@ -362,7 +376,7 @@ const Bookings = () => {
                     <th>Guest Profile</th>
                     <th>Assigned Room</th>
                     <th>Check-In</th>
-                    <th>Check-Out</th>
+                    <th>Expected Check-Out</th>
                     <th>Agreed Rate</th>
                     <th>Advance Paid</th>
                     <th>Status</th>
@@ -378,7 +392,9 @@ const Bookings = () => {
                       </td>
                     </tr>
                   ) : (
-                    bookings.map((b) => (
+                    bookings.map((b) => {
+                      const overdue = isBookingOverdue(b);
+                      return (
                       <tr key={b.id}>
                         <td className="ps-4">
                           <span className="fw-bold text-primary">{b.booking_number}</span>
@@ -424,8 +440,19 @@ const Bookings = () => {
                         </td>
 
                         <td>
-                          <div className="fw-semibold text-dark">{formatDate(b.expected_checkout_date)}</div>
-                          <span className="text-muted extra-small">{b.expected_checkout_time || '11:00 AM'}</span>
+                          <div className={`fw-semibold ${overdue ? 'text-danger' : 'text-dark'}`}>
+                            {formatDate(b.expected_checkout_date)}
+                          </div>
+                          <div className="d-flex align-items-center gap-1">
+                            <span className={`${overdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
+                              {b.expected_checkout_time || '11:00 AM'}
+                            </span>
+                            {overdue && (
+                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
+                                Overdue
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="fw-semibold text-dark">
@@ -438,7 +465,14 @@ const Bookings = () => {
                         </td>
 
                         <td>
-                          <StatusBadge status={b.status} />
+                          <div className="d-flex flex-column align-items-start gap-1">
+                            <StatusBadge status={b.status} />
+                            {overdue && (
+                              <span className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm animate-pulse">
+                                <i className="bi bi-exclamation-circle-fill"></i> OVERDUE
+                              </span>
+                            )}
+                          </div>
                         </td>
 
                         <td className="text-end pe-4">
@@ -498,7 +532,8 @@ const Bookings = () => {
                           </div>
                         </td>
                       </tr>
-                    ))
+                    );
+                  })
                   )}
                 </tbody>
               </table>
