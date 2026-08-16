@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getBookingsApi, updateBookingApi, cancelBookingApi, deleteBookingApi } from '../api/bookingApi';
+import { getStaysApi } from '../api/stayApi';
 import { checkAvailabilityApi, getRoomsApi } from '../api/roomApi';
 import StatusBadge from '../components/StatusBadge';
 import ConfirmModal from '../components/ConfirmModal';
@@ -89,6 +90,30 @@ const Bookings = () => {
     const now = new Date();
 
     return now > expDt;
+  };
+
+  // Navigate to full stay details page
+  const handleNavigateToStayDetails = async (booking) => {
+    setViewBooking(null);
+    if (booking.stay_id) {
+      navigate(`/stays/${booking.stay_id}`);
+      return;
+    }
+    try {
+      const staysData = await getStaysApi({ booking: booking.id });
+      if (staysData && staysData.length > 0) {
+        navigate(`/stays/${staysData[0].id}`);
+        return;
+      }
+      const staysBySearch = await getStaysApi({ search: booking.booking_number || booking.room_detail?.room_number });
+      if (staysBySearch && staysBySearch.length > 0) {
+        navigate(`/stays/${staysBySearch[0].id}`);
+        return;
+      }
+      navigate('/stays');
+    } catch (err) {
+      navigate('/stays');
+    }
   };
 
   // Open Edit Modal
@@ -643,13 +668,22 @@ const Bookings = () => {
                 </div>
               </div>
 
-              <div className="modal-footer bg-light p-3">
-                {viewBooking.status === 'CONFIRMED' && (
-                  <button className="btn btn-success fw-bold" onClick={() => { setViewBooking(null); handleCheckIn(viewBooking.id); }}>
-                    <i className="bi bi-key me-1"></i>Proceed to Check-In
-                  </button>
-                )}
-                <button className="btn btn-secondary" onClick={() => setViewBooking(null)}>Close</button>
+              <div className="modal-footer bg-light p-3 d-flex justify-content-between align-items-center">
+                <button
+                  type="button"
+                  className="btn btn-primary fw-bold d-flex align-items-center gap-1.5 shadow-sm"
+                  onClick={() => handleNavigateToStayDetails(viewBooking)}
+                >
+                  <i className="bi bi-box-arrow-up-right me-1"></i> View Full Stay Details
+                </button>
+                <div className="d-flex gap-2">
+                  {viewBooking.status === 'CONFIRMED' && (
+                    <button className="btn btn-success fw-bold" onClick={() => { setViewBooking(null); handleCheckIn(viewBooking.id); }}>
+                      <i className="bi bi-key me-1"></i>Proceed to Check-In
+                    </button>
+                  )}
+                  <button className="btn btn-secondary fw-semibold" onClick={() => setViewBooking(null)}>Close</button>
+                </div>
               </div>
             </div>
           </div>
