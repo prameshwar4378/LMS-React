@@ -17,33 +17,33 @@ const NotificationModal = ({
 
   // Determine icon & styling based on status type
   let IconComponent = XCircle;
-  let iconBgClass = 'bg-danger-subtle text-danger border-danger-subtle';
+  let iconBgStyle = { backgroundColor: '#fef2f2', color: '#ef4444', borderColor: '#fecaca' };
   let btnClass = 'btn-danger';
   let defaultTitle = 'Error';
 
   if (type === 'success') {
     IconComponent = CheckCircle2;
-    iconBgClass = 'bg-success-subtle text-success border-success-subtle';
+    iconBgStyle = { backgroundColor: '#ecfdf5', color: '#059669', borderColor: '#a7f3d0' };
     btnClass = 'btn-success';
     defaultTitle = 'Success!';
   } else if (type === 'warning') {
     IconComponent = AlertTriangle;
-    iconBgClass = 'bg-warning-subtle text-warning border-warning-subtle';
+    iconBgStyle = { backgroundColor: '#fffbeb', color: '#d97706', borderColor: '#fde68a' };
     btnClass = 'btn-warning text-dark';
     defaultTitle = 'Warning!';
   } else if (type === 'info') {
     IconComponent = Info;
-    iconBgClass = 'bg-info-subtle text-info border-info-subtle';
-    btnClass = 'btn-info text-white';
+    iconBgStyle = { backgroundColor: '#eff6ff', color: '#2563eb', borderColor: '#bfdbfe' };
+    btnClass = 'btn-primary';
     defaultTitle = 'Notice';
   } else if (type === 'confirm') {
     IconComponent = HelpCircle;
-    iconBgClass = 'bg-primary-subtle text-primary border-primary-subtle';
+    iconBgStyle = { backgroundColor: '#eff6ff', color: '#3b82f6', borderColor: '#bfdbfe' };
     btnClass = confirmVariant ? `btn-${confirmVariant}` : 'btn-primary';
     defaultTitle = 'Confirm Action';
   } else if (type === 'error') {
     IconComponent = XCircle;
-    iconBgClass = 'bg-danger-subtle text-danger border-danger-subtle';
+    iconBgStyle = { backgroundColor: '#fef2f2', color: '#ef4444', borderColor: '#fecaca' };
     btnClass = 'btn-danger';
     defaultTitle = 'Action Failed';
   }
@@ -53,7 +53,7 @@ const NotificationModal = ({
   return (
     <div
       className="modal fade show d-block modal-backdrop-animated"
-      style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1070 }}
+      style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1080 }}
       tabIndex="-1"
       onClick={onClose}
     >
@@ -64,25 +64,30 @@ const NotificationModal = ({
       >
         <div
           className="modal-content border-0 shadow-lg text-center p-4 modal-content-animated"
-          style={{ borderRadius: '20px', backgroundColor: '#ffffff' }}
+          style={{ borderRadius: '22px', backgroundColor: '#ffffff' }}
         >
           {/* Status Icon Badge */}
-          <div className="d-flex justify-content-center mb-3">
+          <div className="d-flex justify-content-center mb-3 mt-1">
             <div
-              className={`rounded-circle d-flex align-items-center justify-content-center border modal-icon-animated ${iconBgClass}`}
-              style={{ width: '76px', height: '76px', borderWidth: '2px' }}
+              className="rounded-circle d-flex align-items-center justify-content-center border modal-icon-animated"
+              style={{
+                width: '76px',
+                height: '76px',
+                borderWidth: '2px',
+                ...iconBgStyle
+              }}
             >
-              <IconComponent size={40} strokeWidth={2.2} />
+              <IconComponent size={42} strokeWidth={2.2} />
             </div>
           </div>
 
-          {/* Title */}
-          <h4 className="fw-bold text-dark mb-2" style={{ letterSpacing: '-0.02em' }}>
+          {/* Dynamic Title */}
+          <h4 className="fw-bold text-dark mb-2" style={{ letterSpacing: '-0.02em', fontSize: '1.3rem' }}>
             {modalTitle}
           </h4>
 
-          {/* Short & Meaningful Message */}
-          <p className="text-secondary mb-4 px-2" style={{ fontSize: '0.95rem', lineHeight: '1.5' }}>
+          {/* Dynamic Message */}
+          <p className="text-secondary mb-4 px-2" style={{ fontSize: '0.95rem', lineHeight: '1.5', color: '#64748b' }}>
             {message}
           </p>
 
@@ -93,6 +98,7 @@ const NotificationModal = ({
                 <button
                   type="button"
                   className="btn btn-light border fw-semibold px-4 py-2.5 rounded-3 w-50"
+                  style={{ height: '46px' }}
                   onClick={onCancel || onClose}
                 >
                   {cancelText}
@@ -100,6 +106,7 @@ const NotificationModal = ({
                 <button
                   type="button"
                   className={`btn ${btnClass} fw-bold px-4 py-2.5 rounded-3 w-50 shadow-sm`}
+                  style={{ height: '46px' }}
                   onClick={onConfirm}
                 >
                   {confirmText}
@@ -109,7 +116,7 @@ const NotificationModal = ({
               <button
                 type="button"
                 className={`btn ${btnClass} fw-bold px-5 py-2.5 rounded-3 shadow-sm`}
-                style={{ minWidth: '130px' }}
+                style={{ minWidth: '140px', height: '46px' }}
                 onClick={onClose}
               >
                 {confirmText}

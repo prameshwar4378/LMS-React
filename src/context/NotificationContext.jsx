@@ -129,7 +129,7 @@ const ToastItem = ({ toast, onRemove }) => {
 };
 
 export const NotificationProvider = ({ children }) => {
-  // Centered Modal State (Used ONLY for Warning, Error, Info, and Confirmations)
+  // Centered Modal State (Used for Success, Warning, Error, Info, and Confirmations)
   const [modalState, setModalState] = useState({
     show: false,
     type: 'error',
@@ -142,7 +142,7 @@ export const NotificationProvider = ({ children }) => {
     onCancel: null,
   });
 
-  // Top-Right Toast Notifications State (Used ONLY for Success messages)
+  // Top-Right Toast Notifications State
   const [toasts, setToasts] = useState([]);
 
   const closeModal = () => {
@@ -153,13 +153,24 @@ export const NotificationProvider = ({ children }) => {
     setToasts(prev => prev.filter(t => t.id !== id));
   };
 
-  // SUCCESS → Top Right Toast Message
+  // SUCCESS → Centered Modal Dialogue with Green Success Tick + Top-Right Toast
   const showSuccess = (msg, customTitle = 'Success!') => {
+    const text = typeof msg === 'object' ? cleanErrorMessage(msg) : msg;
+    setModalState({
+      show: true,
+      type: 'success',
+      title: customTitle,
+      message: text || 'Operation completed successfully.',
+      confirmText: 'OK',
+      onConfirm: closeModal,
+      onCancel: closeModal,
+    });
+
     const id = Date.now() + Math.random();
     const newToast = {
       id,
       title: customTitle,
-      message: msg || 'Operation completed successfully.',
+      message: text || 'Operation completed successfully.',
     };
     setToasts(prev => [...prev, newToast]);
   };
@@ -255,7 +266,7 @@ export const NotificationProvider = ({ children }) => {
         ))}
       </div>
 
-      {/* CENTERED MODAL DIALOGUE (For Warning, Error, Info, & Confirmations) */}
+      {/* CENTERED MODAL DIALOGUE (For Success, Warning, Error, Info, & Confirmations) */}
       <NotificationModal
         show={modalState.show}
         type={modalState.type}
