@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { getSettingsApi, updateSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
+import PageLoader from '../components/PageLoader';
 
 const Settings = () => {
   const { showSuccess, showError } = useNotification();
@@ -45,11 +46,7 @@ const Settings = () => {
   };
 
   if (loading) {
-    return (
-      <div className="text-center py-5">
-        <div className="spinner-border text-primary" role="status"></div>
-      </div>
-    );
+    return <PageLoader fullScreen={false} message="Loading System Settings & Configuration..." />;
   }
 
   return (
