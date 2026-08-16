@@ -509,8 +509,49 @@ const StayDetails = () => {
   const bill = stay.bill_summary || {};
   const cust = stay.primary_customer_detail || {};
 
+  const isStayOverdue = () => {
+    if (!stay || stay.status !== 'CHECKED_IN') return false;
+    const expDateStr = stay.expected_checkout_date || stay.check_in_date;
+    const expTimeStr = stay.expected_checkout_time || '11:00';
+    if (!expDateStr) return false;
+
+    const expDateTimeStr = `${expDateStr}T${expTimeStr.length === 5 ? expTimeStr + ':00' : expTimeStr}`;
+    const expDt = new Date(expDateTimeStr);
+    const now = new Date();
+
+    return now > expDt;
+  };
+  const isOverdue = isStayOverdue();
+
   return (
     <div>
+      {/* Overdue Warning Alert Banner */}
+      {isOverdue && (
+        <div className="alert alert-danger border-danger d-flex align-items-center justify-content-between gap-3 shadow-sm mb-4" style={{ borderRadius: '12px' }}>
+          <div className="d-flex align-items-center gap-3">
+            <div className="bg-danger text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '44px', height: '44px' }}>
+              <i className="bi bi-clock-history fs-4"></i>
+            </div>
+            <div>
+              <h6 className="fw-bold text-danger mb-0">Stay Checkout is Overdue!</h6>
+              <span className="small text-secondary">
+                The expected checkout datetime for Room <strong>{stay.room_detail?.room_number}</strong> ({formatDate(stay.expected_checkout_date)} @ {stay.expected_checkout_time?.substring(0, 5) || '11:00'}) has passed. Please proceed to checkout or extend stay.
+              </span>
+            </div>
+          </div>
+          <div className="d-flex gap-2">
+            {canEdit && (
+              <button className="btn btn-sm btn-outline-danger fw-bold shadow-sm" onClick={openEditDatesModal}>
+                <i className="bi bi-calendar-plus me-1"></i> Extend Stay
+              </button>
+            )}
+            <Link to={`/checkout/${stay.id}`} className="btn btn-sm btn-danger fw-bold shadow-sm">
+              <i className="bi bi-box-arrow-right me-1"></i> Proceed to Checkout
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Role-Aware & Lock State Banners for Completed Stays */}
       {isCompleted && (
         <div className={`alert ${adminOverrideUnlocked ? 'alert-warning border-warning' : 'alert-secondary border-secondary'} d-flex align-items-center justify-content-between gap-3 shadow-sm mb-4`} style={{ borderRadius: '12px' }}>
@@ -556,6 +597,11 @@ const StayDetails = () => {
                   Stay #{stay.stay_number}
                 </h4>
                 <StatusBadge status={stay.status} />
+                {isOverdue && (
+                  <span className="badge bg-danger text-white fs-6 px-3 py-2 d-inline-flex align-items-center gap-1.5 shadow-sm animate-pulse" style={{ borderRadius: '8px' }}>
+                    <i className="bi bi-exclamation-triangle-fill"></i> OVERDUE
+                  </span>
+                )}
               </div>
               <div className="text-muted small">
                 <i className="bi bi-person-fill me-1 text-primary"></i>
@@ -658,9 +704,16 @@ const StayDetails = () => {
                     </div>
                   </div>
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Expected / Actual Check-Out</div>
-                      <div className="fw-bold text-dark fs-6 mt-1">
+                    <div className={`p-3 rounded border ${isOverdue ? 'bg-danger-subtle border-danger' : 'bg-light'}`}>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Expected / Actual Check-Out</div>
+                        {isOverdue && (
+                          <span className="badge bg-danger text-white extra-small fw-bold px-2 py-0.5 shadow-sm">
+                            <i className="bi bi-clock-history me-1"></i> OVERDUE
+                          </span>
+                        )}
+                      </div>
+                      <div className={`fw-bold fs-6 ${isOverdue ? 'text-danger' : 'text-dark'}`}>
                         <i className="bi bi-calendar-check me-2 text-danger"></i>
                         {formatDate(stay.actual_checkout_date || stay.expected_checkout_date)} @ {(stay.actual_checkout_time || stay.expected_checkout_time)?.substring(0, 5) || '11:00'}
                       </div>
