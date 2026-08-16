@@ -48,6 +48,12 @@ export const addStayGuestApi = async (formData) => {
   return res.data;
 };
 
+export const updateStayGuestApi = async (id, formData) => {
+  const headers = formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {};
+  const res = await api.patch(`/stay-guests/${id}/`, formData, { headers });
+  return res.data;
+};
+
 export const deleteStayGuestApi = async (id) => {
   const res = await api.delete(`/stay-guests/${id}/`);
   return res.data;

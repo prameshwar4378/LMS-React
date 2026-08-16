@@ -18,7 +18,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 
-const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
+const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }) => {
   const { showSuccess, showError } = useNotification();
   const nameInputRef = useRef(null);
 
@@ -43,17 +43,31 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
   // Auto-focus on Full Name field when modal opens
   useEffect(() => {
     if (show) {
-      setGuestName('');
-      setAge('');
-      setGender('Male');
-      setMobile('');
-      setRelationship('Spouse');
-      setIdType('Aadhaar');
-      setIdNumber('');
-      setPhotoFile(null);
-      setPhotoPreview('');
-      setDocFile(null);
-      setDocBackFile(null);
+      if (editingGuest) {
+        setGuestName(editingGuest.guest_name || '');
+        setAge(editingGuest.age || '');
+        setGender(editingGuest.gender || 'Male');
+        setMobile(editingGuest.mobile || '');
+        setRelationship(editingGuest.relationship || 'Spouse');
+        setIdType(editingGuest.id_type || 'Aadhaar');
+        setIdNumber(editingGuest.id_number || '');
+        setPhotoFile(null);
+        setPhotoPreview(editingGuest.photo || '');
+        setDocFile(null);
+        setDocBackFile(null);
+      } else {
+        setGuestName('');
+        setAge('');
+        setGender('Male');
+        setMobile('');
+        setRelationship('Spouse');
+        setIdType('Aadhaar');
+        setIdNumber('');
+        setPhotoFile(null);
+        setPhotoPreview('');
+        setDocFile(null);
+        setDocBackFile(null);
+      }
       setNameError('');
       setMobileError('');
       setAgeError('');
@@ -65,7 +79,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
         }
       }, 150);
     }
-  }, [show]);
+  }, [show, editingGuest]);
 
   if (!show) return null;
 
@@ -114,12 +128,22 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
       if (docFile) formData.append('id_document', docFile);
       if (docBackFile) formData.append('id_document_back', docBackFile);
 
-      await onSubmit(formData);
-      showSuccess('Additional guest added successfully.', 'Guest Added');
+      await onSubmit(formData, editingGuest?.id);
+      showSuccess(
+        editingGuest
+          ? `Guest details for '${guestName.trim()}' updated successfully.`
+          : 'Additional guest added successfully.',
+        editingGuest ? 'Guest Updated' : 'Guest Added'
+      );
       onClose();
     } catch (err) {
       console.error(err);
-      showError('Error adding additional guest to roster.', 'Failed');
+      showError(
+        editingGuest
+          ? 'Error updating additional guest details.'
+          : 'Error adding additional guest to roster.',
+        'Failed'
+      );
     } finally {
       setSubmitting(false);
     }
@@ -146,10 +170,12 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 </div>
                 <div>
                   <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
-                    Add Additional Guest
+                    {editingGuest ? 'Edit Additional Guest Details' : 'Add Additional Guest'}
                   </h5>
                   <span className="text-secondary extra-small">
-                    Enter guest details and verify identification for this stay.
+                    {editingGuest
+                      ? 'Update personal information, gender/age, mobile, and statutory ID document files.'
+                      : 'Enter guest details and verify identification for this stay.'}
                   </span>
                 </div>
               </div>
@@ -545,11 +571,11 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId }) => {
                   {submitting ? (
                     <>
                       <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                      Adding Guest...
+                      {editingGuest ? 'Saving Profile...' : 'Adding Guest...'}
                     </>
                   ) : (
                     <>
-                      <UserPlus size={18} /> Add Guest
+                      <UserPlus size={18} /> {editingGuest ? 'Save Guest Profile' : 'Add Guest'}
                     </>
                   )}
                 </button>

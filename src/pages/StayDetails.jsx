@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
-import { getStayByIdApi, updateStayApi, addStayGuestApi, deleteStayGuestApi } from '../api/stayApi';
+import { getStayByIdApi, updateStayApi, addStayGuestApi, updateStayGuestApi, deleteStayGuestApi } from '../api/stayApi';
 import {
   updateCustomerApi,
   uploadCustomerDocumentApi,
@@ -39,6 +39,7 @@ const StayDetails = () => {
 
   // Modals
   const [showGuestModal, setShowGuestModal] = useState(false);
+  const [editingAdditionalGuest, setEditingAdditionalGuest] = useState(null);
   const [showChargeModal, setShowChargeModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [editPayment, setEditPayment] = useState(null);
@@ -350,14 +351,33 @@ const StayDetails = () => {
     });
   };
 
-  const handleAddGuest = async (formData) => {
+  const openAddGuestModal = () => {
+    setEditingAdditionalGuest(null);
+    setShowGuestModal(true);
+  };
+
+  const openEditAdditionalGuestModal = (guest) => {
+    setEditingAdditionalGuest(guest);
+    setShowGuestModal(true);
+  };
+
+  const handleAddOrUpdateGuest = async (formData, guestId) => {
     if (!canEdit) return;
     try {
-      await addStayGuestApi(formData);
+      if (guestId || (editingAdditionalGuest && editingAdditionalGuest.id)) {
+        const targetId = guestId || editingAdditionalGuest.id;
+        await updateStayGuestApi(targetId, formData);
+        showSuccess(`Guest '${formData.get('guest_name') || 'details'}' updated successfully.`, 'Guest Updated');
+      } else {
+        await addStayGuestApi(formData);
+        showSuccess('Additional guest added successfully.', 'Guest Added');
+      }
       setShowGuestModal(false);
+      setEditingAdditionalGuest(null);
       loadStayDetails();
     } catch (err) {
-      alert('Error adding guest.');
+      console.error(err);
+      showError('Error saving guest details.', 'Operation Failed');
     }
   };
 
@@ -758,7 +778,7 @@ const StayDetails = () => {
           <div className="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
             <h5 className="m-0 fw-bold text-dark"><i className="bi bi-people-fill me-2 text-primary"></i>Guest Roster</h5>
             {canEdit && (
-              <button className="btn btn-primary fw-bold" onClick={() => setShowGuestModal(true)}>
+              <button className="btn btn-primary fw-bold" onClick={openAddGuestModal}>
                 <i className="bi bi-person-plus-fill me-1"></i> Add Additional Guest
               </button>
             )}
@@ -805,9 +825,22 @@ const StayDetails = () => {
                       <td>{g.id_type ? `${g.id_type}: ${g.id_number || ''}` : 'N/A'}</td>
                       <td className="text-center">
                         {canEdit ? (
-                          <button className="btn btn-sm btn-outline-danger" onClick={() => requestDeleteGuest(g.id, g.guest_name)}>
-                            <i className="bi bi-trash"></i> Remove
-                          </button>
+                          <div className="d-flex justify-content-center gap-1.5">
+                            <button
+                              className="btn btn-sm btn-outline-primary"
+                              onClick={() => openEditAdditionalGuestModal(g)}
+                              title="Edit Guest Details"
+                            >
+                              <i className="bi bi-pencil me-1"></i> Edit Profile
+                            </button>
+                            <button
+                              className="btn btn-sm btn-outline-danger"
+                              onClick={() => requestDeleteGuest(g.id, g.guest_name)}
+                              title="Remove Guest"
+                            >
+                              <i className="bi bi-trash me-1"></i> Remove
+                            </button>
+                          </div>
                         ) : (
                           <span className="badge bg-light text-muted border">Locked</span>
                         )}
@@ -1613,7 +1646,13 @@ const StayDetails = () => {
       {/* Shared Modals */}
       {stay && (
         <>
-          <GuestFormModal show={showGuestModal} onClose={() => setShowGuestModal(false)} onSubmit={handleAddGuest} stayId={stay.id} />
+          <GuestFormModal
+            show={showGuestModal}
+            onClose={() => { setShowGuestModal(false); setEditingAdditionalGuest(null); }}
+            onSubmit={handleAddOrUpdateGuest}
+            stayId={stay.id}
+            editingGuest={editingAdditionalGuest}
+          />
           <ChargeFormModal show={showChargeModal} onClose={() => setShowChargeModal(false)} onSubmit={handleAddCharge} stayId={stay.id} />
           <PaymentFormModal
             show={showPaymentModal}
