@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getPaymentsApi } from '../api/billingApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
+import PageLoader from '../components/PageLoader';
 
 const Payments = () => {
   const [payments, setPayments] = useState([]);
@@ -33,9 +34,7 @@ const Payments = () => {
       </div>
 
       {loading ? (
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status"></div>
-        </div>
+        <PageLoader fullScreen={false} message="Loading Payment Logs..." />
       ) : (
         <div className="card border-0 shadow-sm">
           <div className="card-body p-0">

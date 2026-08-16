@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getRevenueReportApi, getOccupancyReportApi, getGuestRegisterReportApi } from '../api/reportApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
+import PageLoader from '../components/PageLoader';
 
 const Reports = () => {
   const [activeReport, setActiveReport] = useState('revenue');
@@ -97,9 +98,7 @@ const Reports = () => {
       </ul>
 
       {loading ? (
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status"></div>
-        </div>
+        <PageLoader fullScreen={false} message="Generating Report Analytics..." />
       ) : activeReport === 'revenue' && revenueData ? (
         <div>
           {/* Filters */}

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { getRoomTypesApi, createRoomTypeApi, updateRoomTypeApi, deleteRoomTypeApi } from '../api/roomApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
+import PageLoader from '../components/PageLoader';
 
 const RoomTypes = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
@@ -110,9 +111,7 @@ const RoomTypes = () => {
       </div>
 
       {loading ? (
-        <div className="text-center py-5">
-          <div className="spinner-border text-primary" role="status"></div>
-        </div>
+        <PageLoader fullScreen={false} message="Loading Room Categories..." />
       ) : (
         <div className="row g-4">
           {roomTypes.map((rt) => (

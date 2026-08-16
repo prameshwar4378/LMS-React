@@ -5,6 +5,7 @@ import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
+import PageLoader from '../components/PageLoader';
 
 const Checkout = () => {
   const { id } = useParams();

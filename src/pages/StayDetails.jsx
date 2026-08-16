@@ -18,6 +18,7 @@ import ChargeFormModal from '../components/ChargeFormModal';
 import PaymentFormModal from '../components/PaymentFormModal';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import ConfirmModal from '../components/ConfirmModal';
+import PageLoader from '../components/PageLoader';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
@@ -478,12 +479,7 @@ const StayDetails = () => {
   };
 
   if (loading) {
-    return (
-      <div className="text-center py-5">
-        <div className="spinner-border text-primary" role="status"></div>
-        <div className="mt-2 text-muted small">Loading Stay Management Dashboard...</div>
-      </div>
-    );
+    return <PageLoader fullScreen={false} message="Loading Stay Management Dashboard..." />;
   }
 
   if (!stay) {
