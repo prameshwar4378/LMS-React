@@ -11,7 +11,7 @@ import { useAuth } from '../context/AuthContext';
 
 const Rooms = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
-  const { user, isReceptionist, isHotelOwner, isSuperUser, hasPermission } = useAuth();
+  const { user, isReceptionist, isHotelOwner, isSuperUser, hasPermission, selectedProperty } = useAuth();
   const navigate = useNavigate();
 
   const [rooms, setRooms] = useState([]);
@@ -106,7 +106,7 @@ const Rooms = () => {
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [selectedProperty?.id]);
 
   const maxRoomsAllowed = subscriptionData?.max_rooms_allowed ?? 10;
   const currentRoomsCount = rooms.length;
@@ -118,16 +118,12 @@ const Rooms = () => {
       showError('Your staff role is not authorized to create new rooms. Please contact the Hotel Owner or Manager.', 'Access Denied');
       return;
     }
-    if (isRoomLimitReached) {
-      showError(
-        `Your active plan (${subscriptionData?.plan_name || 'Starter Plan'}) allows a maximum of ${maxRoomsAllowed} rooms. All ${currentRoomsCount} slots are in use. Please upgrade your subscription to add more rooms.`,
-        'Plan Room Limit Reached'
-      );
-      return;
-    }
     setModalError(null);
     setRoomNumber('');
     setDescription('');
+    if (roomTypes.length > 0 && !roomTypeId) {
+      setRoomTypeId(roomTypes[0].id);
+    }
     setShowModal(true);
   };
 
@@ -152,12 +148,17 @@ const Rooms = () => {
       return;
     }
 
-    // Client-side quick check against existing room numbers in current property
-    const existing = rooms.find(
-      (r) => r.room_number.toString().trim().toLowerCase() === cleanNum.toLowerCase()
-    );
+    // Client-side quick check against existing room numbers strictly in current branch / property
+    const targetPropId = selectedProperty?.id || user?.property;
+    const existing = rooms.find((r) => {
+      if (targetPropId && r.property && String(r.property) !== String(targetPropId)) {
+        return false;
+      }
+      return r.room_number?.toString().trim().toLowerCase() === cleanNum.toLowerCase();
+    });
     if (existing) {
-      const msg = `Room number '${cleanNum}' already exists in this property. Please specify a unique room number.`;
+      const branchName = selectedProperty?.name ? `branch '${selectedProperty.name}'` : 'this branch';
+      const msg = `Room number '${cleanNum}' already exists in ${branchName}. Please specify a unique room number.`;
       setModalError(msg);
       showError(msg, 'Room Number Already Exists');
       return;
@@ -171,6 +172,7 @@ const Rooms = () => {
         room_type: roomTypeId,
         floor: floor,
         description: description,
+        ...(targetPropId ? { property: targetPropId } : {})
       });
       setShowModal(false);
       setRoomNumber('');
