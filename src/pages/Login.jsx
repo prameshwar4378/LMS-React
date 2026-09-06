@@ -13,8 +13,17 @@ const Login = () => {
     e.preventDefault();
     setError('');
     try {
-      await login(username, password);
-      navigate('/dashboard');
+      const loggedUser = await login(username, password);
+      const isSuper = Boolean(
+        loggedUser && (loggedUser.is_superuser || loggedUser.role === 'SUPERUSER' || (loggedUser.role === 'SUPER_ADMIN' && !loggedUser.property && !loggedUser.property_code))
+      );
+      if (isSuper) {
+        navigate('/platform');
+      } else if (loggedUser?.subscription?.is_suspended || loggedUser?.subscription?.is_active === false || loggedUser?.subscription?.is_expired) {
+        navigate('/subscription');
+      } else {
+        navigate('/dashboard');
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Invalid username or password.');
     }

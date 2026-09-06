@@ -55,3 +55,9 @@ export const getTomorrowDateString = () => {
   d.setDate(d.getDate() + 1);
   return d.toISOString().split('T')[0];
 };
+
+export const getCurrentTimeString = () => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+};
+

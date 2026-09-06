@@ -9,7 +9,7 @@ const ProtectedRoute = ({ allowedRoles }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(user?.role)) {
+  if (allowedRoles && !user?.is_superuser && !allowedRoles.includes(user?.role)) {
     return (
       <div className="alert alert-danger m-4">
         <h4>Access Denied</h4>

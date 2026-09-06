@@ -138,7 +138,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
       (item) => item.name.toLowerCase() === trimmedName.toLowerCase()
     );
     if (exists) {
-      setCatError('Category already exists.');
+      setCatError('Category already exists in this hotel.');
       return;
     }
 

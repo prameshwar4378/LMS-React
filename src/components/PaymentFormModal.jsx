@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Clock, Calendar, RefreshCw } from 'lucide-react';
 import { formatDate } from '../utils/dateUtils';
 
-const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0, initialData = null }) => {
+const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0, initialData = null, customerWalletCredit = 0 }) => {
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionRef, setTransactionRef] = useState('');
@@ -68,6 +68,7 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
       payment_method: paymentMethod,
       transaction_reference: transactionRef,
       notes: notes,
+      use_wallet_credit: paymentMethod === 'WALLET'
     };
 
     if (paymentDate) {
@@ -79,6 +80,7 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
   };
 
   const isEdit = Boolean(initialData);
+  const walletCredit = parseFloat(customerWalletCredit || 0);
 
   return (
     <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
@@ -95,6 +97,26 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
 
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 bg-white">
+              {!isEdit && walletCredit > 0 && (
+                <div className="alert alert-success border-success bg-success-subtle py-2.5 px-3 mb-3 rounded-3 d-flex justify-content-between align-items-center">
+                  <div>
+                    <div className="extra-small fw-bold text-uppercase text-success">Guest Wallet Credit Available</div>
+                    <div className="fs-5 fw-bold text-success">₹{walletCredit.toFixed(2)}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-success fw-bold shadow-xs px-3"
+                    onClick={() => {
+                      setPaymentMethod('WALLET');
+                      setAmount(Math.min(walletCredit, currentBalance > 0 ? currentBalance : walletCredit).toString());
+                      setTransactionRef('CUSTOMER_WALLET_CREDIT');
+                    }}
+                  >
+                    <i className="bi bi-wallet-fill me-1"></i> Use Wallet Credit
+                  </button>
+                </div>
+              )}
+
               {!isEdit && currentBalance > 0 && (
                 <div className="alert alert-info border-0 bg-info-subtle text-info-emphasis py-2.5 px-3 mb-4 rounded-3 d-flex justify-content-between align-items-center">
                   <span className="small font-medium">Outstanding Balance:</span>
@@ -167,6 +189,9 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
                   <option value="UPI">UPI / GPay / PhonePe / QR</option>
                   <option value="CARD">Credit / Debit Card</option>
                   <option value="BANK_TRANSFER">Bank Transfer / NEFT</option>
+                  {walletCredit > 0 && (
+                    <option value="WALLET">Guest Wallet Credit (₹{walletCredit.toFixed(2)})</option>
+                  )}
                   <option value="OTHER">Other Method</option>
                 </select>
               </div>

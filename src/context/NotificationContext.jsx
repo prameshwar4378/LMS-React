@@ -57,7 +57,7 @@ const ToastItem = ({ toast, onRemove }) => {
       setRemainingTime((prev) => {
         if (prev <= 100) {
           clearInterval(interval);
-          onRemove(toast.id);
+          setTimeout(() => onRemove(toast.id), 0);
           return 0;
         }
         return prev - 100;

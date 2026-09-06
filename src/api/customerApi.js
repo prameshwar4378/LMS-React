@@ -68,3 +68,18 @@ export const deleteCustomerApi = async (id) => {
   const res = await api.delete(`/customers/${id}/`);
   return res.data;
 };
+
+export const recordCustomerPaymentApi = async (customerId, paymentData) => {
+  const res = await api.post(`/customers/${customerId}/record_payment/`, paymentData);
+  return res.data;
+};
+
+export const refundCustomerCreditApi = async (customerId, refundData) => {
+  const res = await api.post(`/customers/${customerId}/refund_credit/`, refundData);
+  return res.data;
+};
+
+export const getCustomerWalletsApi = async (params = {}) => {
+  const res = await api.get('/customers/wallets/', { params });
+  return res.data;
+};

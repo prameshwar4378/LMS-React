@@ -10,3 +10,9 @@ export const updateSettingsApi = async (data) => {
   const res = await api.post('/settings/', data, { headers });
   return res.data;
 };
+
+export const getHotelBranchesApi = async () => {
+  const res = await api.get('/settings/branches/');
+  return res.data;
+};
+

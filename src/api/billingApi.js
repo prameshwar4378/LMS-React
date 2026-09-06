@@ -30,9 +30,13 @@ export const deleteExtraChargeApi = async (id) => {
   return res.data;
 };
 
-export const getPaymentsApi = async (stayId = '') => {
-  const url = stayId ? `/payments/?stay=${stayId}` : '/payments/';
-  const res = await api.get(url);
+export const getPaymentsApi = async (params = {}) => {
+  if (typeof params === 'string') {
+    const url = params ? `/payments/?stay=${params}` : '/payments/';
+    const res = await api.get(url);
+    return res.data;
+  }
+  const res = await api.get('/payments/', { params });
   return res.data;
 };
 

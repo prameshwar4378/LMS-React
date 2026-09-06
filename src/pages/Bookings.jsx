@@ -12,13 +12,14 @@ import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
 const Bookings = () => {
-  const { user } = useAuth();
+  const { user, hasPermission, getPermissionLimit } = useAuth();
   const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
+
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('CONFIRMED');
   const [search, setSearch] = useState('');
 
   // Selected Booking for View Details Modal
@@ -116,16 +117,28 @@ const Bookings = () => {
     }
   };
 
+  // Helper to ensure HH:MM time format
+  const formatTimeHHMM = (t) => {
+    if (!t) return '12:00';
+    const parts = String(t).split(':');
+    return `${parts[0].padStart(2, '0')}:${(parts[1] || '00').padStart(2, '0')}`;
+  };
+
   // Open Edit Modal
   const handleOpenEdit = async (booking) => {
     setEditBooking(booking);
     setEditError('');
+
+    const inTime = formatTimeHHMM(booking.check_in_time);
+    const outTime = formatTimeHHMM(booking.expected_checkout_time);
+    const assignedRoomId = booking.room_detail?.id || booking.room;
+
     setEditForm({
-      room: booking.room,
+      room: assignedRoomId ? String(assignedRoomId) : '',
       check_in_date: booking.check_in_date,
-      check_in_time: booking.check_in_time || '12:00',
+      check_in_time: inTime,
       expected_checkout_date: booking.expected_checkout_date,
-      expected_checkout_time: booking.expected_checkout_time || '11:00',
+      expected_checkout_time: outTime,
       adults: booking.adults || 1,
       children: booking.children || 0,
       room_rate: booking.room_rate || '',
@@ -133,25 +146,64 @@ const Bookings = () => {
       notes: booking.notes || '',
     });
 
-    // Fetch available rooms for this booking's dates
-    fetchRoomsForEdit(booking.check_in_date, booking.check_in_time || '12:00', booking.expected_checkout_date, booking.expected_checkout_time || '11:00', booking.room_detail);
+    // Seed immediately with current room so room is ALWAYS selected and visible right away
+    if (booking.room_detail) {
+      setEditAvailableRooms([booking.room_detail]);
+    }
+
+    // Fetch available rooms for this booking's dates (excluding this booking so its own room is available)
+    fetchRoomsForEdit(
+      booking.check_in_date,
+      inTime,
+      booking.expected_checkout_date,
+      outTime,
+      booking.room_detail,
+      booking.id
+    );
   };
 
-  const fetchRoomsForEdit = async (inDate, inTime, outDate, outTime, currentRoomDetail) => {
+  const fetchRoomsForEdit = async (inDate, inTime, outDate, outTime, currentRoomDetail, bookingId) => {
     if (!inDate || !outDate) return;
     setEditLoadingRooms(true);
     try {
-      const inFull = `${inDate}T${inTime || '12:00'}:00`;
-      const outFull = `${outDate}T${outTime || '11:00'}:00`;
-      const res = await checkAvailabilityApi(inFull, outFull);
-      let roomsList = res.rooms || [];
-      // Ensure currently assigned room is included in dropdown even if booked by this reservation
-      if (currentRoomDetail && !roomsList.some((r) => r.id === currentRoomDetail.id)) {
+      const cleanInTime = formatTimeHHMM(inTime);
+      const cleanOutTime = formatTimeHHMM(outTime);
+      const inFull = `${inDate}T${cleanInTime}:00`;
+      const outFull = `${outDate}T${cleanOutTime}:00`;
+      const res = await checkAvailabilityApi(inFull, outFull, '', bookingId || null);
+      let roomsList = res?.rooms || [];
+
+      // Ensure currently assigned room is included in dropdown
+      if (currentRoomDetail && !roomsList.some((r) => String(r.id) === String(currentRoomDetail.id))) {
         roomsList = [currentRoomDetail, ...roomsList];
       }
+
+      // If availability returns no other rooms, fallback to getRoomsApi() so staff can still reassign
+      if (roomsList.length === 0) {
+        try {
+          const allRooms = await getRoomsApi();
+          roomsList = allRooms || [];
+        } catch (e) {
+          if (currentRoomDetail) roomsList = [currentRoomDetail];
+        }
+      }
+
       setEditAvailableRooms(roomsList);
+
+      // Auto-assign room if editForm.room is not set or not in list
+      setEditForm((prev) => {
+        if (!prev.room && currentRoomDetail) {
+          return { ...prev, room: String(currentRoomDetail.id) };
+        } else if (!prev.room && roomsList.length > 0) {
+          return { ...prev, room: String(roomsList[0].id) };
+        }
+        return prev;
+      });
     } catch (err) {
-      console.error(err);
+      console.error('Error checking room availability for edit:', err);
+      if (currentRoomDetail) {
+        setEditAvailableRooms([currentRoomDetail]);
+      }
     } finally {
       setEditLoadingRooms(false);
     }
@@ -169,7 +221,8 @@ const Bookings = () => {
         updated.check_in_time,
         updated.expected_checkout_date,
         updated.expected_checkout_time,
-        editBooking?.room_detail
+        editBooking?.room_detail,
+        editBooking?.id
       );
     }
   };
@@ -267,10 +320,13 @@ const Bookings = () => {
           </h3>
           <span className="text-muted small">Manage reservation bookings, edit room allocations, process check-ins & advance deposits</span>
         </div>
-        <Link to="/bookings/create" className="btn btn-primary fw-bold shadow-sm px-4 py-2">
-          <i className="bi bi-calendar-plus-fill me-2"></i>New Advance Booking
-        </Link>
+        {hasPermission('bookings', 'can_create') && (
+          <Link to="/bookings/create" className="btn btn-primary fw-bold shadow-sm px-4 py-2">
+            <i className="bi bi-calendar-plus-fill me-2"></i>New Advance Booking
+          </Link>
+        )}
       </div>
+
 
       {/* Analytics KPI Summary Cards */}
       <div className="row g-3 mb-4">
@@ -512,7 +568,7 @@ const Bookings = () => {
                             </button>
 
                             {/* Edit Booking */}
-                            {b.status === 'CONFIRMED' && (
+                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
                               <button
                                 className="btn btn-outline-primary"
                                 title="Edit Booking"
@@ -523,7 +579,7 @@ const Bookings = () => {
                             )}
 
                             {/* Check-In */}
-                            {b.status === 'CONFIRMED' && (
+                            {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
                               <button
                                 className="btn btn-success fw-semibold"
                                 title="Process Check-In"
@@ -534,7 +590,7 @@ const Bookings = () => {
                             )}
 
                             {/* Cancel */}
-                            {b.status === 'CONFIRMED' && (
+                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
                               <button
                                 className="btn btn-outline-warning text-dark"
                                 title="Cancel Booking"
@@ -544,8 +600,8 @@ const Bookings = () => {
                               </button>
                             )}
 
-                            {/* Delete (Admin only) */}
-                            {isAdmin && (
+                            {/* Delete */}
+                            {hasPermission('bookings', 'can_delete') && (
                               <button
                                 className="btn btn-outline-danger"
                                 title="Delete Record"
@@ -555,6 +611,7 @@ const Bookings = () => {
                               </button>
                             )}
                           </div>
+
                         </td>
                       </tr>
                     );
@@ -744,11 +801,15 @@ const Bookings = () => {
                           onChange={(e) => handleEditInputChange('room', e.target.value)}
                           required
                         >
-                          {editAvailableRooms.map((r) => (
-                            <option key={r.id} value={r.id}>
-                              Room {r.room_number} — {r.room_type_name} (₹{parseFloat(r.base_price).toLocaleString('en-IN')}/night)
-                            </option>
-                          ))}
+                          {editAvailableRooms.length === 0 ? (
+                            <option value="" disabled>Loading available rooms...</option>
+                          ) : (
+                            editAvailableRooms.map((r) => (
+                              <option key={r.id} value={r.id}>
+                                Room {r.room_number} — {r.room_type_name || r.room_type?.name || 'Standard'} (₹{parseFloat(r.base_price || r.room_type?.base_price || 0).toLocaleString('en-IN')}/night)
+                              </option>
+                            ))
+                          )}
                         </select>
                       </div>
                     </div>

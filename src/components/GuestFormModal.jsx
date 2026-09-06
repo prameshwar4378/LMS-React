@@ -15,7 +15,10 @@ import {
   RotateCcw,
   Trash2,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  ExternalLink,
+  RefreshCw
 } from 'lucide-react';
 
 const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }) => {
@@ -32,7 +35,10 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [docFile, setDocFile] = useState(null);
+  const [docPreview, setDocPreview] = useState('');
   const [docBackFile, setDocBackFile] = useState(null);
+  const [docBackPreview, setDocBackPreview] = useState('');
+  const [previewModalDoc, setPreviewModalDoc] = useState(null);
   
   const [showCamera, setShowCamera] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -54,7 +60,9 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
         setPhotoFile(null);
         setPhotoPreview(editingGuest.photo || '');
         setDocFile(null);
+        setDocPreview(editingGuest.id_document || '');
         setDocBackFile(null);
+        setDocBackPreview(editingGuest.id_document_back || '');
       } else {
         setGuestName('');
         setAge('');
@@ -66,7 +74,9 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
         setPhotoFile(null);
         setPhotoPreview('');
         setDocFile(null);
+        setDocPreview('');
         setDocBackFile(null);
+        setDocBackPreview('');
       }
       setNameError('');
       setMobileError('');
@@ -98,6 +108,40 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
       setMobileError('Enter valid 10-digit mobile number.');
     } else {
       setMobileError('');
+    }
+  };
+
+  const openGuestDocPreview = (urlOrFile, title) => {
+    if (!urlOrFile) return;
+    let url = '';
+    let isPdf = false;
+    if (typeof urlOrFile === 'string') {
+      url = urlOrFile;
+      isPdf = url.toLowerCase().endsWith('.pdf');
+    } else if (urlOrFile instanceof File || urlOrFile instanceof Blob) {
+      url = URL.createObjectURL(urlOrFile);
+      isPdf = urlOrFile.type === 'application/pdf';
+    }
+    setPreviewModalDoc({ show: true, url, title, isPdf });
+  };
+
+  const handleDocFrontChange = (file) => {
+    if (!file) return;
+    setDocFile(file);
+    if (file.type.startsWith('image/')) {
+      setDocPreview(URL.createObjectURL(file));
+    } else {
+      setDocPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleDocBackChange = (file) => {
+    if (!file) return;
+    setDocBackFile(file);
+    if (file.type.startsWith('image/')) {
+      setDocBackPreview(URL.createObjectURL(file));
+    } else {
+      setDocBackPreview(URL.createObjectURL(file));
     }
   };
 
@@ -355,121 +399,147 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
                     {/* Left Column: Guest Photo */}
                     {/* Guest Photo Row */}
                     <div className="col-md-12 mb-3">
-                      <label className="form-label small fw-semibold text-dark mb-1 d-block">Guest Photo Snapshot</label>
+                      <div className="d-flex justify-content-between align-items-center mb-1.5">
+                        <label className="form-label small fw-semibold text-dark m-0">Guest Photo Snapshot</label>
+                        {(photoFile || photoPreview) && (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                            <CheckCircle2 size={12} /> {photoFile ? 'New Photo Attached' : '✓ Photo Verified'}
+                          </span>
+                        )}
+                      </div>
                       
-                      {photoPreview ? (
-                        <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-3">
-                          <img
-                            src={photoPreview}
-                            alt="Guest Snapshot"
-                            className="rounded-3 border object-fit-cover shadow-xs"
-                            style={{ width: '60px', height: '60px' }}
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          className="btn btn-outline-primary fw-semibold py-2 px-3 rounded-3 d-inline-flex align-items-center gap-1.5"
+                          onClick={() => setShowCamera(true)}
+                        >
+                          <Camera size={17} /> Capture Webcam
+                        </button>
+                        
+                        <label className="btn btn-light border fw-semibold py-2 px-3 rounded-3 m-0 cursor-pointer d-inline-flex align-items-center gap-1.5 hover-bg-light">
+                          <Upload size={17} /> Upload Photo File
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="d-none"
+                            onChange={(e) => {
+                              if (e.target.files[0]) {
+                                setPhotoFile(e.target.files[0]);
+                                setPhotoPreview(URL.createObjectURL(e.target.files[0]));
+                              }
+                            }}
                           />
-                          <div className="flex-grow-1 min-w-0">
-                            <div className="fw-semibold text-dark small text-truncate">Photo Captured</div>
-                            <div className="text-success extra-small d-flex align-items-center gap-1 mt-0.5">
-                              <CheckCircle2 size={12} /> Ready to attach
-                            </div>
-                          </div>
-                          <div className="d-flex gap-1">
+                        </label>
+
+                        {(photoFile || photoPreview) && (
+                          <div className="d-flex align-items-center gap-2 bg-light p-1.5 rounded-3 border ms-auto">
+                            <img
+                              src={photoPreview}
+                              alt="Guest Snapshot"
+                              className="rounded-circle object-fit-cover cursor-pointer border shadow-xs"
+                              style={{ width: '42px', height: '42px' }}
+                              onClick={() => openGuestDocPreview(photoFile || photoPreview, `${guestName || 'Guest'} Photo`)}
+                            />
                             <button
                               type="button"
-                              className="btn btn-sm btn-outline-primary py-1 px-2 rounded-2 extra-small"
-                              onClick={() => setShowCamera(true)}
-                              title="Retake Snapshot"
+                              className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                              onClick={() => openGuestDocPreview(photoFile || photoPreview, `${guestName || 'Guest'} Photo`)}
+                              title="Preview Photo"
                             >
-                              <RotateCcw size={14} />
+                              <Eye size={13} /> Preview
                             </button>
                             <button
                               type="button"
-                              className="btn btn-sm btn-outline-danger py-1 px-2 rounded-2 extra-small"
+                              className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
                               onClick={() => {
                                 setPhotoFile(null);
                                 setPhotoPreview('');
                               }}
                               title="Remove Photo"
                             >
-                              <Trash2 size={14} />
+                              <Trash2 size={13} />
                             </button>
                           </div>
-                        </div>
-                      ) : (
-                        <div className="d-flex gap-2" style={{ maxWidth: '400px' }}>
-                          <button
-                            type="button"
-                            className="btn btn-outline-primary fw-semibold py-2.5 px-3 rounded-3 w-50 d-flex align-items-center justify-content-center gap-1.5"
-                            style={{ height: '46px', fontSize: '0.85rem' }}
-                            onClick={() => setShowCamera(true)}
-                          >
-                            <Camera size={18} /> Capture
-                          </button>
-                          
-                          <label
-                            className="btn btn-outline-secondary fw-semibold py-2.5 px-3 rounded-3 w-50 d-flex align-items-center justify-content-center gap-1.5 m-0 cursor-pointer"
-                            style={{ height: '46px', fontSize: '0.85rem' }}
-                          >
-                            <Upload size={18} /> Upload
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="d-none"
-                              onChange={(e) => {
-                                if (e.target.files[0]) {
-                                  setPhotoFile(e.target.files[0]);
-                                  setPhotoPreview(URL.createObjectURL(e.target.files[0]));
-                                }
-                              }}
-                            />
-                          </label>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
 
                     {/* ID Document (Front Side) Dropzone */}
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
+                      <div className="d-flex justify-content-between align-items-center mb-1.5">
+                        <label className="form-label small fw-semibold text-dark m-0">ID Document (Front Side)</label>
+                        {(docFile || docPreview) && (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                            <CheckCircle2 size={12} /> {docFile ? 'New Document' : '✓ Verified Document'}
+                          </span>
+                        )}
+                      </div>
                       
-                      {docFile ? (
-                        <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-2">
-                          <div className="d-flex align-items-center gap-2.5 min-w-0">
-                            <div className="p-2 bg-primary-subtle text-primary rounded-2">
-                              <FileText size={20} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="fw-semibold text-dark small text-truncate" style={{ maxWidth: '140px' }}>
-                                {docFile.name}
+                      {docFile || docPreview ? (
+                        <div className="p-2.5 bg-light rounded-3 border border-success-subtle">
+                          <div className="d-flex align-items-center justify-content-between gap-2">
+                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                              {((docFile && docFile.type && docFile.type.startsWith('image/')) || (typeof docPreview === 'string' && (docPreview.startsWith('blob:') || docPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                <img
+                                  src={docPreview}
+                                  alt="Front ID"
+                                  className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                  style={{ width: '52px', height: '40px' }}
+                                  onClick={() => openGuestDocPreview(docFile || docPreview, 'Front ID Document')}
+                                />
+                              ) : (
+                                <div className="bg-white text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '44px', height: '40px' }}>
+                                  <FileText size={20} />
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '140px' }}>
+                                  {docFile ? docFile.name : (docPreview.split('/').pop() || 'Front_ID_Document')}
+                                </div>
+                                <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                  {docFile ? `New File (${(docFile.size / 1024).toFixed(1)} KB)` : 'Document on File'}
+                                </div>
                               </div>
-                              <div className="text-muted extra-small">
-                                {(docFile.size / 1024).toFixed(1)} KB
-                              </div>
                             </div>
-                          </div>
 
-                          <div className="d-flex gap-1">
-                            <label className="btn btn-sm btn-outline-primary py-1 px-2 rounded-2 extra-small m-0 cursor-pointer" title="Replace File">
-                              Replace
-                              <input
-                                type="file"
-                                accept="image/*,application/pdf"
-                                className="d-none"
-                                onChange={(e) => {
-                                  if (e.target.files[0]) setDocFile(e.target.files[0]);
-                                }}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger py-1 px-2 rounded-2 extra-small"
-                              onClick={() => setDocFile(null)}
-                              title="Remove File"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                onClick={() => openGuestDocPreview(docFile || docPreview, 'Front ID Document')}
+                                title="Preview Document"
+                              >
+                                <Eye size={13} /> Preview
+                              </button>
+                              <label
+                                className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                title="Replace Document"
+                              >
+                                <RefreshCw size={12} /> Edit
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="d-none"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) handleDocFrontChange(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                onClick={() => { setDocFile(null); setDocPreview(''); }}
+                                title="Remove Document"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ) : (
                         <label
-                          className="border border-2 border-dashed rounded-3 p-3 text-center d-block bg-light bg-opacity-50 cursor-pointer hover-bg-light transition-all"
+                          className="border border-2 border-dashed rounded-3 p-3 text-center d-block bg-light bg-opacity-50 cursor-pointer hover-bg-white transition-all m-0"
                           style={{ borderColor: '#cbd5e1' }}
                         >
                           <FileText size={22} className="text-primary mb-1" />
@@ -480,7 +550,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
                             accept="image/*,application/pdf"
                             className="d-none"
                             onChange={(e) => {
-                              if (e.target.files[0]) setDocFile(e.target.files[0]);
+                              if (e.target.files[0]) handleDocFrontChange(e.target.files[0]);
                             }}
                           />
                         </label>
@@ -489,49 +559,79 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
 
                     {/* ID Document (Back Side) Dropzone */}
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
+                      <div className="d-flex justify-content-between align-items-center mb-1.5">
+                        <label className="form-label small fw-semibold text-dark m-0">ID Document (Back Side)</label>
+                        {(docBackFile || docBackPreview) && (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                            <CheckCircle2 size={12} /> {docBackFile ? 'New Document' : '✓ Verified Document'}
+                          </span>
+                        )}
+                      </div>
                       
-                      {docBackFile ? (
-                        <div className="p-3 border rounded-3 bg-light d-flex align-items-center justify-content-between gap-2">
-                          <div className="d-flex align-items-center gap-2.5 min-w-0">
-                            <div className="p-2 bg-primary-subtle text-primary rounded-2">
-                              <FileText size={20} />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="fw-semibold text-dark small text-truncate" style={{ maxWidth: '140px' }}>
-                                {docBackFile.name}
+                      {docBackFile || docBackPreview ? (
+                        <div className="p-2.5 bg-light rounded-3 border border-success-subtle">
+                          <div className="d-flex align-items-center justify-content-between gap-2">
+                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                              {((docBackFile && docBackFile.type && docBackFile.type.startsWith('image/')) || (typeof docBackPreview === 'string' && (docBackPreview.startsWith('blob:') || docBackPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                <img
+                                  src={docBackPreview}
+                                  alt="Back ID"
+                                  className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                  style={{ width: '52px', height: '40px' }}
+                                  onClick={() => openGuestDocPreview(docBackFile || docBackPreview, 'Back ID Document')}
+                                />
+                              ) : (
+                                <div className="bg-white text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '44px', height: '40px' }}>
+                                  <FileText size={20} />
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '140px' }}>
+                                  {docBackFile ? docBackFile.name : (docBackPreview.split('/').pop() || 'Back_ID_Document')}
+                                </div>
+                                <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                  {docBackFile ? `New File (${(docBackFile.size / 1024).toFixed(1)} KB)` : 'Document on File'}
+                                </div>
                               </div>
-                              <div className="text-muted extra-small">
-                                {(docBackFile.size / 1024).toFixed(1)} KB
-                              </div>
                             </div>
-                          </div>
 
-                          <div className="d-flex gap-1">
-                            <label className="btn btn-sm btn-outline-primary py-1 px-2 rounded-2 extra-small m-0 cursor-pointer" title="Replace File">
-                              Replace
-                              <input
-                                type="file"
-                                accept="image/*,application/pdf"
-                                className="d-none"
-                                onChange={(e) => {
-                                  if (e.target.files[0]) setDocBackFile(e.target.files[0]);
-                                }}
-                              />
-                            </label>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-outline-danger py-1 px-2 rounded-2 extra-small"
-                              onClick={() => setDocBackFile(null)}
-                              title="Remove File"
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                onClick={() => openGuestDocPreview(docBackFile || docBackPreview, 'Back ID Document')}
+                                title="Preview Document"
+                              >
+                                <Eye size={13} /> Preview
+                              </button>
+                              <label
+                                className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                title="Replace Document"
+                              >
+                                <RefreshCw size={12} /> Edit
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="d-none"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) handleDocBackChange(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                onClick={() => { setDocBackFile(null); setDocBackPreview(''); }}
+                                title="Remove Document"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ) : (
                         <label
-                          className="border border-2 border-dashed rounded-3 p-3 text-center d-block bg-light bg-opacity-50 cursor-pointer hover-bg-light transition-all"
+                          className="border border-2 border-dashed rounded-3 p-3 text-center d-block bg-light bg-opacity-50 cursor-pointer hover-bg-white transition-all m-0"
                           style={{ borderColor: '#cbd5e1' }}
                         >
                           <FileText size={22} className="text-primary mb-1" />
@@ -542,7 +642,7 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
                             accept="image/*,application/pdf"
                             className="d-none"
                             onChange={(e) => {
-                              if (e.target.files[0]) setDocBackFile(e.target.files[0]);
+                              if (e.target.files[0]) handleDocBackChange(e.target.files[0]);
                             }}
                           />
                         </label>
@@ -594,6 +694,46 @@ const GuestFormModal = ({ show, onClose, onSubmit, stayId, editingGuest = null }
           setPhotoPreview(previewUrl);
         }}
       />
+
+      {/* Document & Photo Fullscreen Preview Modal */}
+      {previewModalDoc && previewModalDoc.show && (
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1080 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-animated">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
+              <div className="modal-header bg-dark text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title fw-bold fs-6 d-flex align-items-center gap-2 m-0">
+                  <FileText size={18} className="text-primary" /> {previewModalDoc.title}
+                </h5>
+                <div className="d-flex align-items-center gap-2">
+                  {previewModalDoc.url && (
+                    <a
+                      href={previewModalDoc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-sm btn-outline-light py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1"
+                    >
+                      <ExternalLink size={13} /> Open in New Tab
+                    </a>
+                  )}
+                  <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPreviewModalDoc(null)}></button>
+                </div>
+              </div>
+              <div className="modal-body p-3 bg-light text-center" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                {previewModalDoc.isPdf ? (
+                  <iframe src={previewModalDoc.url} title={previewModalDoc.title} className="w-100 rounded border bg-white" style={{ height: '600px' }}></iframe>
+                ) : (
+                  <img
+                    src={previewModalDoc.url}
+                    alt={previewModalDoc.title}
+                    className="img-fluid rounded border shadow-sm"
+                    style={{ maxHeight: '65vh', objectFit: 'contain' }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

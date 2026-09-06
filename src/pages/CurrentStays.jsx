@@ -65,6 +65,10 @@ const CurrentStays = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [activeBalance, setActiveBalance] = useState(0);
 
+  const handleCheckoutClick = (s) => {
+    navigate(`/checkout/${s.id}`);
+  };
+
   // Extend Stay modal
   const [showExtendModal, setShowExtendModal] = useState(false);
   const [newExtendCheckout, setNewExtendCheckout] = useState('');
@@ -604,14 +608,15 @@ const CurrentStays = () => {
                       <Link to={`/stays/${s.id}`} className="btn btn-sm btn-light border rounded-3 fw-semibold px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs">
                         <Eye size={15} /> View Details
                       </Link>
-                      <Link
-                        to={`/checkout/${s.id}`}
+                      <button
+                        type="button"
+                        onClick={() => handleCheckoutClick(s)}
                         className={`btn btn-sm rounded-3 fw-bold px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs ${
                           isOverdue ? 'btn-danger' : 'btn-success'
                         }`}
                       >
                         <LogOut size={15} /> Process Checkout
-                      </Link>
+                      </button>
                     </div>
 
                     {/* 3-Dots Action Dropdown */}
@@ -652,9 +657,9 @@ const CurrentStays = () => {
                         </li>
                         <li><hr className="dropdown-divider" /></li>
                         <li>
-                          <Link to={`/checkout/${s.id}`} className="dropdown-item py-2 px-3 text-danger fw-semibold d-flex align-items-center gap-2">
-                            <LogOut size={15} /> Process Checkout
-                          </Link>
+                          <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 px-3 text-danger fw-semibold d-flex align-items-center gap-2">
+                            <LogOut size={15} /> Checkout
+                          </button>
                         </li>
                       </ul>
                     </div>
@@ -754,9 +759,9 @@ const CurrentStays = () => {
                             </li>
                             <li><hr className="dropdown-divider" /></li>
                             <li>
-                              <Link to={`/checkout/${s.id}`} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
+                              <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
                                 <LogOut size={15} /> Checkout
-                              </Link>
+                              </button>
                             </li>
                           </ul>
                         </div>

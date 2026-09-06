@@ -22,6 +22,7 @@ import PageLoader from '../components/PageLoader';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
+import { getMediaUrl } from '../utils/mediaUtils';
 
 const StayDetails = () => {
   const { id } = useParams();
@@ -83,13 +84,21 @@ const StayDetails = () => {
   const [guestPhotoFile, setGuestPhotoFile] = useState(null);
   const [guestPhotoPreview, setGuestPhotoPreview] = useState('');
   const [guestDocFile, setGuestDocFile] = useState(null);
+  const [guestDocPreview, setGuestDocPreview] = useState('');
   const [guestDocBackFile, setGuestDocBackFile] = useState(null);
+  const [guestDocBackPreview, setGuestDocBackPreview] = useState('');
   const [showGuestCamera, setShowGuestCamera] = useState(false);
+  const [previewModalDoc, setPreviewModalDoc] = useState(null);
 
   // 4. Upload Extra Document Modal State
   const [showExtraDocModal, setShowExtraDocModal] = useState(false);
   const [extraDocTitle, setExtraDocTitle] = useState('');
   const [extraDocFile, setExtraDocFile] = useState(null);
+
+  // 5. Notes Edit Modal State
+  const [showEditNotesModal, setShowEditNotesModal] = useState(false);
+  const [editNotes, setEditNotes] = useState('');
+  const [savingNotes, setSavingNotes] = useState(false);
 
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -113,6 +122,34 @@ const StayDetails = () => {
   const isCompleted = stay?.status === 'CHECKED_OUT' || stay?.status === 'COMPLETED';
   // Strict rule: if completed, frozen for everyone by default unless Admin explicitly unlocks override
   const canEdit = !isCompleted || (isAdmin && adminOverrideUnlocked);
+
+  // Open Guest & Stay Notes Edit Modal
+  const openEditNotesModal = () => {
+    if (!canEdit) return;
+    setEditNotes(stay?.notes || '');
+    setActionError('');
+    setShowEditNotesModal(true);
+  };
+
+  // Save Notes Updates
+  const handleSaveNotes = async (e) => {
+    if (e) e.preventDefault();
+    setSavingNotes(true);
+    setActionError('');
+    try {
+      await updateStayApi(stay.id, { notes: editNotes });
+      setShowEditNotesModal(false);
+      showSuccess('Guest & stay notes updated successfully!', 'Notes Saved');
+      loadStayDetails();
+    } catch (err) {
+      console.error(err);
+      const errMsg = err.response?.data?.notes?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Failed to update notes.';
+      setActionError(errMsg);
+      showError(errMsg, 'Error Updating Notes');
+    } finally {
+      setSavingNotes(false);
+    }
+  };
 
   // Open Stay & Pricing Edit Modal
   const openEditStayModal = () => {
@@ -157,9 +194,45 @@ const StayDetails = () => {
       setGuestPhotoFile(null);
       setGuestPhotoPreview(c.photo || '');
       setGuestDocFile(null);
+      setGuestDocPreview(c.id_document || '');
       setGuestDocBackFile(null);
+      setGuestDocBackPreview(c.id_document_back || '');
       setActionError('');
       setShowEditGuestModal(true);
+    }
+  };
+
+  const openStayDocPreview = (urlOrFile, title) => {
+    if (!urlOrFile) return;
+    let url = '';
+    let isPdf = false;
+    if (typeof urlOrFile === 'string') {
+      url = urlOrFile;
+      isPdf = url.toLowerCase().endsWith('.pdf');
+    } else if (urlOrFile instanceof File || urlOrFile instanceof Blob) {
+      url = URL.createObjectURL(urlOrFile);
+      isPdf = urlOrFile.type === 'application/pdf';
+    }
+    setPreviewModalDoc({ show: true, url, title, isPdf });
+  };
+
+  const handleGuestDocChange = (file) => {
+    if (!file) return;
+    setGuestDocFile(file);
+    if (file.type.startsWith('image/')) {
+      setGuestDocPreview(URL.createObjectURL(file));
+    } else {
+      setGuestDocPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleGuestDocBackChange = (file) => {
+    if (!file) return;
+    setGuestDocBackFile(file);
+    if (file.type.startsWith('image/')) {
+      setGuestDocBackPreview(URL.createObjectURL(file));
+    } else {
+      setGuestDocBackPreview(URL.createObjectURL(file));
     }
   };
 
@@ -178,9 +251,10 @@ const StayDetails = () => {
         children: parseInt(editChildren),
       });
       setShowEditStayModal(false);
+      showSuccess('Room rate & pricing details updated successfully. Stay bill recalculated.', 'Room Rate Updated');
       loadStayDetails();
     } catch (err) {
-      setActionError(err.response?.data?.error || 'Failed to update stay details.');
+      setActionError(err.response?.data?.room_rate?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Failed to update stay details.');
     } finally {
       setActionLoading(false);
     }
@@ -470,7 +544,8 @@ const StayDetails = () => {
       setEditPayment(null);
       loadStayDetails();
     } catch (err) {
-      showError('Error saving payment record.', 'Payment Failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error saving payment record.';
+      showError(errMsg, 'Payment Failed');
     }
   };
 
@@ -522,6 +597,9 @@ const StayDetails = () => {
     return now > expDt;
   };
   const isOverdue = isStayOverdue();
+  const handleProceedToCheckout = () => {
+    navigate(`/checkout/${stay.id}`);
+  };
 
   return (
     <div>
@@ -545,9 +623,9 @@ const StayDetails = () => {
                 <i className="bi bi-calendar-plus me-1"></i> Extend Stay
               </button>
             )}
-            <Link to={`/checkout/${stay.id}`} className="btn btn-sm btn-danger fw-bold shadow-sm">
+            <button type="button" className="btn btn-sm btn-danger fw-bold shadow-sm" onClick={handleProceedToCheckout}>
               <i className="bi bi-box-arrow-right me-1"></i> Proceed to Checkout
-            </Link>
+            </button>
           </div>
         </div>
       )}
@@ -611,18 +689,13 @@ const StayDetails = () => {
 
             {/* Top Action Suite */}
             <div className="d-flex gap-2 flex-wrap">
-              {canEdit && (
-                <button className="btn btn-outline-dark fw-semibold" onClick={openEditDatesModal}>
-                  <i className="bi bi-calendar-event me-1 text-primary"></i> Edit Check-In/Out Times
-                </button>
-              )}
               <button className="btn btn-outline-primary fw-semibold" onClick={() => setShowInvoiceModal(true)}>
                 <i className="bi bi-printer me-1"></i> Invoice
               </button>
               {stay.status === 'CHECKED_IN' && (
-                <Link to={`/checkout/${stay.id}`} className="btn btn-danger fw-bold shadow">
-                  <i className="bi bi-box-arrow-right me-1"></i> Proceed to Checkout
-                </Link>
+                <button type="button" className="btn btn-danger fw-bold shadow d-flex align-items-center gap-1.5" onClick={handleProceedToCheckout}>
+                  <i className="bi bi-box-arrow-right"></i> Proceed to Checkout
+                </button>
               )}
             </div>
           </div>
@@ -667,51 +740,102 @@ const StayDetails = () => {
             <div className="card border-0 shadow-sm mb-4" style={{ borderRadius: '12px' }}>
               <div className="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
                 <h5 className="m-0 fw-bold text-dark"><i className="bi bi-info-circle-fill text-primary me-2"></i>Stay Information & Record</h5>
-                {canEdit && (
-                  <div className="d-flex gap-2">
-                    <button className="btn btn-sm btn-outline-primary" onClick={openEditGuestModal}>
-                      <i className="bi bi-person-gear me-1"></i> Edit Guest & Documents
-                    </button>
-                    <button className="btn btn-sm btn-outline-dark" onClick={openEditDatesModal}>
-                      <i className="bi bi-pencil me-1"></i> Edit Dates & Times
-                    </button>
-                  </div>
-                )}
               </div>
               <div className="card-body p-4">
                 <div className="row g-3">
+                  
+                  {/* Grid 1: Assigned Room & Nightly Rate */}
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Assigned Room</div>
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Assigned Room</div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditStayModal}
+                            title="Update Room Rate & Pricing"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
                       <div className="fw-bold fs-5 text-dark">Room {stay.room_detail?.room_number} ({stay.room_detail?.room_type_name})</div>
-                      <div className="text-primary small fw-semibold mt-1">Rate: {formatCurrency(stay.room_rate)} / night</div>
+                      <div className="d-flex align-items-center gap-2 mt-1">
+                        <span className="text-primary fw-bold">Rate: {formatCurrency(stay.room_rate)} / night</span>
+                        {stay.room_detail?.base_price && parseFloat(stay.room_detail.base_price) !== parseFloat(stay.room_rate) && (
+                          <span className="text-muted extra-small">(Standard: {formatCurrency(stay.room_detail.base_price)})</span>
+                        )}
+                      </div>
                     </div>
                   </div>
+
+                  {/* Grid 2: Primary Guest Details */}
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Primary Guest Details</div>
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Primary Guest Details</div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditGuestModal}
+                            title="Edit Primary Guest & Documents"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
                       <div className="fw-bold fs-5 text-primary">{cust.full_name}</div>
                       <div className="small text-muted">{cust.mobile} | {cust.id_type}: {cust.id_number || 'N/A'}</div>
                     </div>
                   </div>
+
+                  {/* Grid 3: Check-In Date & Time */}
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Check-In Date & Time</div>
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Check-In Date & Time</div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditDatesModal}
+                            title="Edit Check-In Date & Time"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
                       <div className="fw-bold text-dark fs-6 mt-1">
                         <i className="bi bi-calendar-event me-2 text-primary"></i>
                         {formatDate(stay.check_in_date)} @ {stay.check_in_time?.substring(0, 5) || '12:00'}
                       </div>
                     </div>
                   </div>
+
+                  {/* Grid 4: Expected / Actual Check-Out */}
                   <div className="col-md-6">
-                    <div className={`p-3 rounded border ${isOverdue ? 'bg-danger-subtle border-danger' : 'bg-light'}`}>
+                    <div className={`p-3 rounded-3 border h-100 position-relative transition-all ${isOverdue ? 'bg-danger-subtle border-danger' : 'bg-light'}`}>
                       <div className="d-flex justify-content-between align-items-center mb-1">
                         <div className="text-muted small fw-semibold">Expected / Actual Check-Out</div>
-                        {isOverdue && (
-                          <span className="badge bg-danger text-white extra-small fw-bold px-2 py-0.5 shadow-sm">
-                            <i className="bi bi-clock-history me-1"></i> OVERDUE
-                          </span>
-                        )}
+                        <div className="d-flex align-items-center gap-1.5">
+                          {isOverdue && (
+                            <span className="badge bg-danger text-white extra-small fw-bold px-2 py-0.5 shadow-sm">
+                              <i className="bi bi-clock-history me-1"></i> OVERDUE
+                            </span>
+                          )}
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                              onClick={openEditDatesModal}
+                              title="Edit Check-Out Date & Time"
+                            >
+                              <i className="bi bi-pencil-square fs-6"></i>
+                            </button>
+                          )}
+                        </div>
                       </div>
                       <div className={`fw-bold fs-6 ${isOverdue ? 'text-danger' : 'text-dark'}`}>
                         <i className="bi bi-calendar-check me-2 text-danger"></i>
@@ -719,18 +843,50 @@ const StayDetails = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Grid 5: Guest Occupancy */}
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Guest Occupancy</div>
-                      <div className="fw-bold text-dark">{stay.adults} Adult(s), {stay.children} Child(ren)</div>
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Guest Occupancy</div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditStayModal}
+                            title="Edit Guest Occupancy"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
+                      <div className="fw-bold text-dark fs-6 mt-1">
+                        <i className="bi bi-people me-2 text-primary"></i>
+                        {stay.adults} Adult(s), {stay.children} Child(ren)
+                      </div>
                     </div>
                   </div>
+
+                  {/* Grid 6: Discount Configuration */}
                   <div className="col-md-6">
-                    <div className="p-3 bg-light rounded border">
-                      <div className="text-muted small fw-semibold">Discount Configuration</div>
-                      <div className="fw-bold text-dark">
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <div className="text-muted small fw-semibold">Discount Configuration</div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditStayModal}
+                            title="Edit Discount & Concessions"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
+                      <div className="fw-bold text-dark fs-6 mt-1">
                         {stay.discount_value > 0 ? (
                           <span className="text-success">
+                            <i className="bi bi-tag-fill me-1.5"></i>
                             {stay.discount_type === 'PERCENTAGE' ? `${stay.discount_value}%` : formatCurrency(stay.discount_value)}
                             {stay.discount_reason ? ` (${stay.discount_reason})` : ''}
                           </span>
@@ -740,6 +896,47 @@ const StayDetails = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Grid 7: Customer & Stay Notes / Special Instructions */}
+                  <div className="col-12">
+                    <div className="p-3 bg-light rounded-3 border h-100 position-relative transition-all">
+                      <div className="d-flex justify-content-between align-items-center mb-2">
+                        <div className="text-muted small fw-semibold d-flex align-items-center gap-1.5">
+                          <i className="bi bi-chat-left-text-fill text-primary"></i>
+                          <span>Customer &amp; Stay Notes / Special Instructions</span>
+                        </div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            className="btn btn-sm btn-outline-secondary border-0 p-1 lh-1 text-primary rounded-circle hover-bg-light"
+                            onClick={openEditNotesModal}
+                            title="Edit Guest & Stay Notes"
+                          >
+                            <i className="bi bi-pencil-square fs-6"></i>
+                          </button>
+                        )}
+                      </div>
+                      {stay.notes && stay.notes.trim() ? (
+                        <div className="text-dark small bg-white p-2.5 rounded-2 border" style={{ whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                          {stay.notes}
+                        </div>
+                      ) : (
+                        <div className="d-flex align-items-center justify-content-between text-muted small bg-white p-2.5 rounded-2 border border-dashed">
+                          <span>No special requests, preferences, or notes recorded for this guest.</span>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-link text-primary p-0 text-decoration-none fw-semibold extra-small"
+                              onClick={openEditNotesModal}
+                            >
+                              + Add Note
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                 </div>
               </div>
             </div>
@@ -753,15 +950,6 @@ const StayDetails = () => {
                   <h5 className="m-0 fw-bold">
                     <i className="bi bi-calculator me-2 text-primary"></i>Financial Summary
                   </h5>
-                  {canEdit && (
-                    <button
-                      className="btn btn-sm btn-outline-light fw-bold"
-                      onClick={openEditStayModal}
-                      title="Edit Room Rate & Discount"
-                    >
-                      <i className="bi bi-pencil-square me-1"></i> Edit Price
-                    </button>
-                  )}
                 </div>
               </div>
               <div className="card-body p-4">
@@ -797,28 +985,31 @@ const StayDetails = () => {
                   <strong className="text-primary fw-bold">{formatCurrency(bill.grand_total)}</strong>
                 </div>
 
-                {/* Edit Price & Discount Button in Card Body */}
-                {canEdit && (
-                  <button
-                    type="button"
-                    className="btn btn-outline-primary w-100 fw-bold my-2 py-2 shadow-sm"
-                    onClick={openEditStayModal}
-                  >
-                    <i className="bi bi-sliders me-1"></i> Edit Room Rate & Discount
-                  </button>
-                )}
-
                 <div className="d-flex justify-content-between align-items-center py-2 border-bottom text-success mt-1">
                   <span className="fw-semibold"><i className="bi bi-check-circle-fill me-1"></i>Total Paid:</span>
                   <strong className="text-success">{formatCurrency(bill.total_paid)}</strong>
                 </div>
 
-                <div className={`d-flex justify-content-between align-items-center py-3 px-3 rounded mt-3 border ${bill.balance > 0 ? 'bg-danger-subtle border-danger' : 'bg-success-subtle border-success'}`}>
-                  <span className="fw-bold text-dark fs-6">Balance Due:</span>
-                  <strong className={`fs-5 fw-bold ${bill.balance > 0 ? 'text-danger' : 'text-success'}`}>
-                    {formatCurrency(bill.balance)}
-                  </strong>
-                </div>
+                {bill.balance < -0.01 ? (
+                  <div className="p-3 rounded mt-3 border bg-warning-subtle border-warning">
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <span className="fw-bold text-dark fs-6">Refund Due to Guest:</span>
+                      <strong className="fs-5 fw-bold text-danger">
+                        {formatCurrency(Math.abs(bill.balance))}
+                      </strong>
+                    </div>
+                    <span className="extra-small text-muted d-block">
+                      Guest has overpaid. Excess amount can be returned upon checkout.
+                    </span>
+                  </div>
+                ) : (
+                  <div className={`d-flex justify-content-between align-items-center py-3 px-3 rounded mt-3 border ${bill.balance > 0.01 ? 'bg-danger-subtle border-danger' : 'bg-success-subtle border-success'}`}>
+                    <span className="fw-bold text-dark fs-6">Balance Due:</span>
+                    <strong className={`fs-5 fw-bold ${bill.balance > 0.01 ? 'text-danger' : 'text-success'}`}>
+                      {bill.balance > 0.01 ? formatCurrency(bill.balance) : '₹0.00'}
+                    </strong>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1012,7 +1203,17 @@ const StayDetails = () => {
                         <td>{formatDateTime(p.payment_date)}</td>
                         <td><span className="badge bg-secondary">{p.payment_method}</span></td>
                         <td>{p.transaction_reference || 'N/A'}</td>
-                        <td className="text-end fw-bold text-success fs-6">{formatCurrency(p.amount)}</td>
+                        <td className="text-end fw-bold fs-6">
+                          {parseFloat(p.amount) < 0 ? (
+                            <span className="badge bg-danger-subtle text-danger border border-danger-subtle px-2.5 py-1">
+                              <i className="bi bi-arrow-up-right me-1"></i> Debit / Refund: -{formatCurrency(Math.abs(p.amount))}
+                            </span>
+                          ) : (
+                            <span className="text-success">
+                              <i className="bi bi-arrow-down-left me-1"></i> +{formatCurrency(p.amount)}
+                            </span>
+                          )}
+                        </td>
                         <td className="text-center">
                           {canEdit ? (
                             <div className="btn-group btn-group-sm">
@@ -1056,7 +1257,7 @@ const StayDetails = () => {
                   <div>
                     <div className="fw-bold mb-2 text-dark"><i className="bi bi-camera-fill me-1 text-primary"></i>Customer Photo Snapshot</div>
                     {cust.photo ? (
-                      <img src={cust.photo} alt="Guest" className="img-fluid rounded shadow-sm border mb-3" style={{ maxHeight: '180px', objectFit: 'cover' }} />
+                      <img src={getMediaUrl(cust.photo)} alt="Guest" onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }} className="img-fluid rounded shadow-sm border mb-3" style={{ maxHeight: '180px', objectFit: 'cover' }} />
                     ) : (
                       <div className="alert alert-warning m-0 py-3">No photo captured</div>
                     )}
@@ -1064,7 +1265,7 @@ const StayDetails = () => {
                   <div className="d-flex justify-content-center gap-1 flex-wrap mt-3">
                     {cust.photo ? (
                       <>
-                        <a href={cust.photo} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary fw-semibold">
+                        <a href={getMediaUrl(cust.photo)} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary fw-semibold">
                           <i className="bi bi-eye"></i> View
                         </a>
                         {canEdit && (
@@ -1269,18 +1470,44 @@ const StayDetails = () => {
 
                     <div className="row g-3">
                       <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1">Room Night Rate (₹) *</label>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="form-label small fw-semibold text-dark m-0">Room Night Rate (₹) *</label>
+                          {stay.room_detail?.base_price && (
+                            <button
+                              type="button"
+                              className="btn btn-link p-0 text-primary extra-small text-decoration-none fw-bold"
+                              style={{ fontSize: '0.725rem' }}
+                              onClick={() => setEditRoomRate(stay.room_detail.base_price)}
+                            >
+                              Reset Base ({formatCurrency(stay.room_detail.base_price)})
+                            </button>
+                          )}
+                        </div>
                         <div className="input-group">
                           <span className="input-group-text bg-light border-end-0 text-muted">₹</span>
                           <input
                             type="number"
                             step="0.01"
+                            min="0"
                             className="form-control border-start-0 py-2.5 font-bold"
                             style={{ height: '46px', fontSize: '0.95rem' }}
                             required
                             value={editRoomRate}
                             onChange={(e) => setEditRoomRate(e.target.value)}
                           />
+                        </div>
+                        <div className="d-flex gap-1.5 mt-1.5">
+                          {[-100, 100, 200, 500].map((adj) => (
+                            <button
+                              key={adj}
+                              type="button"
+                              className="btn btn-xs btn-outline-secondary py-0.5 px-2 rounded-2"
+                              style={{ fontSize: '0.7rem' }}
+                              onClick={() => setEditRoomRate((prev) => Math.max(0, parseFloat(prev || 0) + adj).toFixed(2))}
+                            >
+                              {adj > 0 ? `+₹${adj}` : `-₹${Math.abs(adj)}`}
+                            </button>
+                          ))}
                         </div>
                       </div>
 
@@ -1550,52 +1777,240 @@ const StayDetails = () => {
 
                   <div> 
                     <div className="row g-3">
+                      {/* Guest Photo */}
                       <div className="col-md-12">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">Update Guest Photo</label>
-                        <div className="d-flex align-items-center gap-2">
-                          <button type="button" className="btn btn-outline-primary py-2 px-3 rounded-3 fw-semibold" onClick={() => setShowGuestCamera(true)}>
-                            <i className="bi bi-camera me-1"></i> Open Webcam
-                          </button>
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="form-control py-2"
-                            style={{ height: '44px' }}
-                            onChange={(e) => {
-                              if (e.target.files[0]) {
-                                setGuestPhotoFile(e.target.files[0]);
-                                setGuestPhotoPreview(URL.createObjectURL(e.target.files[0]));
-                              }
-                            }}
-                          />
+                        <div className="d-flex justify-content-between align-items-center mb-1.5">
+                          <label className="form-label small fw-semibold text-dark m-0">Guest Profile Photo</label>
+                          {(guestPhotoFile || guestPhotoPreview) && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                              <i className="bi bi-check-circle-fill"></i> {guestPhotoFile ? 'New Photo Attached' : '✓ Photo Verified'}
+                            </span>
+                          )}
                         </div>
-                        {guestPhotoPreview && (
-                          <div className="mt-2">
-                            <img src={guestPhotoPreview} alt="Guest Preview" className="img-thumbnail rounded-3 border" style={{ height: '75px', objectFit: 'cover' }} />
+                        <div className="d-flex align-items-center gap-2 flex-wrap">
+                          <button type="button" className="btn btn-outline-primary py-2 px-3 rounded-3 fw-semibold d-inline-flex align-items-center gap-1.5" onClick={() => setShowGuestCamera(true)}>
+                            <i className="bi bi-camera fs-6"></i> Open Webcam
+                          </button>
+                          <label className="btn btn-light border py-2 px-3 rounded-3 fw-semibold m-0 cursor-pointer d-inline-flex align-items-center gap-1.5 hover-bg-light">
+                            <i className="bi bi-upload fs-6"></i> Upload Photo File
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="d-none"
+                              onChange={(e) => {
+                                if (e.target.files[0]) {
+                                  setGuestPhotoFile(e.target.files[0]);
+                                  setGuestPhotoPreview(URL.createObjectURL(e.target.files[0]));
+                                }
+                              }}
+                            />
+                          </label>
+                          {(guestPhotoFile || guestPhotoPreview) && (
+                            <div className="d-flex align-items-center gap-2 bg-light p-1.5 rounded-3 border ms-auto">
+                              <img
+                                src={guestPhotoPreview}
+                                alt="Guest Preview"
+                                className="rounded-circle object-fit-cover cursor-pointer border shadow-2xs"
+                                style={{ width: '42px', height: '42px' }}
+                                onClick={() => openStayDocPreview(guestPhotoFile || guestPhotoPreview, 'Guest Photo')}
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary py-1 px-2.5 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                onClick={() => openStayDocPreview(guestPhotoFile || guestPhotoPreview, 'Guest Photo')}
+                                title="Preview Photo"
+                              >
+                                <i className="bi bi-eye"></i> Preview
+                              </button>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                onClick={() => { setGuestPhotoFile(null); setGuestPhotoPreview(''); }}
+                                title="Remove Photo"
+                              >
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Front Side Document */}
+                      <div className="col-md-6">
+                        <div className="d-flex justify-content-between align-items-center mb-1.5">
+                          <label className="form-label small fw-semibold text-dark m-0">ID Document (Front Side)</label>
+                          {(guestDocFile || guestDocPreview) && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                              <i className="bi bi-check-circle-fill"></i> {guestDocFile ? 'New Document' : '✓ Verified Document'}
+                            </span>
+                          )}
+                        </div>
+
+                        {guestDocFile || guestDocPreview ? (
+                          <div className="p-2.5 bg-light rounded-3 border border-success-subtle">
+                            <div className="d-flex align-items-center justify-content-between gap-2">
+                              <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                                {((guestDocFile && guestDocFile.type && guestDocFile.type.startsWith('image/')) || (typeof guestDocPreview === 'string' && (guestDocPreview.startsWith('blob:') || guestDocPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                  <img
+                                    src={guestDocPreview}
+                                    alt="Front ID"
+                                    className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                    style={{ width: '52px', height: '40px' }}
+                                    onClick={() => openStayDocPreview(guestDocFile || guestDocPreview, 'Front ID Document')}
+                                  />
+                                ) : (
+                                  <div className="bg-white text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '44px', height: '40px' }}>
+                                    <i className="bi bi-file-earmark-pdf-fill fs-5"></i>
+                                  </div>
+                                )}
+                                <div className="overflow-hidden">
+                                  <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '140px' }}>
+                                    {guestDocFile ? guestDocFile.name : (guestDocPreview.split('/').pop() || 'Front_ID_Document')}
+                                  </div>
+                                  <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                    {guestDocFile ? `New File (${(guestDocFile.size / 1024).toFixed(1)} KB)` : 'Document on File'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                  onClick={() => openStayDocPreview(guestDocFile || guestDocPreview, 'Front ID Document')}
+                                  title="Preview Document"
+                                >
+                                  <i className="bi bi-eye"></i> Preview
+                                </button>
+                                <label
+                                  className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                  title="Replace Document"
+                                >
+                                  <i className="bi bi-arrow-repeat"></i> Edit
+                                  <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    className="d-none"
+                                    onChange={(e) => {
+                                      if (e.target.files[0]) handleGuestDocChange(e.target.files[0]);
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                  onClick={() => { setGuestDocFile(null); setGuestDocPreview(''); }}
+                                  title="Remove Document"
+                                >
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative hover-bg-white transition-all">
+                            <i className="bi bi-cloud-arrow-up text-primary fs-4 d-block mb-1"></i>
+                            <div className="small fw-semibold text-dark">Upload ID Front</div>
+                            <div className="text-muted extra-small">JPG, PNG or PDF</div>
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer"
+                              onChange={(e) => {
+                                if (e.target.files[0]) handleGuestDocChange(e.target.files[0]);
+                              }}
+                            />
                           </div>
                         )}
                       </div>
 
+                      {/* Back Side Document */}
                       <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
-                        <input
-                          type="file"
-                          accept="image/*,application/pdf"
-                          className="form-control py-2"
-                          style={{ height: '44px' }}
-                          onChange={(e) => setGuestDocFile(e.target.files[0] || null)}
-                        />
-                      </div>
+                        <div className="d-flex justify-content-between align-items-center mb-1.5">
+                          <label className="form-label small fw-semibold text-dark m-0">ID Document (Back Side)</label>
+                          {(guestDocBackFile || guestDocBackPreview) && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                              <i className="bi bi-check-circle-fill"></i> {guestDocBackFile ? 'New Document' : '✓ Verified Document'}
+                            </span>
+                          )}
+                        </div>
 
-                      <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
-                        <input
-                          type="file"
-                          accept="image/*,application/pdf"
-                          className="form-control py-2"
-                          style={{ height: '44px' }}
-                          onChange={(e) => setGuestDocBackFile(e.target.files[0] || null)}
-                        />
+                        {guestDocBackFile || guestDocBackPreview ? (
+                          <div className="p-2.5 bg-light rounded-3 border border-success-subtle">
+                            <div className="d-flex align-items-center justify-content-between gap-2">
+                              <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                                {((guestDocBackFile && guestDocBackFile.type && guestDocBackFile.type.startsWith('image/')) || (typeof guestDocBackPreview === 'string' && (guestDocBackPreview.startsWith('blob:') || guestDocBackPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                  <img
+                                    src={guestDocBackPreview}
+                                    alt="Back ID"
+                                    className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                    style={{ width: '52px', height: '40px' }}
+                                    onClick={() => openStayDocPreview(guestDocBackFile || guestDocBackPreview, 'Back ID Document')}
+                                  />
+                                ) : (
+                                  <div className="bg-white text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '44px', height: '40px' }}>
+                                    <i className="bi bi-file-earmark-pdf-fill fs-5"></i>
+                                  </div>
+                                )}
+                                <div className="overflow-hidden">
+                                  <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '140px' }}>
+                                    {guestDocBackFile ? guestDocBackFile.name : (guestDocBackPreview.split('/').pop() || 'Back_ID_Document')}
+                                  </div>
+                                  <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                    {guestDocBackFile ? `New File (${(guestDocBackFile.size / 1024).toFixed(1)} KB)` : 'Document on File'}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                  onClick={() => openStayDocPreview(guestDocBackFile || guestDocBackPreview, 'Back ID Document')}
+                                  title="Preview Document"
+                                >
+                                  <i className="bi bi-eye"></i> Preview
+                                </button>
+                                <label
+                                  className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                  title="Replace Document"
+                                >
+                                  <i className="bi bi-arrow-repeat"></i> Edit
+                                  <input
+                                    type="file"
+                                    accept="image/*,application/pdf"
+                                    className="d-none"
+                                    onChange={(e) => {
+                                      if (e.target.files[0]) handleGuestDocBackChange(e.target.files[0]);
+                                    }}
+                                  />
+                                </label>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                  onClick={() => { setGuestDocBackFile(null); setGuestDocBackPreview(''); }}
+                                  title="Remove Document"
+                                >
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative hover-bg-white transition-all">
+                            <i className="bi bi-cloud-arrow-up text-primary fs-4 d-block mb-1"></i>
+                            <div className="small fw-semibold text-dark">Upload ID Back</div>
+                            <div className="text-muted extra-small">JPG, PNG or PDF</div>
+                            <input
+                              type="file"
+                              accept="image/*,application/pdf"
+                              className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer"
+                              onChange={(e) => {
+                                if (e.target.files[0]) handleGuestDocBackChange(e.target.files[0]);
+                              }}
+                            />
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1696,6 +2111,87 @@ const StayDetails = () => {
         }}
       />
 
+      {/* 5. Edit Guest & Stay Notes Modal */}
+      {showEditNotesModal && (
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1060 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-dialog-animated" style={{ maxWidth: '540px' }}>
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated" style={{ backgroundColor: '#ffffff' }}>
+              
+              <div className="modal-header bg-white border-bottom py-3 px-4 d-flex align-items-center justify-content-between">
+                <div className="d-flex align-items-center gap-3">
+                  <div className="p-2.5 bg-primary-subtle text-primary rounded-3 d-flex align-items-center justify-content-center" style={{ width: '42px', height: '42px' }}>
+                    <i className="bi bi-chat-left-text-fill fs-5"></i>
+                  </div>
+                  <div>
+                    <h5 className="modal-title fw-bold text-dark m-0" style={{ fontSize: '1.15rem', letterSpacing: '-0.01em' }}>
+                      Customer &amp; Stay Notes
+                    </h5>
+                    <span className="text-secondary extra-small">
+                      Add special guest requests, instructions, or operational remarks.
+                    </span>
+                  </div>
+                </div>
+                <button type="button" className="btn-close shadow-none" onClick={() => setShowEditNotesModal(false)}></button>
+              </div>
+
+              <form onSubmit={handleSaveNotes}>
+                <div className="modal-body p-4 bg-white">
+                  <div className="bg-light p-3 rounded-3 border mb-3">
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <span className="text-muted small">Stay Reference:</span>
+                      <strong className="text-dark">Stay #{stay.stay_number} (Room {stay.room_detail?.room_number})</strong>
+                    </div>
+                    <div className="d-flex justify-content-between align-items-center">
+                      <span className="text-muted small">Primary Guest:</span>
+                      <strong className="text-primary">{cust.full_name}</strong>
+                    </div>
+                  </div>
+
+                  <div className="mb-2">
+                    <label className="form-label small fw-semibold text-dark mb-1">
+                      Guest Notes / Special Requests / Instructions
+                    </label>
+                    <textarea
+                      className="form-control"
+                      rows="4"
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      placeholder="e.g. Guest requested quiet corner room, extra pillows, early checkout at 8 AM, luggage assistance..."
+                      autoFocus
+                    ></textarea>
+                    <span className="text-muted extra-small mt-1.5 d-block">
+                      <i className="bi bi-info-circle me-1"></i>Visible to reception and housekeeping staff throughout the active stay.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
+                  <button type="button" className="btn btn-light border fw-semibold px-3.5 py-2 rounded-3" onClick={() => setShowEditNotesModal(false)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2"
+                    disabled={savingNotes}
+                  >
+                    {savingNotes ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status"></span>
+                        Saving Notes...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-check-circle-fill"></i> Save Notes
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Shared Modals */}
       {stay && (
         <>
@@ -1714,10 +2210,52 @@ const StayDetails = () => {
             stayId={stay.id}
             currentBalance={bill.balance}
             initialData={editPayment}
+            customerWalletCredit={stay.primary_customer_detail?.total_wallet_credit || stay.primary_customer_detail?.advance_credit || 0}
           />
           <InvoicePreviewModal show={showInvoiceModal} onClose={() => setShowInvoiceModal(false)} stayId={stay.id} />
         </>
       )}
+
+      {/* Document & Photo Fullscreen Preview Modal */}
+      {previewModalDoc && previewModalDoc.show && (
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1080 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-animated">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
+              <div className="modal-header bg-dark text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title fw-bold fs-6 d-flex align-items-center gap-2 m-0">
+                  <i className="bi bi-file-earmark-text text-primary"></i> {previewModalDoc.title}
+                </h5>
+                <div className="d-flex align-items-center gap-2">
+                  {previewModalDoc.url && (
+                    <a
+                      href={previewModalDoc.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-sm btn-outline-light py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1"
+                    >
+                      <i className="bi bi-box-arrow-up-right"></i> Open in New Tab
+                    </a>
+                  )}
+                  <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPreviewModalDoc(null)}></button>
+                </div>
+              </div>
+              <div className="modal-body p-3 bg-light text-center" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                {previewModalDoc.isPdf ? (
+                  <iframe src={previewModalDoc.url} title={previewModalDoc.title} className="w-100 rounded border bg-white" style={{ height: '600px' }}></iframe>
+                ) : (
+                  <img
+                    src={previewModalDoc.url}
+                    alt={previewModalDoc.title}
+                    className="img-fluid rounded border shadow-sm"
+                    style={{ maxHeight: '65vh', objectFit: 'contain' }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };

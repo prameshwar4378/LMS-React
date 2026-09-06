@@ -6,6 +6,7 @@ import { createBookingApi } from '../api/bookingApi';
 import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import { formatCurrency } from '../utils/formatCurrency';
+import { getSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
 import {
   Calendar,
@@ -36,8 +37,12 @@ const BookingCreate = () => {
   const navigate = useNavigate();
   const { showError, showWarning, showSuccess } = useNotification();
 
-  // STEP WIZARD STATE (1 to 4)
   const [currentStep, setCurrentStep] = useState(1);
+  const [settings, setSettings] = useState(null);
+
+  useEffect(() => {
+    getSettingsApi().then(setSettings).catch(console.error);
+  }, []);
 
   const [checkInDate, setCheckInDate] = useState(getTodayDateString());
   const [checkInTime, setCheckInTime] = useState('12:00');
@@ -64,6 +69,11 @@ const BookingCreate = () => {
   const [custMobile, setCustMobile] = useState('');
   const [custEmail, setCustEmail] = useState('');
 
+  // Field Specific Errors
+  const [custFirstNameError, setCustFirstNameError] = useState('');
+  const [custMobileError, setCustMobileError] = useState('');
+  const [custEmailError, setCustEmailError] = useState('');
+
   // Booking Details
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
@@ -75,6 +85,11 @@ const BookingCreate = () => {
   useEffect(() => {
     getRoomTypesApi().then(setRoomTypes).catch(console.error);
     getCustomersApi().then(setCustomers).catch(console.error);
+    getSettingsApi().then((s) => {
+      if (s?.default_checkout_time) {
+        setCheckoutTime(s.default_checkout_time.substring(0, 5));
+      }
+    }).catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -170,32 +185,64 @@ const BookingCreate = () => {
   }, 0);
 
   const totalRoomCharge = nights * totalNightlyRateSum;
-  const estimatedGst = Math.round(totalRoomCharge * 0.18);
+  const taxEnabled = Boolean(settings?.tax_enabled);
+  const taxPct = taxEnabled ? parseFloat(settings?.tax_percentage || 0) : 0;
+  const estimatedGst = taxEnabled && taxPct > 0 ? Math.round((totalRoomCharge * taxPct) / 100) : 0;
   const grandTotalEstimate = totalRoomCharge + estimatedGst;
   const numericAdvance = parseFloat(advanceAmount || 0);
   const remainingBalance = Math.max(0, grandTotalEstimate - numericAdvance);
 
   const selectedCustObj = customers.find((c) => String(c.id) === String(selectedCustomerId));
 
+  const validateStep2 = () => {
+    let isValid = true;
+    setCustFirstNameError('');
+    setCustMobileError('');
+    setCustEmailError('');
+
+    if (isNewCustomer) {
+      if (!custFirstName.trim()) {
+        setCustFirstNameError('First name is required.');
+        isValid = false;
+      }
+      if (!custMobile.trim()) {
+        setCustMobileError('10-digit mobile number is required.');
+        isValid = false;
+      } else if (!/^\d{10}$/.test(custMobile.trim())) {
+        setCustMobileError('Please enter a valid 10-digit mobile number.');
+        isValid = false;
+      }
+      if (custEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(custEmail.trim())) {
+        setCustEmailError('Please enter a valid email address.');
+        isValid = false;
+      }
+      if (!isValid) {
+        const msg = 'Please fill out all required guest profile fields with valid values.';
+        setError(msg);
+        showWarning(msg, 'Guest Profile Required');
+      }
+    } else if (!selectedCustomerId) {
+      const msg = 'Please select a registered customer profile or switch to create a new profile.';
+      setError(msg);
+      showWarning(msg, 'Customer Required');
+      isValid = false;
+    }
+    return isValid;
+  };
+
   // Wizard Step Navigation
   const handleNextStep = () => {
     setError('');
     if (currentStep === 1) {
       if (selectedRoomIds.length === 0) {
-        setError('Please select at least one available room before proceeding.');
+        const msg = 'Please select at least one available room before proceeding.';
+        setError(msg);
+        showWarning(msg, 'Room Selection Required');
         return;
       }
       setCurrentStep(2);
     } else if (currentStep === 2) {
-      if (isNewCustomer) {
-        if (!custFirstName || !custMobile) {
-          setError('Guest First Name and Mobile Number are required.');
-          return;
-        }
-      } else if (!selectedCustomerId) {
-        setError('Please select an existing customer or create a new profile.');
-        return;
-      }
+      if (!validateStep2()) return;
       setCurrentStep(3);
     } else if (currentStep === 3) {
       setCurrentStep(4);
@@ -426,6 +473,13 @@ const BookingCreate = () => {
                   </span>
                 </div>
 
+                {error && (
+                  <div className="alert alert-danger border-danger py-2.5 px-3 rounded-3 d-flex align-items-center gap-2 mb-3 shadow-xs">
+                    <AlertTriangle size={18} className="flex-shrink-0 text-danger" />
+                    <div className="fw-semibold small">{error}</div>
+                  </div>
+                )}
+
                 {/* 4-Column Datetime Layout */}
                 <div className="row g-3 p-3 bg-light rounded-3 border mb-4">
                   <div className="col-md-3 col-6">
@@ -542,13 +596,26 @@ const BookingCreate = () => {
                   </span>
                 </div>
 
+                {error && (
+                  <div className="alert alert-danger border-danger py-2.5 px-3 rounded-3 d-flex align-items-center gap-2 mb-3 shadow-xs">
+                    <AlertTriangle size={18} className="flex-shrink-0 text-danger" />
+                    <div className="fw-semibold small">{error}</div>
+                  </div>
+                )}
+
                 <div className="form-check form-switch mb-3 p-2.5 bg-light rounded-3 border d-flex align-items-center gap-2">
                   <input
                     className="form-check-input ms-0"
                     type="checkbox"
                     id="newCustSwitchWizard"
                     checked={isNewCustomer}
-                    onChange={(e) => setIsNewCustomer(e.target.checked)}
+                    onChange={(e) => {
+                      setIsNewCustomer(e.target.checked);
+                      setError('');
+                      setCustFirstNameError('');
+                      setCustMobileError('');
+                      setCustEmailError('');
+                    }}
                   />
                   <label className="form-check-label fw-bold text-dark cursor-pointer m-0 small" htmlFor="newCustSwitchWizard">
                     + Register & Create New Customer Profile
@@ -557,19 +624,41 @@ const BookingCreate = () => {
 
                 {!isNewCustomer ? (
                   <div className="mb-4">
-                    <label className="form-label small fw-semibold text-primary">Search Registered Customer Directory</label>
+                    <label className="form-label small fw-semibold text-primary">Search Registered Customer Directory *</label>
                     <SearchableCustomerSelect
                       customers={customers}
                       selectedCustomerId={selectedCustomerId}
-                      onSelectCustomer={(id) => setSelectedCustomerId(id)}
+                      onSelectCustomer={(id) => {
+                        setSelectedCustomerId(id);
+                        setError('');
+                      }}
                       placeholder="Search customer by name, mobile, or Aadhaar ID..."
                     />
+                    {!selectedCustomerId && error && (
+                      <div className="text-danger fw-semibold extra-small mt-1.5 d-flex align-items-center gap-1">
+                        <AlertTriangle size={14} /> Please select a registered customer profile or switch to create a new profile.
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="row g-3 mb-4">
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">First Name *</label>
-                      <input type="text" className="form-control" required value={custFirstName} onChange={(e) => setCustFirstName(e.target.value)} placeholder="Guest First Name" />
+                      <input
+                        type="text"
+                        className={`form-control ${custFirstNameError ? 'is-invalid border-danger' : ''}`}
+                        value={custFirstName}
+                        onChange={(e) => {
+                          setCustFirstName(e.target.value);
+                          if (e.target.value.trim()) setCustFirstNameError('');
+                        }}
+                        placeholder="Guest First Name"
+                      />
+                      {custFirstNameError && (
+                        <div className="invalid-feedback d-block fw-semibold extra-small text-danger mt-1">
+                          <i className="bi bi-exclamation-circle me-1"></i>{custFirstNameError}
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">Last Name</label>
@@ -577,11 +666,41 @@ const BookingCreate = () => {
                     </div>
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">Mobile Number *</label>
-                      <input type="text" className="form-control" required value={custMobile} onChange={(e) => setCustMobile(e.target.value)} placeholder="10-digit Mobile Number" />
+                      <input
+                        type="text"
+                        className={`form-control ${custMobileError ? 'is-invalid border-danger' : ''}`}
+                        value={custMobile}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                          setCustMobile(val);
+                          if (val.length === 10) setCustMobileError('');
+                        }}
+                        placeholder="10-digit Mobile Number"
+                        maxLength="10"
+                      />
+                      {custMobileError && (
+                        <div className="invalid-feedback d-block fw-semibold extra-small text-danger mt-1">
+                          <i className="bi bi-exclamation-circle me-1"></i>{custMobileError}
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">Email Address</label>
-                      <input type="email" className="form-control" value={custEmail} onChange={(e) => setCustEmail(e.target.value)} placeholder="guest@example.com" />
+                      <input
+                        type="email"
+                        className={`form-control ${custEmailError ? 'is-invalid border-danger' : ''}`}
+                        value={custEmail}
+                        onChange={(e) => {
+                          setCustEmail(e.target.value);
+                          setCustEmailError('');
+                        }}
+                        placeholder="guest@example.com"
+                      />
+                      {custEmailError && (
+                        <div className="invalid-feedback d-block fw-semibold extra-small text-danger mt-1">
+                          <i className="bi bi-exclamation-circle me-1"></i>{custEmailError}
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -878,10 +997,12 @@ const BookingCreate = () => {
                   <span>Room Charges Subtotal</span>
                   <strong className="text-dark">{formatCurrency(totalRoomCharge)}</strong>
                 </div>
-                <div className="d-flex justify-content-between text-muted small mb-2">
-                  <span>Estimated GST (18%)</span>
-                  <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
-                </div>
+                {taxEnabled && taxPct > 0 && (
+                  <div className="d-flex justify-content-between text-muted small mb-2">
+                    <span>Estimated GST ({taxPct}%)</span>
+                    <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
+                  </div>
+                )}
                 <div className="d-flex justify-content-between fw-bold text-dark fs-6 my-2 pt-2 border-top">
                   <span>Grand Total Bill:</span>
                   <span className="text-primary">{formatCurrency(grandTotalEstimate)}</span>

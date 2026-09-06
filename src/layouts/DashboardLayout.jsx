@@ -2,6 +2,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from '../components/Sidebar';
 import Navbar from '../components/Navbar';
+import SubscriptionExpiryModal from '../components/SubscriptionExpiryModal';
 
 const DashboardLayout = ({ title }) => {
   return (
@@ -13,6 +14,7 @@ const DashboardLayout = ({ title }) => {
           <Outlet />
         </main>
       </div>
+      <SubscriptionExpiryModal />
     </div>
   );
 };

@@ -5,6 +5,7 @@ import CameraCaptureModal from '../components/CameraCaptureModal';
 import ConfirmModal from '../components/ConfirmModal';
 import PageLoader from '../components/PageLoader';
 import { useAuth } from '../context/AuthContext';
+import { getMediaUrl } from '../utils/mediaUtils';
 import { useNotification } from '../context/NotificationContext';
 
 const Customers = () => {
@@ -251,8 +252,9 @@ const Customers = () => {
                         <td className="ps-4">
                           {c.photo ? (
                             <img
-                              src={c.photo}
+                              src={getMediaUrl(c.photo)}
                               alt={c.full_name}
+                              onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
                               className="rounded-circle object-fit-cover shadow-sm border"
                               style={{ width: '42px', height: '42px' }}
                             />

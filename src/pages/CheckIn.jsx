@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { getBookingsApi, getBookingByIdApi, checkInBookingApi } from '../api/bookingApi';
 import { checkAvailabilityApi } from '../api/roomApi';
@@ -6,9 +6,12 @@ import { getCustomersApi, searchCustomersApi } from '../api/customerApi';
 import { createWalkInStayApi } from '../api/stayApi';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import PageLoader from '../components/PageLoader';
-import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
+import { getTodayDateString, getTomorrowDateString, formatDate, getCurrentTimeString } from '../utils/dateUtils';
 import { formatCurrency } from '../utils/formatCurrency';
+import { getSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
+
 import {
   DoorOpen,
   UserCheck,
@@ -39,7 +42,12 @@ import {
   ChevronRight,
   CalendarCheck,
   Receipt,
-  UserPlus
+  UserPlus,
+  RefreshCw,
+  Eye,
+  ExternalLink,
+  Edit3,
+  Moon
 } from 'lucide-react';
 
 const CheckIn = () => {
@@ -47,17 +55,25 @@ const CheckIn = () => {
   const bookingIdParam = searchParams.get('booking_id');
   const navigate = useNavigate();
   const { showError, showWarning, showSuccess } = useNotification();
+  const { hasPermission } = useAuth();
 
   const [mode, setMode] = useState(bookingIdParam ? 'advance' : 'walkin');
+
 
   // STEP-BY-STEP WIZARD STATE FOR WALKIN MODE (1 to 5)
   const [currentStep, setCurrentStep] = useState(1);
 
-  // Common Dates & Times
+  // Common Dates & Times (Default check-in time is current time)
   const [checkInDate, setCheckInDate] = useState(getTodayDateString());
-  const [checkInTime, setCheckInTime] = useState('12:00');
+  const [checkInTime, setCheckInTime] = useState(getCurrentTimeString);
   const [checkoutDate, setCheckoutDate] = useState(getTomorrowDateString());
   const [checkoutTime, setCheckoutTime] = useState('11:00');
+  const [customNights, setCustomNights] = useState(null);
+
+  // Auto-reset customized nights to calendar baseline whenever stay dates change
+  useEffect(() => {
+    setCustomNights(null);
+  }, [checkInDate, checkoutDate]);
 
   // Advance Booking Check-In Specific States
   const [selectedBooking, setSelectedBooking] = useState(null);
@@ -68,6 +84,28 @@ const CheckIn = () => {
   const [advanceAvailableRooms, setAdvanceAvailableRooms] = useState([]);
   const [showAdvanceConfirmModal, setShowAdvanceConfirmModal] = useState(false);
 
+  // Search Container Refs for Auto-Dismiss on Click Outside
+  const advanceSearchRef = useRef(null);
+  const custSearchRef = useRef(null);
+
+  // Global Outside Click Listener to Hide Search Overlays
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (advanceSearchRef.current && !advanceSearchRef.current.contains(e.target)) {
+        setShowAdvanceDropdown(false);
+      }
+      if (custSearchRef.current && !custSearchRef.current.contains(e.target)) {
+        setShowCustDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+    };
+  }, []);
+
   // Walk-In Rooms & Filter
   const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
@@ -77,6 +115,7 @@ const CheckIn = () => {
   // Guest Information
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedCustData, setSelectedCustData] = useState(null);
   const [isNewCust, setIsNewCust] = useState(true);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -90,8 +129,11 @@ const CheckIn = () => {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [docFile, setDocFile] = useState(null);
+  const [docPreview, setDocPreview] = useState('');
   const [docBackFile, setDocBackFile] = useState(null);
+  const [docBackPreview, setDocBackPreview] = useState('');
   const [showCamera, setShowCamera] = useState(false);
+  const [previewDocModal, setPreviewDocModal] = useState(null);
 
   // Guest Counts & Billing
   const [adults, setAdults] = useState(1);
@@ -109,7 +151,15 @@ const CheckIn = () => {
   const [custSearchResults, setCustSearchResults] = useState([]);
   const [showCustDropdown, setShowCustDropdown] = useState(false);
 
+  const [settings, setSettings] = useState(null);
+
   useEffect(() => {
+    getSettingsApi().then((s) => {
+      setSettings(s);
+      if (s?.default_checkout_time) {
+        setCheckoutTime(s.default_checkout_time.substring(0, 5));
+      }
+    }).catch(console.error);
     getCustomersApi().then(setCustomers).catch(console.error);
     if (bookingIdParam) {
       setLoading(true);
@@ -271,8 +321,9 @@ const CheckIn = () => {
     setCheckInTime(currentTimeStr);
 
     // Default expected checkout: check if original booked checkout datetime is still in the future relative to Actual Check-In
+    const stdCheckout = settings?.default_checkout_time ? settings.default_checkout_time.substring(0, 5) : '11:00';
     const origCheckoutDateStr = b.expected_checkout_date || todayStr;
-    const origCheckoutTimeStr = b.expected_checkout_time ? b.expected_checkout_time.substring(0, 5) : '11:00';
+    const origCheckoutTimeStr = b.expected_checkout_time ? b.expected_checkout_time.substring(0, 5) : stdCheckout;
 
     const actualInDt = new Date(`${todayStr}T${currentTimeStr}:00`);
     const origCheckoutDt = new Date(`${origCheckoutDateStr}T${origCheckoutTimeStr}:00`);
@@ -281,11 +332,11 @@ const CheckIn = () => {
       setCheckoutDate(origCheckoutDateStr);
       setCheckoutTime(origCheckoutTimeStr);
     } else {
-      // If original booked checkout is today or in the past relative to actual check-in, set expected checkout to tomorrow @ 11:00 AM
+      // If original booked checkout is today or in the past relative to actual check-in, set expected checkout to tomorrow @ standard checkout time
       const tomDate = new Date(Date.now() + 86400000);
       const tomStr = tomDate.toISOString().split('T')[0];
       setCheckoutDate(tomStr);
-      setCheckoutTime('11:00');
+      setCheckoutTime(stdCheckout);
     }
 
     if (b.customer_detail) {
@@ -296,13 +347,53 @@ const CheckIn = () => {
       setAddress(b.customer_detail.address || '');
       setIdType(b.customer_detail.id_type || 'Aadhaar');
       setIdNumber(b.customer_detail.id_number || '');
-      if (b.customer_detail.photo) setPhotoPreview(b.customer_detail.photo);
+      if (b.customer_detail.photo) setPhotoPreview(b.customer_detail.photo); else setPhotoPreview('');
+      if (b.customer_detail.id_document) setDocPreview(b.customer_detail.id_document); else setDocPreview('');
+      if (b.customer_detail.id_document_back) setDocBackPreview(b.customer_detail.id_document_back); else setDocBackPreview('');
+      setDocFile(null);
+      setDocBackFile(null);
+      setPhotoFile(null);
     }
     setAdults(b.adults || 1);
     setChildren(b.children || 0);
 
     setShowAdvanceDropdown(false);
     setAdvanceSearchTerm('');
+  };
+
+  // Document Helpers & Preview Handler
+  const openDocumentPreview = (urlOrFile, title) => {
+    if (!urlOrFile) return;
+    let url = '';
+    let isPdf = false;
+    if (typeof urlOrFile === 'string') {
+      url = urlOrFile;
+      isPdf = url.toLowerCase().endsWith('.pdf');
+    } else if (urlOrFile instanceof File || urlOrFile instanceof Blob) {
+      url = URL.createObjectURL(urlOrFile);
+      isPdf = urlOrFile.type === 'application/pdf';
+    }
+    setPreviewDocModal({ show: true, url, title, isPdf });
+  };
+
+  const handleDocFrontChange = (file) => {
+    if (!file) return;
+    setDocFile(file);
+    if (file.type.startsWith('image/')) {
+      setDocPreview(URL.createObjectURL(file));
+    } else {
+      setDocPreview(URL.createObjectURL(file));
+    }
+  };
+
+  const handleDocBackChange = (file) => {
+    if (!file) return;
+    setDocBackFile(file);
+    if (file.type.startsWith('image/')) {
+      setDocBackPreview(URL.createObjectURL(file));
+    } else {
+      setDocBackPreview(URL.createObjectURL(file));
+    }
   };
 
   // Walk-In Customer Search Handler
@@ -324,6 +415,7 @@ const CheckIn = () => {
 
   const handleSelectCustomer = (c) => {
     setSelectedCustomerId(c.id);
+    setSelectedCustData(c);
     setIsNewCust(false);
     setFirstName(c.first_name || '');
     setLastName(c.last_name || '');
@@ -332,7 +424,12 @@ const CheckIn = () => {
     setAddress(c.address || '');
     setIdType(c.id_type || 'Aadhaar');
     setIdNumber(c.id_number || '');
-    if (c.photo) setPhotoPreview(c.photo);
+    if (c.photo) setPhotoPreview(c.photo); else setPhotoPreview('');
+    if (c.id_document) setDocPreview(c.id_document); else setDocPreview('');
+    if (c.id_document_back) setDocBackPreview(c.id_document_back); else setDocBackPreview('');
+    setDocFile(null);
+    setDocBackFile(null);
+    setPhotoFile(null);
     setShowCustDropdown(false);
     setCustSearchTerm('');
   };
@@ -402,6 +499,10 @@ const CheckIn = () => {
 
   // Execute Final API Call After Confirmation Modal Approval
   const executeAdvanceCheckIn = async () => {
+    if (!hasPermission('stays', 'can_checkin')) {
+      showError('Your staff role does not have permission to process check-ins.', 'Access Denied');
+      return;
+    }
     setError('');
     setShowAdvanceConfirmModal(false);
 
@@ -412,6 +513,7 @@ const CheckIn = () => {
         check_in_time: checkInTime,
         expected_checkout_date: checkoutDate,
         expected_checkout_time: checkoutTime,
+        chargeable_nights: nightsCount,
       };
       const res = await checkInBookingApi(selectedBooking.id, payload);
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
@@ -428,7 +530,12 @@ const CheckIn = () => {
   // Submit Walk-In Check-In
   const handleWalkInCheckInSubmit = async (e) => {
     if (e) e.preventDefault();
+    if (!hasPermission('stays', 'can_checkin')) {
+      showError('Your staff role does not have permission to process walk-in check-ins.', 'Access Denied');
+      return;
+    }
     setError('');
+
 
     if (!selectedRoomId) {
       const msg = 'Please select an available room.';
@@ -440,6 +547,13 @@ const CheckIn = () => {
       const msg = 'Guest First Name and Mobile Number are required.';
       setError(msg);
       showWarning(msg, 'Guest Details Required');
+      return;
+    }
+    if (!verifiedConsent) {
+      const msg = 'Please accept the verification consent checkbox before completing check-in.';
+      setError(msg);
+      showWarning(msg, 'Terms & Policy Acceptance Required');
+      setCurrentStep(5);
       return;
     }
 
@@ -458,6 +572,7 @@ const CheckIn = () => {
       formData.append('check_in_time', checkInTime);
       formData.append('expected_checkout_date', checkoutDate);
       formData.append('expected_checkout_time', checkoutTime);
+      formData.append('chargeable_nights', nightsCount);
       formData.append('adults', adults);
       formData.append('children', children);
       if (customRoomRate) formData.append('room_rate', customRoomRate);
@@ -493,17 +608,57 @@ const CheckIn = () => {
     ? advanceAvailableRooms.find(r => String(r.id) === String(reallocatedRoomId)) || selectedBooking?.room_detail
     : availableRooms.find((r) => String(r.id) === String(selectedRoomId));
 
-  const dtStart = new Date(`${checkInDate}T${checkInTime}`);
-  const dtEnd = new Date(`${checkoutDate}T${checkoutTime}`);
-  const diffTime = Math.max(0, dtEnd - dtStart);
-  const nightsCount = Math.max(1, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+  // 1. Calculate calendar nights baseline strictly based on calendar dates
+  const calStart = new Date(checkInDate);
+  const calEnd = new Date(checkoutDate);
+  const calendarNights = Math.max(1, Math.round((calEnd - calStart) / (1000 * 60 * 60 * 24)));
+
+  // 2. Standard hotel check-in/checkout times from settings
+  const stdCheckInTime = settings?.default_checkin_time ? settings.default_checkin_time.substring(0, 5) : '12:00';
+  const stdCheckoutTime = settings?.default_checkout_time ? settings.default_checkout_time.substring(0, 5) : '11:00';
+
+  // 3. Early arrival / Late departure time difference relative to standard hotel times
+  const stdInDt = new Date(`${checkInDate}T${stdCheckInTime}:00`);
+  const actualInDt = new Date(`${checkInDate}T${checkInTime}:00`);
+  const earlyCheckInHours = Math.max(0, (stdInDt - actualInDt) / (1000 * 60 * 60));
+
+  const stdOutDt = new Date(`${checkoutDate}T${stdCheckoutTime}:00`);
+  const actualOutDt = new Date(`${checkoutDate}T${checkoutTime}:00`);
+  const lateCheckoutHours = Math.max(0, (actualOutDt - stdOutDt) / (1000 * 60 * 60));
+
+  const isExtendedEarly = earlyCheckInHours > 6;
+  const isExtendedLate = lateCheckoutHours > 6;
+  const hasExtendedDifference = isExtendedEarly || isExtendedLate;
+
+  // 4. Bounded allowed options: [calendarNights - 1 (min 1), calendarNights, calendarNights + 1]
+  const minAllowedNights = Math.max(1, calendarNights - 1);
+  const maxAllowedNights = calendarNights + 1;
+  const allowedNightsOptions = [];
+  for (let n = minAllowedNights; n <= maxAllowedNights; n++) {
+    if (!allowedNightsOptions.includes(n)) {
+      allowedNightsOptions.push(n);
+    }
+  }
+
+  // 5. Active considered nights count
+  const nightsCount = (customNights !== null && customNights >= minAllowedNights && customNights <= maxAllowedNights)
+    ? customNights
+    : calendarNights;
+
+  const selectedCustObj = customers.find((c) => String(c.id) === String(selectedCustomerId)) ||
+    selectedCustData ||
+    customers.find((c) => c.mobile && c.mobile === mobile) ||
+    (selectedBooking?.customer_detail);
+  const walletCreditAvailable = parseFloat(selectedCustObj?.total_wallet_credit || selectedCustObj?.advance_credit || 0);
 
   const activeRate = mode === 'advance'
     ? parseFloat(selectedBooking?.room_rate || selectedRoomObj?.base_price || 0)
     : parseFloat(customRoomRate || selectedRoomObj?.base_price || 0);
 
   const roomAmountTotal = nightsCount * activeRate;
-  const estimatedGst = Math.round(roomAmountTotal * 0.18);
+  const taxEnabled = Boolean(settings?.tax_enabled);
+  const taxPct = taxEnabled ? parseFloat(settings?.tax_percentage || 0) : 0;
+  const estimatedGst = taxEnabled && taxPct > 0 ? Math.round((roomAmountTotal * taxPct) / 100) : 0;
   const grandTotalEstimate = roomAmountTotal + estimatedGst;
   const numericAdvance = mode === 'advance'
     ? parseFloat(selectedBooking?.advance_amount || 0) + parseFloat(advancePayment || 0)
@@ -665,7 +820,7 @@ const CheckIn = () => {
               </div>
             </div>
 
-            <div className="position-relative">
+            <div className="position-relative" ref={advanceSearchRef}>
               <div className="input-group input-group-lg border rounded-3 overflow-hidden">
                 <span className="input-group-text bg-white border-0 text-muted ps-3">
                   <Search size={20} />
@@ -676,16 +831,45 @@ const CheckIn = () => {
                   placeholder="Type Booking # (BK-2026...), Guest Name, Mobile Number, or Room # to search..."
                   value={advanceSearchTerm}
                   onChange={handleAdvanceSearchInput}
-                  onFocus={() => setShowAdvanceDropdown(true)}
+                  onFocus={() => {
+                    if (advanceSearchTerm.trim().length > 0 || advanceSearchResults.length > 0) {
+                      setShowAdvanceDropdown(true);
+                    }
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setShowAdvanceDropdown(false);
+                    }
+                  }}
                 />
+                {advanceSearchTerm && (
+                  <button
+                    type="button"
+                    className="input-group-text bg-white border-0 text-muted pe-3 cursor-pointer"
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      setAdvanceSearchTerm('');
+                      setShowAdvanceDropdown(false);
+                      loadEligibleAdvanceBookings();
+                    }}
+                    title="Clear search"
+                  >
+                    <span className="fs-6 fw-bold">✕</span>
+                  </button>
+                )}
               </div>
 
               {/* Booking Search Popover Card */}
               {showAdvanceDropdown && (
-                <div className="position-absolute start-0 end-0 top-100 mt-2 bg-white border-0 rounded-3 shadow-lg z-3 overflow-hidden" style={{ maxHeight: '350px', overflowY: 'auto' }}>
+                <div
+                  className="position-absolute start-0 end-0 top-100 mt-2 bg-white border rounded-3 shadow-lg z-3 overflow-hidden"
+                  style={{ maxHeight: '350px', overflowY: 'auto' }}
+                >
                   {advanceSearchResults.length === 0 ? (
                     <div className="p-4 text-center text-muted small">
-                      No active confirmed bookings found matching "{advanceSearchTerm}". Excludes cancelled, checked-in & no-show bookings.
+                      {advanceSearchTerm.trim()
+                        ? `No active confirmed bookings found matching "${advanceSearchTerm}". Excludes cancelled, checked-in & no-show bookings.`
+                        : 'No active confirmed advance reservations found.'}
                     </div>
                   ) : (
                     advanceSearchResults.map((b) => (
@@ -851,7 +1035,17 @@ const CheckIn = () => {
                       <input type="date" className="form-control" required value={checkInDate} onChange={(e) => setCheckInDate(e.target.value)} />
                     </div>
                     <div className="col-md-3 col-6">
-                      <label className="form-label small fw-semibold text-dark">Actual Check-In Time</label>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <label className="form-label small fw-semibold text-dark m-0">Actual Check-In Time</label>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 text-primary extra-small text-decoration-none fw-bold"
+                          style={{ fontSize: '0.725rem' }}
+                          onClick={() => setCheckInTime(getCurrentTimeString())}
+                        >
+                          ⏱️ Now
+                        </button>
+                      </div>
                       <input type="time" className="form-control" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
                     </div>
                     <div className="col-md-3 col-6">
@@ -861,6 +1055,72 @@ const CheckIn = () => {
                     <div className="col-md-3 col-6">
                       <label className="form-label small fw-semibold text-dark">Check-Out Time</label>
                       <input type="time" className="form-control" value={checkoutTime} onChange={(e) => setCheckoutTime(e.target.value)} />
+                    </div>
+                  </div>
+
+                  {/* SMART STAY DURATION & BOUNDED NIGHTS SELECTOR */}
+                  <div className="p-3 bg-light rounded-3 border mb-3">
+                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                      <div>
+                        <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                          <span className="fw-bold text-dark fs-6 d-flex align-items-center gap-1.5">
+                            <Moon size={16} className="text-primary" /> Stay Duration:
+                          </span>
+                          <span className="badge bg-primary rounded-pill px-2.5 py-1">
+                            {nightsCount} Night{nightsCount > 1 ? 's' : ''} Charged
+                          </span>
+                          {nightsCount !== calendarNights && (
+                            <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-0.5 small">
+                              Customized ({nightsCount > calendarNights ? `+${nightsCount - calendarNights} extra` : `${nightsCount - calendarNights}`})
+                            </span>
+                          )}
+                        </div>
+                        <div className="small text-muted d-flex flex-wrap align-items-center gap-2">
+                          <span>Calendar baseline: <strong>{calendarNights} Night{calendarNights > 1 ? 's' : ''}</strong> ({formatDate(checkInDate)} to {formatDate(checkoutDate)})</span>
+                          {earlyCheckInHours > 0.1 && (
+                            <span className={`badge ${isExtendedEarly ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-white text-secondary border'}`}>
+                              {isExtendedEarly ? '⚡' : '⏱️'} Early Arrival: {earlyCheckInHours.toFixed(1)}h before standard {stdCheckInTime} {isExtendedEarly ? '(>6h - Extra Night Allowed)' : '(Standard window)'}
+                            </span>
+                          )}
+                          {lateCheckoutHours > 0.1 && (
+                            <span className={`badge ${isExtendedLate ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-white text-secondary border'}`}>
+                              {isExtendedLate ? '⚡' : '⏱️'} Late Checkout: {lateCheckoutHours.toFixed(1)}h after standard {stdCheckoutTime} {isExtendedLate ? '(>6h - Extra Night Allowed)' : '(Standard window)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bounded Pill Selector */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                        <span className="text-muted small fw-semibold me-1">Consider Nights:</span>
+                        {allowedNightsOptions.map((n) => {
+                          const isSelected = nightsCount === n;
+                          const isStandard = n === calendarNights;
+                          const isExtra = n > calendarNights;
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              className={`btn btn-sm rounded-pill px-3 py-1 fw-semibold transition-all ${
+                                isSelected
+                                  ? 'btn-primary text-white shadow-xs'
+                                  : 'btn-outline-secondary bg-white text-secondary'
+                              }`}
+                              onClick={() => setCustomNights(n)}
+                              title={
+                                isStandard
+                                  ? `Standard ${n}-night calendar stay`
+                                  : isExtra
+                                  ? `Charge ${n} nights (accounting for early check-in or late checkout)`
+                                  : `Reduced to ${n} night`
+                              }
+                            >
+                              {n} Night{n > 1 ? 's' : ''}
+                              {isStandard ? ' (Standard)' : isExtra ? ' (+1 Extra)' : ' (-1 Day)'}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
@@ -990,10 +1250,12 @@ const CheckIn = () => {
                       <span>Room Rate Subtotal</span>
                       <strong className="text-dark">{formatCurrency(roomAmountTotal)}</strong>
                     </div>
-                    <div className="d-flex justify-content-between text-muted small mb-2">
-                      <span>Estimated GST (18%)</span>
-                      <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
-                    </div>
+                    {taxEnabled && taxPct > 0 && (
+                      <div className="d-flex justify-content-between text-muted small mb-2">
+                        <span>Estimated GST ({taxPct}%)</span>
+                        <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
+                      </div>
+                    )}
                     <div className="d-flex justify-content-between fw-bold text-dark fs-6 my-2 pt-2 border-top">
                       <span>Grand Total:</span>
                       <span className="text-primary">{formatCurrency(grandTotalEstimate)}</span>
@@ -1081,7 +1343,17 @@ const CheckIn = () => {
                       </div>
                     </div>
                     <div className="col-md-3 col-6">
-                      <label className="form-label small fw-semibold text-dark">Check-In Time</label>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <label className="form-label small fw-semibold text-dark m-0">Check-In Time</label>
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 text-primary extra-small text-decoration-none fw-bold"
+                          style={{ fontSize: '0.725rem' }}
+                          onClick={() => setCheckInTime(getCurrentTimeString())}
+                        >
+                          ⏱️ Now
+                        </button>
+                      </div>
                       <div className="input-group input-group-sm">
                         <span className="input-group-text bg-white"><Clock size={14} /></span>
                         <input type="time" className="form-control" value={checkInTime} onChange={(e) => setCheckInTime(e.target.value)} />
@@ -1099,6 +1371,72 @@ const CheckIn = () => {
                       <div className="input-group input-group-sm">
                         <span className="input-group-text bg-white"><Clock size={14} /></span>
                         <input type="time" className="form-control" value={checkoutTime} onChange={(e) => setCheckoutTime(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SMART STAY DURATION & BOUNDED NIGHTS SELECTOR */}
+                  <div className="p-3 bg-white rounded-3 border mb-4 shadow-xs">
+                    <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                      <div>
+                        <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                          <span className="fw-bold text-dark fs-6 d-flex align-items-center gap-1.5">
+                            <Moon size={16} className="text-primary" /> Stay Duration:
+                          </span>
+                          <span className="badge bg-primary rounded-pill px-2.5 py-1">
+                            {nightsCount} Night{nightsCount > 1 ? 's' : ''} Charged
+                          </span>
+                          {nightsCount !== calendarNights && (
+                            <span className="badge bg-info-subtle text-info-emphasis border border-info-subtle rounded-pill px-2 py-0.5 small">
+                              Customized ({nightsCount > calendarNights ? `+${nightsCount - calendarNights} extra` : `${nightsCount - calendarNights}`})
+                            </span>
+                          )}
+                        </div>
+                        <div className="small text-muted d-flex flex-wrap align-items-center gap-2">
+                          <span>Calendar baseline: <strong>{calendarNights} Night{calendarNights > 1 ? 's' : ''}</strong> ({formatDate(checkInDate)} to {formatDate(checkoutDate)})</span>
+                          {earlyCheckInHours > 0.1 && (
+                            <span className={`badge ${isExtendedEarly ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-light text-secondary border'}`}>
+                              {isExtendedEarly ? '⚡' : '⏱️'} Early Arrival: {earlyCheckInHours.toFixed(1)}h before standard {stdCheckInTime} {isExtendedEarly ? '(>6h - Extra Night Allowed)' : '(Standard window)'}
+                            </span>
+                          )}
+                          {lateCheckoutHours > 0.1 && (
+                            <span className={`badge ${isExtendedLate ? 'bg-warning-subtle text-warning-emphasis border border-warning-subtle' : 'bg-light text-secondary border'}`}>
+                              {isExtendedLate ? '⚡' : '⏱️'} Late Checkout: {lateCheckoutHours.toFixed(1)}h after standard {stdCheckoutTime} {isExtendedLate ? '(>6h - Extra Night Allowed)' : '(Standard window)'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Bounded Pill Selector */}
+                      <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                        <span className="text-muted small fw-semibold me-1">Consider Nights:</span>
+                        {allowedNightsOptions.map((n) => {
+                          const isSelected = nightsCount === n;
+                          const isStandard = n === calendarNights;
+                          const isExtra = n > calendarNights;
+                          return (
+                            <button
+                              key={n}
+                              type="button"
+                              className={`btn btn-sm rounded-pill px-3 py-1 fw-semibold transition-all ${
+                                isSelected
+                                  ? 'btn-primary text-white shadow-xs'
+                                  : 'btn-outline-secondary bg-white text-secondary'
+                              }`}
+                              onClick={() => setCustomNights(n)}
+                              title={
+                                isStandard
+                                  ? `Standard ${n}-night calendar stay`
+                                  : isExtra
+                                  ? `Charge ${n} nights (accounting for early check-in or late checkout)`
+                                  : `Reduced to ${n} night`
+                              }
+                            >
+                              {n} Night{n > 1 ? 's' : ''}
+                              {isStandard ? ' (Standard)' : isExtra ? ' (+1 Extra)' : ' (-1 Day)'}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -1207,7 +1545,7 @@ const CheckIn = () => {
                   </div>
 
                   {/* Search Existing Customer Bar */}
-                  <div className="position-relative mb-4">
+                  <div className="position-relative mb-4" ref={custSearchRef}>
                     <label className="form-label small fw-semibold text-primary">Search Existing Customer Directory</label>
                     <div className="input-group">
                       <span className="input-group-text bg-white"><Search size={16} /></span>
@@ -1218,7 +1556,26 @@ const CheckIn = () => {
                         value={custSearchTerm}
                         onChange={(e) => handleCustSearch(e.target.value)}
                         onFocus={() => custSearchTerm.length > 1 && setShowCustDropdown(true)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            setShowCustDropdown(false);
+                          }
+                        }}
                       />
+                      {custSearchTerm && (
+                        <button
+                          type="button"
+                          className="input-group-text bg-white text-muted cursor-pointer"
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => {
+                            setCustSearchTerm('');
+                            setShowCustDropdown(false);
+                          }}
+                          title="Clear search"
+                        >
+                          ✕
+                        </button>
+                      )}
                     </div>
 
                     {showCustDropdown && (
@@ -1370,54 +1727,184 @@ const CheckIn = () => {
                     </div>
                   </div>
 
-                  {/* ID Cards Upload Boxes */}
+                  {/* ID Cards Upload & Preview Boxes */}
                   <div className="row g-3 mb-4">
+                    {/* FRONT SIDE */}
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark">ID Document (Front Side)</label>
-                      <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative">
-                        {docFile ? (
-                          <div className="d-flex align-items-center justify-content-between p-2 bg-white rounded border">
-                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
-                              <FileText size={20} className="text-primary flex-shrink-0" />
-                              <div className="text-truncate small fw-semibold">{docFile.name}</div>
-                            </div>
-                            <button type="button" className="btn btn-sm btn-link text-danger p-0" onClick={() => setDocFile(null)}>
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div>
-                            <UploadCloud size={28} className="text-primary mb-1" />
-                            <div className="small fw-semibold text-dark">Upload ID Front</div>
-                            <div className="text-muted" style={{ fontSize: '0.725rem' }}>JPG, PNG or PDF</div>
-                            <input type="file" accept="image/*,application/pdf" className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer" onChange={(e) => setDocFile(e.target.files[0] || null)} />
-                          </div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <label className="form-label small fw-semibold text-dark m-0">ID Document (Front Side)</label>
+                        {(docFile || docPreview) && (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                            <CheckCircle2 size={12} /> {docFile ? 'New Document Attached' : '✓ Verified Document'}
+                          </span>
                         )}
                       </div>
+
+                      {docFile || docPreview ? (
+                        <div className="p-2.5 bg-white rounded-3 border border-success-subtle shadow-xs">
+                          <div className="d-flex align-items-center justify-content-between gap-2">
+                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                              {((docFile && docFile.type && docFile.type.startsWith('image/')) || (typeof docPreview === 'string' && (docPreview.startsWith('blob:') || docPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                <img
+                                  src={docPreview}
+                                  alt="Front ID"
+                                  className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                  style={{ width: '48px', height: '36px' }}
+                                  onClick={() => openDocumentPreview(docFile || docPreview, 'Front ID Document')}
+                                />
+                              ) : (
+                                <div className="bg-danger-subtle text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '40px', height: '36px' }}>
+                                  <FileText size={20} />
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '160px' }}>
+                                  {docFile ? docFile.name : (docPreview.split('/').pop() || 'Front_ID_Document')}
+                                </div>
+                                <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                  {docFile ? `New File (${(docFile.size / 1024).toFixed(1)} KB)` : 'Existing Customer Document'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                onClick={() => openDocumentPreview(docFile || docPreview, 'Front ID Document')}
+                                title="Preview Document"
+                              >
+                                <Eye size={13} /> Preview
+                              </button>
+                              <label
+                                className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                title="Replace / Update Document"
+                              >
+                                <RefreshCw size={12} /> Edit
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="d-none"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) handleDocFrontChange(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                onClick={() => { setDocFile(null); setDocPreview(''); }}
+                                title="Remove Document"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative hover-bg-white transition-all">
+                          <UploadCloud size={28} className="text-primary mb-1" />
+                          <div className="small fw-semibold text-dark">Upload ID Front</div>
+                          <div className="text-muted" style={{ fontSize: '0.725rem' }}>JPG, PNG or PDF</div>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer"
+                            onChange={(e) => {
+                              if (e.target.files[0]) handleDocFrontChange(e.target.files[0]);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
 
+                    {/* BACK SIDE */}
                     <div className="col-md-6">
-                      <label className="form-label small fw-semibold text-dark">ID Document (Back Side)</label>
-                      <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative">
-                        {docBackFile ? (
-                          <div className="d-flex align-items-center justify-content-between p-2 bg-white rounded border">
-                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
-                              <FileText size={20} className="text-primary flex-shrink-0" />
-                              <div className="text-truncate small fw-semibold">{docBackFile.name}</div>
-                            </div>
-                            <button type="button" className="btn btn-sm btn-link text-danger p-0" onClick={() => setDocBackFile(null)}>
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div>
-                            <UploadCloud size={28} className="text-primary mb-1" />
-                            <div className="small fw-semibold text-dark">Upload ID Back</div>
-                            <div className="text-muted" style={{ fontSize: '0.725rem' }}>JPG, PNG or PDF</div>
-                            <input type="file" accept="image/*,application/pdf" className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer" onChange={(e) => setDocBackFile(e.target.files[0] || null)} />
-                          </div>
+                      <div className="d-flex justify-content-between align-items-center mb-1">
+                        <label className="form-label small fw-semibold text-dark m-0">ID Document (Back Side)</label>
+                        {(docBackFile || docBackPreview) && (
+                          <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-0.5 extra-small fw-bold d-inline-flex align-items-center gap-1">
+                            <CheckCircle2 size={12} /> {docBackFile ? 'New Document Attached' : '✓ Verified Document'}
+                          </span>
                         )}
                       </div>
+
+                      {docBackFile || docBackPreview ? (
+                        <div className="p-2.5 bg-white rounded-3 border border-success-subtle shadow-xs">
+                          <div className="d-flex align-items-center justify-content-between gap-2">
+                            <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
+                              {((docBackFile && docBackFile.type && docBackFile.type.startsWith('image/')) || (typeof docBackPreview === 'string' && (docBackPreview.startsWith('blob:') || docBackPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
+                                <img
+                                  src={docBackPreview}
+                                  alt="Back ID"
+                                  className="rounded border object-fit-cover flex-shrink-0 cursor-pointer shadow-xs"
+                                  style={{ width: '48px', height: '36px' }}
+                                  onClick={() => openDocumentPreview(docBackFile || docBackPreview, 'Back ID Document')}
+                                />
+                              ) : (
+                                <div className="bg-danger-subtle text-danger p-1.5 rounded border d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '40px', height: '36px' }}>
+                                  <FileText size={20} />
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <div className="text-truncate small fw-bold text-dark" style={{ maxWidth: '160px' }}>
+                                  {docBackFile ? docBackFile.name : (docBackPreview.split('/').pop() || 'Back_ID_Document')}
+                                </div>
+                                <div className="text-muted extra-small" style={{ fontSize: '0.7rem' }}>
+                                  {docBackFile ? `New File (${(docBackFile.size / 1024).toFixed(1)} KB)` : 'Existing Customer Document'}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="d-flex align-items-center gap-1 flex-shrink-0">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary py-1 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                                onClick={() => openDocumentPreview(docBackFile || docBackPreview, 'Back ID Document')}
+                                title="Preview Document"
+                              >
+                                <Eye size={13} /> Preview
+                              </button>
+                              <label
+                                className="btn btn-sm btn-light border py-1 px-2 extra-small fw-semibold rounded-2 m-0 cursor-pointer d-inline-flex align-items-center gap-1 hover-bg-light"
+                                title="Replace / Update Document"
+                              >
+                                <RefreshCw size={12} /> Edit
+                                <input
+                                  type="file"
+                                  accept="image/*,application/pdf"
+                                  className="d-none"
+                                  onChange={(e) => {
+                                    if (e.target.files[0]) handleDocBackChange(e.target.files[0]);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-light border text-danger py-1 px-1.5 extra-small rounded-2 hover-bg-light"
+                                onClick={() => { setDocBackFile(null); setDocBackPreview(''); }}
+                                title="Remove Document"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="border border-dashed p-3 rounded-3 text-center bg-light position-relative hover-bg-white transition-all">
+                          <UploadCloud size={28} className="text-primary mb-1" />
+                          <div className="small fw-semibold text-dark">Upload ID Back</div>
+                          <div className="text-muted" style={{ fontSize: '0.725rem' }}>JPG, PNG or PDF</div>
+                          <input
+                            type="file"
+                            accept="image/*,application/pdf"
+                            className="opacity-0 position-absolute start-0 top-0 w-100 h-100 cursor-pointer"
+                            onChange={(e) => {
+                              if (e.target.files[0]) handleDocBackChange(e.target.files[0]);
+                            }}
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1446,8 +1933,21 @@ const CheckIn = () => {
                       </div>
                       {photoPreview && (
                         <div className="d-flex align-items-center gap-2 bg-white p-1.5 rounded-3 border">
-                          <img src={photoPreview} alt="Guest" className="rounded-circle" style={{ width: '48px', height: '48px', objectFit: 'cover' }} />
-                          <span className="small text-success fw-bold me-2">✓ Photo Verified</span>
+                          <img
+                            src={photoPreview}
+                            alt="Guest"
+                            className="rounded-circle object-fit-cover cursor-pointer"
+                            style={{ width: '48px', height: '48px' }}
+                            onClick={() => openDocumentPreview(photoFile || photoPreview, 'Guest Live Photo')}
+                          />
+                          <span className="small text-success fw-bold me-1">✓ Photo Verified</span>
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-outline-primary py-0.5 px-2 extra-small fw-semibold rounded-2 d-inline-flex align-items-center gap-1"
+                            onClick={() => openDocumentPreview(photoFile || photoPreview, 'Guest Live Photo')}
+                          >
+                            <Eye size={12} /> Preview
+                          </button>
                           <button type="button" className="btn btn-sm btn-link text-danger p-0 me-1" onClick={() => { setPhotoFile(null); setPhotoPreview(''); }}>
                             <Trash2 size={16} />
                           </button>
@@ -1482,6 +1982,30 @@ const CheckIn = () => {
                       Step 4 of 5
                     </span>
                   </div>
+
+                  {walletCreditAvailable > 0 && (
+                    <div className="alert alert-success border-success rounded-3 p-3 mb-4 d-flex align-items-center justify-content-between gap-3 shadow-xs">
+                      <div className="d-flex align-items-center gap-2.5">
+                        <div className="p-2.5 bg-success text-white rounded-circle d-flex align-items-center justify-content-center">
+                          <i className="bi bi-wallet-fill fs-5"></i>
+                        </div>
+                        <div>
+                          <div className="extra-small fw-bold text-uppercase text-success-emphasis tracking-wider">Guest Wallet Advance Credit</div>
+                          <h6 className="fw-bold text-success m-0 fs-5">{formatCurrency(walletCreditAvailable)} Available Credit</h6>
+                          <span className="extra-small text-secondary">
+                            This guest has advance credit. It will be automatically applied as an advance payment upon check-in!
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-success fw-bold shadow-xs px-3 py-2 d-flex align-items-center gap-1.5"
+                        onClick={() => setAdvancePayment(Math.min(walletCreditAvailable, grandTotalEstimate).toString())}
+                      >
+                        <i className="bi bi-check-circle-fill"></i> Use Wallet Credit ({formatCurrency(walletCreditAvailable)})
+                      </button>
+                    </div>
+                  )}
 
                   <div className="row g-3 mb-4">
                     <div className="col-md-6">
@@ -1518,10 +2042,12 @@ const CheckIn = () => {
                       <span>Room Subtotal ({nightsCount} Night x {formatCurrency(activeRate)}):</span>
                       <span className="text-dark fw-semibold">{formatCurrency(roomAmountTotal)}</span>
                     </div>
-                    <div className="d-flex justify-content-between text-muted small mb-1">
-                      <span>Estimated GST (18%):</span>
-                      <span className="text-dark fw-semibold">{formatCurrency(estimatedGst)}</span>
-                    </div>
+                    {taxEnabled && taxPct > 0 && (
+                      <div className="d-flex justify-content-between text-muted small mb-1">
+                        <span>Estimated GST ({taxPct}%):</span>
+                        <span className="text-dark fw-semibold">{formatCurrency(estimatedGst)}</span>
+                      </div>
+                    )}
                     <div className="d-flex justify-content-between fw-bold text-dark fs-6 my-2 pt-2 border-top">
                       <span>Grand Total Bill:</span>
                       <span className="text-primary">{formatCurrency(grandTotalEstimate)}</span>
@@ -1581,19 +2107,26 @@ const CheckIn = () => {
                   </div>
 
                   {/* Verification Consent Checkbox */}
-                  <div className="p-3 bg-success-subtle rounded-3 border border-success-subtle mb-4">
-                    <div className="form-check">
+                  <div className={`p-3 rounded-3 border mb-4 transition-all ${verifiedConsent ? 'bg-success-subtle border-success' : 'bg-light border-warning-subtle'}`}>
+                    <div className="form-check d-flex align-items-center gap-2">
                       <input
-                        className="form-check-input"
+                        className="form-check-input flex-shrink-0 cursor-pointer"
+                        style={{ width: '1.25rem', height: '1.25rem' }}
                         type="checkbox"
                         id="consentCheckFinal"
+                        required
                         checked={verifiedConsent}
                         onChange={(e) => setVerifiedConsent(e.target.checked)}
                       />
-                      <label className="form-check-label fw-semibold text-dark small" htmlFor="consentCheckFinal">
+                      <label className="form-check-label fw-semibold text-dark small cursor-pointer m-0" htmlFor="consentCheckFinal">
                         I confirm that the primary guest profile, photo, and identity proof document have been verified according to lodge policy.
                       </label>
                     </div>
+                    {!verifiedConsent && (
+                      <div className="extra-small text-danger fw-semibold mt-1.5 ms-4 ps-1">
+                        <AlertTriangle size={13} className="me-1" /> You must accept this verification agreement to finalize check-in.
+                      </div>
+                    )}
                   </div>
 
                   {/* Step 5 Navigation & Submit */}
@@ -1601,7 +2134,12 @@ const CheckIn = () => {
                     <button type="button" className="btn btn-light border btn-lg px-4" onClick={handlePrevStep}>
                       <ArrowLeft size={18} className="me-1" /> Back
                     </button>
-                    <button type="submit" className="btn btn-success btn-lg fw-bold px-4 py-3 shadow-sm d-flex align-items-center gap-2">
+                    <button
+                      type="submit"
+                      className="btn btn-success btn-lg fw-bold px-4 py-3 shadow-sm d-flex align-items-center gap-2"
+                      disabled={!verifiedConsent}
+                      title={!verifiedConsent ? 'Please check and accept the verification terms above' : 'Complete Check-In & Issue Key'}
+                    >
                       <UserCheck size={20} /> Complete Check-In & Issue Key
                     </button>
                   </div>
@@ -1650,14 +2188,26 @@ const CheckIn = () => {
 
                   {/* Billing Calculation Breakdown */}
                   <h6 className="fw-bold text-dark mb-3">Estimated Billing Breakdown</h6>
+
+                  {walletCreditAvailable > 0 && (
+                    <div className="p-2.5 bg-success-subtle rounded-3 border border-success-subtle d-flex justify-content-between align-items-center mb-3">
+                      <span className="small fw-bold text-success d-flex align-items-center gap-1.5">
+                        <i className="bi bi-wallet-fill fs-6"></i> Wallet Balance Available:
+                      </span>
+                      <strong className="text-success fs-6">{formatCurrency(walletCreditAvailable)}</strong>
+                    </div>
+                  )}
+
                   <div className="d-flex justify-content-between text-muted small mb-2">
                     <span>Room Charges ({nightsCount} Night x {formatCurrency(activeRate)})</span>
                     <strong className="text-dark">{formatCurrency(roomAmountTotal)}</strong>
                   </div>
-                  <div className="d-flex justify-content-between text-muted small mb-2">
-                    <span>Estimated GST (18%)</span>
-                    <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
-                  </div>
+                  {taxEnabled && taxPct > 0 && (
+                    <div className="d-flex justify-content-between text-muted small mb-2">
+                      <span>Estimated GST ({taxPct}%)</span>
+                      <strong className="text-dark">{formatCurrency(estimatedGst)}</strong>
+                    </div>
+                  )}
                   <div className="d-flex justify-content-between fw-bold text-dark fs-6 my-2 pt-2 border-top">
                     <span>Grand Total:</span>
                     <span className="text-primary">{formatCurrency(grandTotalEstimate)}</span>
@@ -1676,12 +2226,24 @@ const CheckIn = () => {
                   </div>
 
                   {/* Check-In Primary Action Button */}
-                  <button
-                    type="submit"
-                    className="btn btn-success btn-lg w-100 mt-4 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 py-3"
-                  >
-                    <UserCheck size={20} /> Complete Check-In
-                  </button>
+                  {currentStep < 5 ? (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-lg w-100 mt-4 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 py-3"
+                      onClick={handleNextStep}
+                    >
+                      Continue to Step {currentStep + 1} <ArrowRight size={18} />
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      className="btn btn-success btn-lg w-100 mt-4 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 py-3"
+                      disabled={!verifiedConsent}
+                      title={!verifiedConsent ? 'Please check and accept the verification terms on Step 5' : 'Complete Check-In'}
+                    >
+                      <UserCheck size={20} /> Complete Check-In
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -1701,9 +2263,24 @@ const CheckIn = () => {
                   <div className="small text-muted">Estimated Grand Total</div>
                   <div className="fw-bold text-dark">{formatCurrency(grandTotalEstimate)}</div>
                 </div>
-                <button type="submit" className="btn btn-success btn-lg fw-bold px-4 shadow-sm d-flex align-items-center gap-2">
-                  <UserCheck size={20} /> Complete Check-In
-                </button>
+                {currentStep < 5 ? (
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-lg fw-bold px-4 shadow-sm d-flex align-items-center gap-2"
+                    onClick={handleNextStep}
+                  >
+                    Continue <ArrowRight size={18} />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="btn btn-success btn-lg fw-bold px-4 shadow-sm d-flex align-items-center gap-2"
+                    disabled={!verifiedConsent}
+                    title={!verifiedConsent ? 'Please check and accept the verification terms on Step 5' : 'Complete Check-In'}
+                  >
+                    <UserCheck size={20} /> Complete Check-In
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1868,6 +2445,46 @@ const CheckIn = () => {
           </div>
         );
       })()}
+
+      {/* Document & Photo Fullscreen Preview Modal */}
+      {previewDocModal && previewDocModal.show && (
+        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1080 }} tabIndex="-1">
+          <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-animated">
+            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
+              <div className="modal-header bg-dark text-white py-3 px-4 d-flex align-items-center justify-content-between">
+                <h5 className="modal-title fw-bold fs-6 d-flex align-items-center gap-2 m-0">
+                  <FileText size={18} className="text-primary" /> {previewDocModal.title}
+                </h5>
+                <div className="d-flex align-items-center gap-2">
+                  {previewDocModal.url && (
+                    <a
+                      href={previewDocModal.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-sm btn-outline-light py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1"
+                    >
+                      <ExternalLink size={13} /> Open in New Window
+                    </a>
+                  )}
+                  <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPreviewDocModal(null)}></button>
+                </div>
+              </div>
+              <div className="modal-body p-3 bg-light text-center" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
+                {previewDocModal.isPdf ? (
+                  <iframe src={previewDocModal.url} title={previewDocModal.title} className="w-100 rounded border bg-white" style={{ height: '600px' }}></iframe>
+                ) : (
+                  <img
+                    src={previewDocModal.url}
+                    alt={previewDocModal.title}
+                    className="img-fluid rounded border shadow-sm"
+                    style={{ maxHeight: '65vh', objectFit: 'contain' }}
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

@@ -53,7 +53,7 @@ const NotificationModal = ({
   return (
     <div
       className="modal fade show d-block modal-backdrop-animated"
-      style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1080 }}
+      style={{ backgroundColor: 'rgba(15, 23, 42, 0.65)', zIndex: 1200 }}
       tabIndex="-1"
       onClick={onClose}
     >

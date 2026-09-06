@@ -26,6 +26,10 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    const selectedPropId = localStorage.getItem('lms_selected_property_id');
+    if (selectedPropId && !config.headers['X-Property-ID']) {
+      config.headers['X-Property-ID'] = selectedPropId;
+    }
     return config;
   },
   (error) => Promise.reject(error)
@@ -50,6 +54,19 @@ api.interceptors.response.use(
           localStorage.removeItem('user');
           window.location.hash = '#/login';
         }
+      }
+    }
+
+    if (
+      error.response &&
+      (error.response.status === 402 ||
+       error.response.data?.error === 'SUBSCRIPTION_EXPIRED' ||
+       (error.response.status === 403 && (error.response.data?.error === 'PROPERTY_SUSPENDED' || error.response.data?.is_suspended)))
+    ) {
+      if (!window.location.hash.includes('/subscription') &&
+          !window.location.hash.includes('/platform') &&
+          !window.location.hash.includes('/login')) {
+        window.location.hash = '#/subscription';
       }
     }
     return Promise.reject(error);
