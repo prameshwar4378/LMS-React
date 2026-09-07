@@ -374,6 +374,9 @@ const Checkout = () => {
       queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customer-details'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
       showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
       setShowInvoice(true);
     } catch (err) {

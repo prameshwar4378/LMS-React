@@ -27,7 +27,7 @@ const CustomerDetails = () => {
     queryKey: ['customer-details', id],
     queryFn: () => getCustomerHistoryApi(id),
     enabled: !!id,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
     gcTime: 5 * 60 * 1000,
   });
 
@@ -612,6 +612,19 @@ const CustomerDetails = () => {
             )}
             {customer.email && <div className="text-muted small">{customer.email}</div>}
 
+            {/* In-House vs Checked Out Status Pill */}
+            <div className="mt-2.5 mb-1">
+              {customer.is_checked_in ? (
+                <span className="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-1.5 rounded-pill fw-bold" style={{ fontSize: '0.785rem' }}>
+                  <i className="bi bi-door-open-fill me-1"></i> Currently In-House (Room {customer.active_stay?.room_number || 'N/A'})
+                </span>
+              ) : (
+                <span className="badge bg-success-subtle text-success border border-success-subtle px-3 py-1.5 rounded-pill fw-bold" style={{ fontSize: '0.785rem' }}>
+                  <i className="bi bi-check-circle-fill me-1"></i> Checked Out / Not In-House
+                </span>
+              )}
+            </div>
+
             <hr className="my-3" />
 
             <div className="text-start small">
@@ -696,7 +709,7 @@ const CustomerDetails = () => {
             <div className="card-body p-0">
               {activeHistoryTab === 'stays' ? (
                 <div className="table-responsive" style={{ maxHeight: '560px' }}>
-                  <table className="table table-hover align-middle m-0" style={{ minWidth: '720px' }}>
+                  <table className="table table-hover align-middle m-0" style={{ minWidth: '780px' }}>
                     <thead className="table-light border-bottom text-secondary" style={{ backgroundColor: '#F8FAFC', fontSize: '0.725rem', letterSpacing: '0.04em' }}>
                       <tr className="text-uppercase fw-bold">
                         <th className="ps-4 py-3 text-nowrap">Stay #</th>
@@ -706,13 +719,14 @@ const CustomerDetails = () => {
                         <th className="py-3 text-nowrap">Grand Total</th>
                         <th className="py-3 text-nowrap">Paid</th>
                         <th className="py-3 text-nowrap">Balance</th>
-                        <th className="pe-4 py-3 text-nowrap">Status</th>
+                        <th className="py-3 text-nowrap">Status</th>
+                        <th className="pe-4 py-3 text-end text-nowrap">Action</th>
                       </tr>
                     </thead>
                     <tbody>
                       {customer.stays?.length === 0 ? (
                         <tr>
-                          <td colSpan="8" className="text-center text-muted py-5">
+                          <td colSpan="9" className="text-center text-muted py-5">
                             <div className="py-3">
                               <i className="bi bi-inbox fs-2 text-secondary opacity-50 d-block mb-2"></i>
                               No previous stay records found for this guest.
@@ -741,7 +755,23 @@ const CustomerDetails = () => {
                               <div className="fw-semibold text-dark small">{formatDate(s.check_in_date)}</div>
                             </td>
                             <td className="text-nowrap">
-                              <div className="fw-semibold text-dark small">{formatDate(s.checkout_date)}</div>
+                              {s.status === 'CHECKED_IN' ? (
+                                <div>
+                                  <div className="fw-semibold text-warning-emphasis small d-flex align-items-center gap-1">
+                                    <i className="bi bi-clock-history"></i>
+                                    <span>Exp: {formatDate(s.expected_checkout_date || s.checkout_date)}</span>
+                                  </div>
+                                  <span className="text-muted extra-small">In-House</span>
+                                </div>
+                              ) : (
+                                <div>
+                                  <div className="fw-semibold text-dark small d-flex align-items-center gap-1">
+                                    <i className="bi bi-check2-circle text-success"></i>
+                                    <span>{formatDate(s.actual_checkout_date || s.checkout_date)}</span>
+                                  </div>
+                                  <span className="text-muted extra-small">Departed</span>
+                                </div>
+                              )}
                             </td>
                             <td className="fw-semibold text-dark text-nowrap">{formatCurrency(s.grand_total)}</td>
                             <td className="text-success fw-semibold text-nowrap">{formatCurrency(s.total_paid)}</td>
@@ -759,8 +789,28 @@ const CustomerDetails = () => {
                                 <span className="fw-semibold text-success">{formatCurrency(0)}</span>
                               )}
                             </td>
-                            <td className="pe-4 text-nowrap">
+                            <td className="text-nowrap">
                               <StatusBadge status={s.status} />
+                            </td>
+                            <td className="pe-4 text-end text-nowrap" onClick={(e) => e.stopPropagation()}>
+                              <div className="btn-group btn-group-sm">
+                                <Link
+                                  to={`/stays/${s.id}`}
+                                  className="btn btn-sm btn-outline-secondary px-2.5 py-1"
+                                  title="View Full Stay Details"
+                                >
+                                  <i className="bi bi-eye me-1"></i>View
+                                </Link>
+                                {s.status === 'CHECKED_IN' && (
+                                  <Link
+                                    to={`/checkout/${s.id}`}
+                                    className="btn btn-sm btn-danger fw-bold px-2.5 py-1 shadow-xs"
+                                    title="Process Stay Check-Out"
+                                  >
+                                    <i className="bi bi-box-arrow-right me-1"></i>Check Out
+                                  </Link>
+                                )}
+                              </div>
                             </td>
                           </tr>
                         ))
