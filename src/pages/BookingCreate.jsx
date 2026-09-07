@@ -4,7 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAvailabilityApi, getRoomTypesApi } from '../api/roomApi';
 import { getCustomersApi, createCustomerApi, searchCustomersApi } from '../api/customerApi';
 import { createBookingApi } from '../api/bookingApi';
-import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
+import { getTodayDateString, getTomorrowDateString, formatDate, getCurrentTimeString } from '../utils/dateUtils';
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getSettingsApi } from '../api/settingsApi';
@@ -49,8 +49,16 @@ const BookingCreate = () => {
     gcTime: 5 * 60 * 1000,
   });
 
+  const getInitialCheckInTime = () => {
+    const now = new Date();
+    if (now.getHours() >= 12) {
+      return getCurrentTimeString();
+    }
+    return '12:00';
+  };
+
   const [checkInDate, setCheckInDate] = useState(getTodayDateString());
-  const [checkInTime, setCheckInTime] = useState('12:00');
+  const [checkInTime, setCheckInTime] = useState(getInitialCheckInTime);
   const [checkoutDate, setCheckoutDate] = useState(getTomorrowDateString());
   const [checkoutTime, setCheckoutTime] = useState('11:00');
 
@@ -352,26 +360,34 @@ const BookingCreate = () => {
       const d = err.response.data;
       if (typeof d === 'string') return d;
       let summaryMsg = d.message || d.error || d.detail || '';
-      if (d.errors && typeof d.errors === 'object') {
-        const keys = Object.keys(d.errors);
+      const formatFieldKey = (k) => {
+        const labels = {
+          check_in_date: 'Check-In Date',
+          check_in_time: 'Check-In Time',
+          expected_checkout_date: 'Check-Out Date',
+          expected_checkout_time: 'Check-Out Time',
+          room: 'Room Allocation',
+          customer: 'Guest Profile',
+          room_rate: 'Room Rate',
+          advance_amount: 'Advance Payment',
+          adults: 'Adults Count',
+          children: 'Children Count',
+        };
+        return labels[k] || k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+      };
+
+      const errSource = d.errors && typeof d.errors === 'object' ? d.errors : d;
+      if (typeof errSource === 'object') {
+        const keys = Object.keys(errSource).filter((k) => k !== 'success' && k !== 'message' && k !== 'error' && k !== 'detail');
         if (keys.length > 0) {
-          const detailList = keys.map(k => {
-            const v = d.errors[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : String(v);
-            return `${k.toUpperCase()}: ${vStr}`;
-          }).join(' | ');
+          const detailList = keys
+            .map((k) => {
+              const v = errSource[k];
+              const vStr = Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
+              return `${formatFieldKey(k)}: ${vStr}`;
+            })
+            .join(' | ');
           return `${summaryMsg ? summaryMsg + ' — ' : ''}${detailList}`;
-        }
-      }
-      if (typeof d === 'object') {
-        const keys = Object.keys(d).filter(k => k !== 'success');
-        if (keys.length > 0) {
-          const detailList = keys.map(k => {
-            const v = d[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-            return `${k.toUpperCase()}: ${vStr}`;
-          }).join(' | ');
-          return detailList;
         }
       }
       if (summaryMsg) return summaryMsg;
@@ -433,6 +449,16 @@ const BookingCreate = () => {
     try {
       const advancePerRoom = (numericAdvance / selectedRoomIds.length).toFixed(2);
 
+      // Ensure checkInTime for today's reservation is not in the past
+      let finalCheckInTime = checkInTime;
+      const todayStr = getTodayDateString();
+      if (checkInDate === todayStr) {
+        const curTimeStr = getCurrentTimeString();
+        if (finalCheckInTime < curTimeStr) {
+          finalCheckInTime = curTimeStr;
+        }
+      }
+
       for (let i = 0; i < selectedRoomIds.length; i++) {
         const rId = selectedRoomIds[i];
         const roomObj = availableRooms.find((rm) => rm.id === rId);
@@ -445,7 +471,7 @@ const BookingCreate = () => {
           customer: customerIdToUse,
           room: rId,
           check_in_date: checkInDate,
-          check_in_time: checkInTime,
+          check_in_time: finalCheckInTime,
           expected_checkout_date: checkoutDate,
           expected_checkout_time: checkoutTime,
           adults: parseInt(adults),
