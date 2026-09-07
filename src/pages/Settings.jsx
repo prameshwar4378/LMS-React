@@ -73,6 +73,7 @@ const Settings = () => {
         payload.append('logo', compressedLogo);
       } else {
         payload = { ...settings };
+        delete payload.logo;
       }
 
       const updated = await updateSettingsApi(payload);
@@ -84,8 +85,22 @@ const Settings = () => {
       queryClient.invalidateQueries({ queryKey: ['settings'], refetchType: 'none' });
       showSuccess('Lodge settings and branding updated successfully!', 'Settings Saved');
     } catch (err) {
-      console.error(err);
-      showError(err.response?.data?.error || 'Failed to update settings.', 'Save Failed');
+      console.error('Failed to update settings:', err);
+      let errMsg = 'Failed to update settings.';
+      const data = err.response?.data;
+      if (typeof data === 'string') {
+        errMsg = data;
+      } else if (data?.error) {
+        errMsg = data.error;
+      } else if (data?.detail) {
+        errMsg = data.detail;
+      } else if (data && typeof data === 'object') {
+        const errors = Object.entries(data).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(', ') : v}`);
+        if (errors.length > 0) {
+          errMsg = errors.join(' | ');
+        }
+      }
+      showError(errMsg, 'Save Failed');
     } finally {
       setSubmitting(false);
     }
