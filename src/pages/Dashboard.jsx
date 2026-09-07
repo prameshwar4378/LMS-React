@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getDashboardReportApi } from '../api/reportApi';
 import { getCurrentShiftApi } from '../api/shiftApi';
 import { useAuth } from '../context/AuthContext';
@@ -49,29 +50,40 @@ import {
 const Dashboard = () => {
   const { user, isShiftWise } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [data, setData] = useState(null);
-  const [shiftData, setShiftData] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [analyticsRange, setAnalyticsRange] = useState('7d'); // '7d' | '30d' | '90d'
   const [activeGuestTab, setActiveGuestTab] = useState('inhouse'); // 'inhouse' | 'upcoming'
 
-  useEffect(() => {
-    loadDashboardData();
-  }, []);
+  const {
+    data = null,
+    isLoading: reportLoading,
+    refetch: refetchReport
+  } = useQuery({
+    queryKey: ['dashboard-report'],
+    queryFn: getDashboardReportApi,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
-  const loadDashboardData = async () => {
-    setLoading(true);
-    try {
-      const promises = [getDashboardReportApi()];
-      if (isShiftWise) promises.push(getCurrentShiftApi());
-      const results = await Promise.allSettled(promises);
-      if (results[0]?.status === 'fulfilled') setData(results[0].value);
-      if (isShiftWise && results[1]?.status === 'fulfilled') setShiftData(results[1].value);
-    } catch (err) {
-      console.error('Failed to load dashboard report:', err);
-    } finally {
-      setLoading(false);
+  const {
+    data: shiftData = null,
+    isLoading: shiftLoading,
+    refetch: refetchShift
+  } = useQuery({
+    queryKey: ['current-shift'],
+    queryFn: getCurrentShiftApi,
+    enabled: !!isShiftWise,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const loading = reportLoading || (Boolean(isShiftWise) && shiftLoading);
+
+  const loadDashboardData = () => {
+    refetchReport();
+    if (isShiftWise) {
+      refetchShift();
     }
   };
 

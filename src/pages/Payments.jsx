@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getPaymentsApi } from '../api/billingApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import {
@@ -52,10 +53,28 @@ const Payments = () => {
   const { user, selectedProperty } = useAuth();
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  // Core Data
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Core Data - Fetch payments with TanStack Query
+  const {
+    data: payments = [],
+    isLoading: loading,
+    refetch: loadPayments,
+  } = useQuery({
+    queryKey: ['payments', selectedProperty?.id],
+    queryFn: async () => {
+      try {
+        const data = await getPaymentsApi();
+        return Array.isArray(data) ? data : [];
+      } catch (err) {
+        console.error('Failed to load payment logs:', err);
+        showError('Failed to load payment transaction history.');
+        throw err;
+      }
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   // Filters State
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,24 +125,6 @@ const Payments = () => {
     document.addEventListener('mousedown', handleOutsideClick);
     return () => document.removeEventListener('mousedown', handleOutsideClick);
   }, []);
-
-  // Fetch payments on mount or property change
-  useEffect(() => {
-    loadPayments();
-  }, [selectedProperty?.id]);
-
-  const loadPayments = async () => {
-    setLoading(true);
-    try {
-      const data = await getPaymentsApi();
-      setPayments(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error('Failed to load payment logs:', err);
-      showError('Failed to load payment transaction history.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // -------------------------------------------------------------
   // Filter & Search Logic

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRoomTypesApi, createRoomTypeApi, updateRoomTypeApi, deleteRoomTypeApi } from '../api/roomApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
@@ -6,8 +7,19 @@ import PageLoader from '../components/PageLoader';
 
 const RoomTypes = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
+
+  const {
+    data: roomTypes = [],
+    isLoading: loading,
+    refetch: loadRoomTypes,
+  } = useQuery({
+    queryKey: ['roomTypes'],
+    queryFn: getRoomTypesApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
 
@@ -17,22 +29,6 @@ const RoomTypes = () => {
   const [maxAdults, setMaxAdults] = useState(2);
   const [maxChildren, setMaxChildren] = useState(2);
   const [amenities, setAmenities] = useState('AC, TV, WiFi, Attached Bathroom');
-
-  useEffect(() => {
-    loadRoomTypes();
-  }, []);
-
-  const loadRoomTypes = async () => {
-    setLoading(true);
-    try {
-      const data = await getRoomTypesApi();
-      setRoomTypes(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleOpenModal = (rt = null) => {
     if (rt) {
@@ -73,7 +69,7 @@ const RoomTypes = () => {
         await createRoomTypeApi(payload);
       }
       setShowModal(false);
-      loadRoomTypes();
+      queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
     } catch (err) {
       alert('Error saving room type.');
     }
@@ -90,7 +86,7 @@ const RoomTypes = () => {
         try {
           await deleteRoomTypeApi(rt.id);
           showSuccess(`Room type "${rt.name}" deleted successfully!`, 'Deleted');
-          loadRoomTypes();
+          queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
         } catch (err) {
           showError('Cannot delete room type in use.', 'Deletion Failed');
         }

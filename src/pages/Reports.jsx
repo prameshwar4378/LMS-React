@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   FileText,
   Building2,
@@ -335,62 +336,98 @@ const Reports = () => {
   const [hiddenColumns, setHiddenColumns] = useState({});
   const [showColumnMenu, setShowColumnMenu] = useState(false);
 
-  // Data & Modals States
-  const [filterOptions, setFilterOptions] = useState(null);
-  const [reportData, setReportData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  // Date & Filter Application States
+  const [appliedStartDate, setAppliedStartDate] = useState('');
+  const [appliedEndDate, setAppliedEndDate] = useState('');
+
+  // Modals & Drawer States
   const [selectedDrawerRow, setSelectedDrawerRow] = useState(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showNightAuditModal, setShowNightAuditModal] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Load Dropdown Metadata on Mount
+  const queryClient = useQueryClient();
+
+  // 1. Fetch dropdown options (metadata) with TanStack Query
+  const { data: filterOptions = null } = useQuery({
+    queryKey: ['reports', 'filterOptions'],
+    queryFn: getReportFilterOptionsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Auto-select initial shift once filter options are loaded
   useEffect(() => {
-    loadFilterOptions();
-  }, []);
-
-  const loadFilterOptions = async () => {
-    try {
-      const data = await getReportFilterOptionsApi();
-      setFilterOptions(data);
-      if (data?.shifts && data.shifts.length > 0 && !selectedShiftId) {
-        setSelectedShiftId(data.shifts[0].id);
-      }
-    } catch (err) {
-      console.error('Error loading filter options:', err);
+    if (filterOptions?.shifts && filterOptions.shifts.length > 0 && !selectedShiftId) {
+      setSelectedShiftId(filterOptions.shifts[0].id);
     }
-  };
+  }, [filterOptions, selectedShiftId]);
 
-  const fetchReportData = async (catId, repId, sId) => {
-    setLoading(true);
-    setError('');
-    try {
-      const activeCat = catId || selectedCategory;
-      const activeRep = repId || selectedReport;
-      const activeShift = sId !== undefined ? sId : selectedShiftId;
+  const activeStartDate = period === 'custom' ? (appliedStartDate || undefined) : undefined;
+  const activeEndDate = period === 'custom' ? (appliedEndDate || undefined) : undefined;
 
-      const params = {
-        category: activeCat,
-        report_id: activeRep,
-        shift_id: activeShift || undefined,
+  // 2. Fetch unified report data with TanStack Query
+  const {
+    data: reportData = null,
+    isLoading: loading,
+    refetch,
+    error: queryError,
+  } = useQuery({
+    queryKey: [
+      'reports',
+      selectedCategory,
+      selectedReport,
+      selectedShiftId,
+      period,
+      activeStartDate,
+      activeEndDate,
+      roomId,
+      paymentMethod,
+      searchQuery,
+    ],
+    queryFn: () =>
+      getReportDataApi({
+        category: selectedCategory,
+        report_id: selectedReport,
+        shift_id: selectedShiftId || undefined,
         period,
-        start_date: startDate || undefined,
-        end_date: endDate || undefined,
+        start_date: activeStartDate,
+        end_date: activeEndDate,
         room_id: roomId || undefined,
         payment_method: paymentMethod || undefined,
         search: searchQuery || undefined,
-      };
+      }),
+    enabled: viewMode === 'report',
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
-      const data = await getReportDataApi(params);
-      setReportData(data);
-      setCurrentPage(1);
-    } catch (err) {
-      console.error('Error fetching report data:', err);
-      setError('Failed to generate report analytics. Please check filters and try again.');
-    } finally {
-      setLoading(false);
+  const error = queryError ? 'Failed to generate report analytics. Please check filters and try again.' : '';
+
+  // Reset pagination on filter or report change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [
+    selectedCategory,
+    selectedReport,
+    selectedShiftId,
+    period,
+    activeStartDate,
+    activeEndDate,
+    roomId,
+    paymentMethod,
+    searchQuery,
+  ]);
+
+  const fetchReportData = (catId, repId, sId) => {
+    if (catId) setSelectedCategory(catId);
+    if (repId) setSelectedReport(repId);
+    if (sId !== undefined) setSelectedShiftId(sId);
+    if (period === 'custom') {
+      setAppliedStartDate(startDate);
+      setAppliedEndDate(endDate);
     }
+    refetch();
   };
 
   // Launch report from catalog
@@ -418,6 +455,8 @@ const Reports = () => {
 
   // Apply filters in workspace
   const handleApplyFilters = () => {
+    setAppliedStartDate(startDate);
+    setAppliedEndDate(endDate);
     fetchReportData(selectedCategory, selectedReport, selectedShiftId);
   };
 
@@ -425,6 +464,8 @@ const Reports = () => {
     setPeriod('this_month');
     setStartDate('');
     setEndDate('');
+    setAppliedStartDate('');
+    setAppliedEndDate('');
     setRoomId('');
     setPaymentMethod('');
     setSearchQuery('');
@@ -1802,7 +1843,10 @@ const Reports = () => {
       {/* NIGHT AUDIT MODAL */}
       <NightAuditModal
         show={showNightAuditModal}
-        onClose={() => setShowNightAuditModal(false)}
+        onClose={() => {
+          setShowNightAuditModal(false);
+          queryClient.invalidateQueries({ queryKey: ['reports'] });
+        }}
       />
 
       {/* EXPORT OPTIONS MODAL */}

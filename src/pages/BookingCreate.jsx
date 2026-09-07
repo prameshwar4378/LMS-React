@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAvailabilityApi, getRoomTypesApi } from '../api/roomApi';
 import { getCustomersApi, createCustomerApi } from '../api/customerApi';
 import { createBookingApi } from '../api/bookingApi';
@@ -36,32 +37,43 @@ import {
 const BookingCreate = () => {
   const navigate = useNavigate();
   const { showError, showWarning, showSuccess } = useNotification();
+  const queryClient = useQueryClient();
 
   const [currentStep, setCurrentStep] = useState(1);
-  const [settings, setSettings] = useState(null);
 
-  useEffect(() => {
-    getSettingsApi().then(setSettings).catch(console.error);
-  }, []);
+  // Settings query
+  const { data: settings = null } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettingsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   const [checkInDate, setCheckInDate] = useState(getTodayDateString());
   const [checkInTime, setCheckInTime] = useState('12:00');
   const [checkoutDate, setCheckoutDate] = useState(getTomorrowDateString());
   const [checkoutTime, setCheckoutTime] = useState('11:00');
 
-  const [roomTypes, setRoomTypes] = useState([]);
+  // Room types query
+  const { data: roomTypes = [] } = useQuery({
+    queryKey: ['roomTypes'],
+    queryFn: getRoomTypesApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
   const [selectedRoomType, setSelectedRoomType] = useState('');
-
-  // Available Rooms from Backend
-  const [availableRooms, setAvailableRooms] = useState([]);
-  const [checkingAvailability, setCheckingAvailability] = useState(false);
 
   // Multi-Room Selection States
   const [selectedRoomIds, setSelectedRoomIds] = useState([]);
   const [roomRatesMap, setRoomRatesMap] = useState({});
 
   // Customer Selection / Creation
-  const [customers, setCustomers] = useState([]);
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: getCustomersApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [isNewCustomer, setIsNewCustomer] = useState(false);
   const [custFirstName, setCustFirstName] = useState('');
@@ -82,60 +94,71 @@ const BookingCreate = () => {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Sync default checkout time from settings
   useEffect(() => {
-    getRoomTypesApi().then(setRoomTypes).catch(console.error);
-    getCustomersApi().then(setCustomers).catch(console.error);
-    getSettingsApi().then((s) => {
-      if (s?.default_checkout_time) {
-        setCheckoutTime(s.default_checkout_time.substring(0, 5));
-      }
-    }).catch(console.error);
-  }, []);
-
-  useEffect(() => {
-    if (checkInDate && checkoutDate) {
-      fetchAvailability();
+    if (settings?.default_checkout_time) {
+      setCheckoutTime(settings.default_checkout_time.substring(0, 5));
     }
-  }, [checkInDate, checkInTime, checkoutDate, checkoutTime, selectedRoomType]);
+  }, [settings?.default_checkout_time]);
 
-  const fetchAvailability = async () => {
-    setCheckingAvailability(true);
-    setError('');
-    try {
+  // TanStack Query for room availability
+  const {
+    data: availableRooms = [],
+    isFetching: checkingAvailability,
+    error: availabilityError,
+    refetch: fetchAvailability,
+  } = useQuery({
+    queryKey: ['booking-create-data', checkInDate, checkInTime, checkoutDate, checkoutTime, selectedRoomType],
+    queryFn: async () => {
       const checkInFull = `${checkInDate}T${checkInTime}:00`;
       const checkoutFull = `${checkoutDate}T${checkoutTime}:00`;
       const res = await checkAvailabilityApi(checkInFull, checkoutFull, selectedRoomType);
-      const roomsList = res.rooms || [];
-      setAvailableRooms(roomsList);
+      return res?.rooms || [];
+    },
+    enabled: Boolean(checkInDate && checkoutDate),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
-      const availableIds = new Set(roomsList.map((r) => r.id));
-      const validSelectedIds = selectedRoomIds.filter((id) => availableIds.has(id));
+  // Handle availability check errors
+  useEffect(() => {
+    if (availabilityError) {
+      setError(availabilityError.response?.data?.error || 'Failed to check room availability.');
+    }
+  }, [availabilityError]);
+
+  // Synchronize room selection and rates whenever availableRooms updates
+  useEffect(() => {
+    if (!availableRooms) return;
+    const roomsList = availableRooms;
+    const availableIds = new Set(roomsList.map((r) => r.id));
+
+    setSelectedRoomIds((prevSelectedIds) => {
+      const validSelectedIds = prevSelectedIds.filter((id) => availableIds.has(id));
 
       if (validSelectedIds.length > 0) {
-        setSelectedRoomIds(validSelectedIds);
-        const updatedRates = {};
-        validSelectedIds.forEach((id) => {
-          if (roomRatesMap[id] !== undefined) {
-            updatedRates[id] = roomRatesMap[id];
-          } else {
-            const rm = roomsList.find((r) => r.id === id);
-            if (rm) updatedRates[id] = rm.base_price;
-          }
+        setRoomRatesMap((prevRates) => {
+          const updatedRates = {};
+          validSelectedIds.forEach((id) => {
+            if (prevRates[id] !== undefined) {
+              updatedRates[id] = prevRates[id];
+            } else {
+              const rm = roomsList.find((r) => r.id === id);
+              if (rm) updatedRates[id] = rm.base_price;
+            }
+          });
+          return updatedRates;
         });
-        setRoomRatesMap(updatedRates);
+        return validSelectedIds;
       } else if (roomsList.length > 0) {
-        setSelectedRoomIds([roomsList[0].id]);
         setRoomRatesMap({ [roomsList[0].id]: roomsList[0].base_price });
+        return [roomsList[0].id];
       } else {
-        setSelectedRoomIds([]);
         setRoomRatesMap({});
+        return [];
       }
-    } catch (err) {
-      setError(err.response?.data?.error || 'Failed to check room availability.');
-    } finally {
-      setCheckingAvailability(false);
-    }
-  };
+    });
+  }, [availableRooms]);
 
   // Toggle multi-room selection
   const handleToggleRoom = (roomObj) => {
@@ -318,6 +341,7 @@ const BookingCreate = () => {
           id_type: 'Aadhaar'
         });
         customerIdToUse = newCust.id;
+        queryClient.invalidateQueries({ queryKey: ['customers'] });
       } catch (err) {
         const errMsg = extractErrorMessage(err, 'Failed to create customer profile.');
         setError(errMsg);
@@ -363,6 +387,9 @@ const BookingCreate = () => {
         });
       }
 
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-create-data'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       showSuccess('Advance reservation created successfully!', 'Reservation Created');
       navigate('/bookings');
     } catch (err) {

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBookingsApi, getBookingByIdApi, checkInBookingApi } from '../api/bookingApi';
 import { checkAvailabilityApi } from '../api/roomApi';
 import { getCustomersApi, searchCustomersApi } from '../api/customerApi';
@@ -56,6 +57,7 @@ const CheckIn = () => {
   const navigate = useNavigate();
   const { showError, showWarning, showSuccess } = useNotification();
   const { hasPermission } = useAuth();
+  const queryClient = useQueryClient();
 
   const [mode, setMode] = useState(bookingIdParam ? 'advance' : 'walkin');
 
@@ -78,10 +80,8 @@ const CheckIn = () => {
   // Advance Booking Check-In Specific States
   const [selectedBooking, setSelectedBooking] = useState(null);
   const [advanceSearchTerm, setAdvanceSearchTerm] = useState('');
-  const [advanceSearchResults, setAdvanceSearchResults] = useState([]);
   const [showAdvanceDropdown, setShowAdvanceDropdown] = useState(false);
   const [reallocatedRoomId, setReallocatedRoomId] = useState('');
-  const [advanceAvailableRooms, setAdvanceAvailableRooms] = useState([]);
   const [showAdvanceConfirmModal, setShowAdvanceConfirmModal] = useState(false);
 
   // Search Container Refs for Auto-Dismiss on Click Outside
@@ -107,13 +107,11 @@ const CheckIn = () => {
   }, []);
 
   // Walk-In Rooms & Filter
-  const [availableRooms, setAvailableRooms] = useState([]);
   const [selectedRoomId, setSelectedRoomId] = useState('');
   const [customRoomRate, setCustomRoomRate] = useState('');
   const [roomSearchQuery, setRoomSearchQuery] = useState('');
 
   // Guest Information
-  const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [selectedCustData, setSelectedCustData] = useState(null);
   const [isNewCust, setIsNewCust] = useState(true);
@@ -142,37 +140,92 @@ const CheckIn = () => {
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [verifiedConsent, setVerifiedConsent] = useState(false);
 
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [earlyArrivalNotice, setEarlyArrivalNotice] = useState('');
 
   // Customer Live Search (Walk-In)
   const [custSearchTerm, setCustSearchTerm] = useState('');
-  const [custSearchResults, setCustSearchResults] = useState([]);
   const [showCustDropdown, setShowCustDropdown] = useState(false);
 
-  const [settings, setSettings] = useState(null);
+  // --- TanStack Query Data Fetching ---
+
+  // Query 1: Settings
+  const { data: settings } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettingsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
-    getSettingsApi().then((s) => {
-      setSettings(s);
-      if (s?.default_checkout_time) {
-        setCheckoutTime(s.default_checkout_time.substring(0, 5));
-      }
-    }).catch(console.error);
-    getCustomersApi().then(setCustomers).catch(console.error);
-    if (bookingIdParam) {
-      setLoading(true);
-      loadBookingById(bookingIdParam);
-    } else {
-      loadAvailableRooms();
-      loadEligibleAdvanceBookings();
+    if (settings?.default_checkout_time && !bookingIdParam) {
+      setCheckoutTime(settings.default_checkout_time.substring(0, 5));
     }
-  }, [bookingIdParam]);
+  }, [settings?.default_checkout_time, bookingIdParam]);
 
-  const loadBookingById = (bId) => {
-    getBookingByIdApi(bId)
-      .then((b) => {
+  // Query 2: Customer Directory
+  const { data: customers = [] } = useQuery({
+    queryKey: ['customers'],
+    queryFn: getCustomersApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Query 3: Initial Booking if URL has booking_id param
+  const {
+    data: initialBooking,
+    isLoading: bookingLoading,
+  } = useQuery({
+    queryKey: ['booking', bookingIdParam],
+    queryFn: () => getBookingByIdApi(bookingIdParam),
+    enabled: !!bookingIdParam,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Populate form fields from initial booking
+  useEffect(() => {
+    if (initialBooking) {
+      const b = initialBooking;
+      setSelectedBooking(b);
+      setMode('advance');
+      setReallocatedRoomId(b.room);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (b.check_in_date > todayStr) {
+        setCheckInDate(todayStr);
+        setEarlyArrivalNotice(`ℹ️ Early Guest Arrival: Booking #${b.booking_number} was originally scheduled for ${b.check_in_date}. Checking in today (${todayStr}).`);
+      } else {
+        setCheckInDate(b.check_in_date);
+        setEarlyArrivalNotice('');
+      }
+
+      if (b.check_in_time) setCheckInTime(b.check_in_time.substring(0, 5));
+      if (b.expected_checkout_date) setCheckoutDate(b.expected_checkout_date);
+      if (b.expected_checkout_time) setCheckoutTime(b.expected_checkout_time.substring(0, 5));
+
+      if (b.customer_detail) {
+        setFirstName(b.customer_detail.first_name || '');
+        setLastName(b.customer_detail.last_name || '');
+        setMobile(b.customer_detail.mobile || '');
+        setEmail(b.customer_detail.email || '');
+        setAddress(b.customer_detail.address || '');
+        setIdType(b.customer_detail.id_type || 'Aadhaar');
+        setIdNumber(b.customer_detail.id_number || '');
+        if (b.customer_detail.photo) setPhotoPreview(b.customer_detail.photo);
+        if (b.customer_detail.id_document) setDocPreview(b.customer_detail.id_document);
+        if (b.customer_detail.id_document_back) setDocBackPreview(b.customer_detail.id_document_back);
+      }
+
+      setAdults(b.adults || 1);
+      setChildren(b.children || 0);
+    }
+  }, [initialBooking]);
+
+  const loadBookingById = async (bId) => {
+    try {
+      const b = await getBookingByIdApi(bId);
+      if (b) {
         setSelectedBooking(b);
         setMode('advance');
         setReallocatedRoomId(b.room);
@@ -187,7 +240,7 @@ const CheckIn = () => {
         }
 
         if (b.check_in_time) setCheckInTime(b.check_in_time.substring(0, 5));
-        setCheckoutDate(b.expected_checkout_date);
+        if (b.expected_checkout_date) setCheckoutDate(b.expected_checkout_date);
         if (b.expected_checkout_time) setCheckoutTime(b.expected_checkout_time.substring(0, 5));
 
         if (b.customer_detail) {
@@ -199,64 +252,82 @@ const CheckIn = () => {
           setIdType(b.customer_detail.id_type || 'Aadhaar');
           setIdNumber(b.customer_detail.id_number || '');
           if (b.customer_detail.photo) setPhotoPreview(b.customer_detail.photo);
+          if (b.customer_detail.id_document) setDocPreview(b.customer_detail.id_document);
+          if (b.customer_detail.id_document_back) setDocBackPreview(b.customer_detail.id_document_back);
         }
 
         setAdults(b.adults || 1);
         setChildren(b.children || 0);
-
-        setLoading(false);
-      })
-      .catch((err) => {
-        console.error(err);
-        setLoading(false);
-      });
-  };
-
-  const loadEligibleAdvanceBookings = async (search = '') => {
-    try {
-      const res = await getBookingsApi({ search, status: 'CONFIRMED' });
-      const bookingsList = Array.isArray(res) ? res : res.results || [];
-      const eligible = bookingsList.filter((b) => b.status === 'CONFIRMED' || b.status === 'PENDING');
-      setAdvanceSearchResults(eligible);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    if (mode === 'advance' && checkInDate && checkoutDate) {
-      fetchAdvanceAvailability();
-    } else if (mode === 'walkin' && checkInDate && checkoutDate) {
-      loadAvailableRooms();
-    }
-  }, [checkInDate, checkInTime, checkoutDate, checkoutTime, mode]);
-
-  const fetchAdvanceAvailability = async () => {
-    try {
-      const dtIn = `${checkInDate}T${checkInTime}:00`;
-      const dtOut = `${checkoutDate}T${checkoutTime}:00`;
-      const availRes = await checkAvailabilityApi(dtIn, dtOut);
-      setAdvanceAvailableRooms(availRes.rooms || []);
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  const loadAvailableRooms = async () => {
-    try {
-      const dtIn = `${checkInDate}T${checkInTime}:00`;
-      const dtOut = `${checkoutDate}T${checkoutTime}:00`;
-      const res = await checkAvailabilityApi(dtIn, dtOut);
-      const rooms = res.rooms || [];
-      setAvailableRooms(rooms);
-      if (rooms.length > 0) {
-        setSelectedRoomId(rooms[0].id);
-        setCustomRoomRate(rooms[0].base_price);
       }
     } catch (err) {
       console.error(err);
     }
   };
+
+  // Query 4: Eligible Advance Bookings
+  const {
+    data: advanceSearchResults = [],
+    refetch: loadEligibleAdvanceBookings,
+  } = useQuery({
+    queryKey: ['checkin-advance-bookings', advanceSearchTerm],
+    queryFn: async () => {
+      const res = await getBookingsApi({ search: advanceSearchTerm, status: 'CONFIRMED' });
+      const bookingsList = Array.isArray(res) ? res : res.results || [];
+      return bookingsList.filter((b) => b.status === 'CONFIRMED' || b.status === 'PENDING');
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  // Query 5: Available Rooms for Check-In (Query Key: ['checkin-data', ...relevant-deps])
+  const dtIn = `${checkInDate}T${checkInTime}:00`;
+  const dtOut = `${checkoutDate}T${checkoutTime}:00`;
+
+  const {
+    data: checkInRoomsData = [],
+    isLoading: roomsLoading,
+    refetch: loadAvailableRooms,
+  } = useQuery({
+    queryKey: ['checkin-data', checkInDate, checkInTime, checkoutDate, checkoutTime, mode],
+    queryFn: async () => {
+      if (!checkInDate || !checkoutDate) return [];
+      const res = await checkAvailabilityApi(dtIn, dtOut);
+      return res?.rooms || [];
+    },
+    enabled: !!(checkInDate && checkoutDate),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const availableRooms = checkInRoomsData;
+  const advanceAvailableRooms = checkInRoomsData;
+  const fetchAdvanceAvailability = loadAvailableRooms;
+
+  // Auto-select first room in Walk-In mode if not yet selected or currently selected room became unavailable
+  useEffect(() => {
+    if (mode === 'walkin' && availableRooms.length > 0) {
+      const stillValid = availableRooms.some((r) => String(r.id) === String(selectedRoomId));
+      if (!selectedRoomId || !stillValid) {
+        setSelectedRoomId(availableRooms[0].id);
+        setCustomRoomRate(availableRooms[0].base_price);
+      }
+    }
+  }, [availableRooms, mode, selectedRoomId]);
+
+  // Query 6: Customer live search in Walk-In mode
+  const { data: custSearchResults = [] } = useQuery({
+    queryKey: ['customers-search', custSearchTerm],
+    queryFn: async () => {
+      if (custSearchTerm.trim().length <= 1) return [];
+      const res = await searchCustomersApi(custSearchTerm);
+      return res || [];
+    },
+    enabled: custSearchTerm.trim().length > 1,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const loading = Boolean(bookingIdParam && bookingLoading);
 
   const extractErrorMessage = (err, defaultMsg = 'Error processing check-in.') => {
     if (!err) return defaultMsg;
@@ -397,18 +468,11 @@ const CheckIn = () => {
   };
 
   // Walk-In Customer Search Handler
-  const handleCustSearch = async (term) => {
+  const handleCustSearch = (term) => {
     setCustSearchTerm(term);
     if (term.trim().length > 1) {
-      try {
-        const res = await searchCustomersApi(term);
-        setCustSearchResults(res);
-        setShowCustDropdown(true);
-      } catch (e) {
-        console.error(e);
-      }
+      setShowCustDropdown(true);
     } else {
-      setCustSearchResults([]);
       setShowCustDropdown(false);
     }
   };
@@ -516,6 +580,13 @@ const CheckIn = () => {
         chargeable_nights: nightsCount,
       };
       const res = await checkInBookingApi(selectedBooking.id, payload);
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
+      queryClient.invalidateQueries({ queryKey: ['checkin-advance-bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
       showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
       navigate(`/stays/${stayId}`);
@@ -584,6 +655,12 @@ const CheckIn = () => {
       if (docBackFile) formData.append('id_document_back', docBackFile);
 
       const res = await createWalkInStayApi(formData);
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       showSuccess(`Walk-In Check-In for ${firstName} ${lastName} completed successfully!`, 'Check-In Successful');
       const stayId = res?.data?.id || res?.id || res?.data?.stay_id || res?.stay_id;
       if (stayId) {

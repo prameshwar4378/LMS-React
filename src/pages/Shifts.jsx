@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import {
   getCurrentShiftApi,
@@ -55,7 +56,7 @@ const Shifts = () => {
   const { user, hasRole, hasPermission, isShiftWise, isSingleOwner } = useAuth();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const [settings, setSettings] = useState({});
+  const queryClient = useQueryClient();
 
   const canRecordExpense = hasPermission('counter_till', 'can_record_expense');
   const canAdjustFloat = hasPermission('counter_till', 'can_adjust_float');
@@ -64,70 +65,53 @@ const Shifts = () => {
   // Active Tab: 'my_shift' | 'active_shifts' | 'history' | 'approvals'
   const activeTab = searchParams.get('tab') || 'my_shift';
 
-  // Data States
-  const [loading, setLoading] = useState(true);
-  const [currentData, setCurrentData] = useState(null);
-  const [summaryStats, setSummaryStats] = useState(null);
-  const [shiftsList, setShiftsList] = useState([]);
-  const [loadingList, setLoadingList] = useState(false);
-
   // Filters for Shift History
   const [dateRange, setDateRange] = useState('7d'); // 'today' | '7d' | '30d' | 'all'
   const [statusFilter, setStatusFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [discrepancyOnly, setDiscrepancyOnly] = useState(false);
 
-  // Modal States
-  const [showOpenModal, setShowOpenModal] = useState(false);
-  const [showCloseModal, setShowCloseModal] = useState(false);
-  const [showExpenseModal, setShowExpenseModal] = useState(false);
-  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
-  const [showHandoverModal, setShowHandoverModal] = useState(false);
-  const [showApprovalModal, setShowApprovalModal] = useState(false);
-  const [selectedShiftForApproval, setSelectedShiftForApproval] = useState(null);
-  const [showForceCloseModal, setShowForceCloseModal] = useState(false);
-  const [selectedShiftForForceClose, setSelectedShiftForForceClose] = useState(null);
-  const [selectedShiftForClose, setSelectedShiftForClose] = useState(null);
+  // Settings Query
+  const { data: settings = {} } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettingsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !isSingleOwner,
+  });
 
-  // Success Notification banner
-  const [toastMessage, setToastMessage] = useState(null);
+  // Current User Shift Query
+  const {
+    data: currentData = null,
+    isLoading: currentLoading,
+  } = useQuery({
+    queryKey: ['shifts', 'current'],
+    queryFn: getCurrentShiftApi,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !isSingleOwner,
+  });
 
-  useEffect(() => {
-    loadAllShiftData();
-  }, [activeTab, dateRange, statusFilter, discrepancyOnly]);
+  // Summary Stats Query (Managers & Admins)
+  const isManagerOrAdmin = hasRole(['SUPER_ADMIN', 'MANAGER']);
+  const {
+    data: summaryStats = null,
+  } = useQuery({
+    queryKey: ['shifts', 'summary-stats'],
+    queryFn: getShiftSummaryStatsApi,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !isSingleOwner && Boolean(isManagerOrAdmin),
+  });
 
-  const loadAllShiftData = async () => {
-    if (isSingleOwner) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    try {
-      // 1. Load Settings
-      getSettingsApi().then(setSettings).catch(console.error);
-
-      // 2. Load Current User Shift
-      const curr = await getCurrentShiftApi();
-      setCurrentData(curr);
-
-      // 3. Load Stats
-      if (hasRole(['SUPER_ADMIN', 'MANAGER'])) {
-        const stats = await getShiftSummaryStatsApi();
-        setSummaryStats(stats);
-      }
-
-      // 4. Load Shift History List
-      await loadShiftsList();
-    } catch (err) {
-      console.error('Failed to load shift data:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadShiftsList = async () => {
-    setLoadingList(true);
-    try {
+  // Shift History List Query
+  const {
+    data: shiftsList = [],
+    isLoading: loadingList,
+    refetch: loadShiftsList,
+  } = useQuery({
+    queryKey: ['shifts', 'list', dateRange, statusFilter, discrepancyOnly, searchQuery],
+    queryFn: async () => {
       const params = {};
       if (statusFilter) params.status = statusFilter;
       if (discrepancyOnly) params.discrepancy_only = true;
@@ -147,14 +131,34 @@ const Shifts = () => {
       }
 
       const res = await getShiftsApi(params);
-      const list = Array.isArray(res) ? res : (res.results || []);
-      setShiftsList(list);
-    } catch (err) {
-      console.error('Failed to load shifts list:', err);
-    } finally {
-      setLoadingList(false);
-    }
+      return Array.isArray(res) ? res : (res.results || []);
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !isSingleOwner,
+  });
+
+  const loading = currentLoading;
+
+  const loadAllShiftData = () => {
+    queryClient.invalidateQueries({ queryKey: ['shifts'] });
+    queryClient.invalidateQueries({ queryKey: ['settings'] });
   };
+
+  // Modal States
+  const [showOpenModal, setShowOpenModal] = useState(false);
+  const [showCloseModal, setShowCloseModal] = useState(false);
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
+  const [showHandoverModal, setShowHandoverModal] = useState(false);
+  const [showApprovalModal, setShowApprovalModal] = useState(false);
+  const [selectedShiftForApproval, setSelectedShiftForApproval] = useState(null);
+  const [showForceCloseModal, setShowForceCloseModal] = useState(false);
+  const [selectedShiftForForceClose, setSelectedShiftForForceClose] = useState(null);
+  const [selectedShiftForClose, setSelectedShiftForClose] = useState(null);
+
+  // Success Notification banner
+  const [toastMessage, setToastMessage] = useState(null);
 
   const handleTabChange = (tabName) => {
     setSearchParams({ tab: tabName });
@@ -172,7 +176,7 @@ const Shifts = () => {
     try {
       await reopenShiftApi(shiftId, { reopen_reason: reason.trim() });
       showSuccessToast('Shift reopened successfully.');
-      loadAllShiftData();
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to reopen shift.');
     }
@@ -182,7 +186,7 @@ const Shifts = () => {
     try {
       const res = await acceptShiftHandoverApi(handoverId);
       showSuccessToast(res.message || 'Handover accepted successfully.');
-      loadAllShiftData();
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to accept handover.');
     }
@@ -195,7 +199,7 @@ const Shifts = () => {
     try {
       await rejectShiftHandoverApi(handoverId, { reason: reason.trim() });
       showSuccessToast('Handover declined.');
-      loadAllShiftData();
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       alert(err.response?.data?.message || 'Failed to decline handover.');
     }
@@ -1265,7 +1269,7 @@ const Shifts = () => {
         pendingHandovers={currentData?.pending_handovers || []}
         onSuccess={(newShift) => {
           showSuccessToast(`Shift #${newShift.shift_number} opened successfully.`);
-          loadAllShiftData();
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1279,7 +1283,7 @@ const Shifts = () => {
         financials={selectedShiftForClose?.financials || currentFin}
         onSuccess={(closedShift) => {
           showSuccessToast(`Shift closing submitted successfully.`);
-          loadAllShiftData();
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1289,7 +1293,7 @@ const Shifts = () => {
         shift={currentShift}
         onSuccess={() => {
           showSuccessToast('Petty cash expense recorded.');
-          loadAllShiftData();
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1299,7 +1303,7 @@ const Shifts = () => {
         shift={currentShift}
         onSuccess={() => {
           showSuccessToast('Cash adjustment recorded.');
-          loadAllShiftData();
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1310,7 +1314,7 @@ const Shifts = () => {
         expectedCash={currentFin.expected_cash || 0}
         onSuccess={() => {
           showSuccessToast('Cash handover initiated.');
-          loadAllShiftData();
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1324,7 +1328,7 @@ const Shifts = () => {
           shift={selectedShiftForApproval}
           onSuccess={() => {
             showSuccessToast('Shift reconciliation decision recorded.');
-            loadAllShiftData();
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
           }}
         />
       )}
@@ -1339,7 +1343,7 @@ const Shifts = () => {
           shift={selectedShiftForForceClose}
           onSuccess={() => {
             showSuccessToast('Shift has been forcibly closed.');
-            loadAllShiftData();
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
           }}
         />
       )}

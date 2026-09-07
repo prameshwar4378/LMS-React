@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getStayByIdApi, checkoutStayApi } from '../api/stayApi';
 import { createPaymentApi } from '../api/billingApi';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
@@ -37,6 +38,7 @@ import {
 const Checkout = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showError, showSuccess } = useNotification();
   const { hasPermission, getPermissionLimit } = useAuth();
 
@@ -46,10 +48,7 @@ const Checkout = () => {
   const canCollectPayment = hasPermission('billing', 'can_collect_payment');
   const canRefund = hasPermission('billing', 'can_refund');
 
-  const [stay, setStay] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
 
   // Custom Checkout Date & Time
   const [actualCheckoutDate, setActualCheckoutDate] = useState(() => {
@@ -60,6 +59,19 @@ const Checkout = () => {
     return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   });
   const [customNights, setCustomNights] = useState(null);
+
+  // Fetch stay data for checkout using TanStack Query
+  const {
+    data: stay = null,
+    isLoading: loading,
+    refetch: loadStay,
+  } = useQuery({
+    queryKey: ['checkout', id],
+    queryFn: () => getStayByIdApi(id),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !!id,
+  });
 
   // Auto-reset custom nights to calendar baseline when actual checkout date changes
   useEffect(() => {
@@ -97,32 +109,22 @@ const Checkout = () => {
   const [refundSubmitting, setRefundSubmitting] = useState(false);
   const [refundError, setRefundError] = useState('');
 
+  // Sync stay data to local discount and checkout configuration states when stay is loaded
   useEffect(() => {
-    loadStay();
-  }, [id]);
-
-  const loadStay = async () => {
-    setLoading(true);
-    try {
-      const data = await getStayByIdApi(id);
-      setStay(data);
-      setDiscountType(data.discount_type || 'FIXED');
-      setDiscountValue(data.discount_value || 0);
-      setDiscountReason(data.discount_reason || '');
+    if (stay) {
+      setDiscountType(stay.discount_type || 'FIXED');
+      setDiscountValue(stay.discount_value || 0);
+      setDiscountReason(stay.discount_reason || '');
 
       // Set initial actual checkout date to today
       const todayStr = new Date().toISOString().split('T')[0];
       setActualCheckoutDate(todayStr);
 
-      if (data.chargeable_nights) {
-        setCustomNights(data.chargeable_nights);
+      if (stay.chargeable_nights) {
+        setCustomNights(stay.chargeable_nights);
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [stay?.id]);
 
   // Expected Duration (Nights)
   const expectedNights = (() => {
@@ -309,7 +311,9 @@ const Checkout = () => {
       await createPaymentApi(payload);
       showSuccess(`Refund of ₹${amt.toFixed(2)} returned to guest and logged as debit transaction!`, 'Refund Processed');
       setShowRefundModal(false);
-      loadStay();
+      queryClient.invalidateQueries({ queryKey: ['checkout', id] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to process refund transaction.';
@@ -326,7 +330,9 @@ const Checkout = () => {
       await createPaymentApi(payData);
       showSuccess('Payment transaction recorded successfully!', 'Payment Received');
       setShowPaymentModal(false);
-      loadStay();
+      queryClient.invalidateQueries({ queryKey: ['checkout', id] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error recording payment.';
       showError(errMsg, 'Payment Failed');
@@ -354,6 +360,11 @@ const Checkout = () => {
       };
 
       await checkoutStayApi(id, payload);
+      queryClient.invalidateQueries({ queryKey: ['checkout', id] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
       setShowInvoice(true);
     } catch (err) {

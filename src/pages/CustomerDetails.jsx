@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { getCustomerHistoryApi, updateCustomerApi, deleteCustomerApi, recordCustomerPaymentApi, refundCustomerCreditApi } from '../api/customerApi';
 import { cancelBookingApi, deleteBookingApi } from '../api/bookingApi';
@@ -18,10 +19,17 @@ const CustomerDetails = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { showSuccess, showError } = useNotification();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
-  const [customer, setCustomer] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data: customer = null, isLoading: loading, refetch: loadHistory } = useQuery({
+    queryKey: ['customer-details', id],
+    queryFn: () => getCustomerHistoryApi(id),
+    enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
   const [photoError, setPhotoError] = useState(false);
 
   // Selected Reservation Modal for View / Manage
@@ -120,21 +128,6 @@ const CustomerDetails = () => {
     return `${h}:${m} ${ampm}`;
   };
 
-  useEffect(() => {
-    loadHistory();
-  }, [id]);
-
-  const loadHistory = async () => {
-    setLoading(true);
-    try {
-      const data = await getCustomerHistoryApi(id);
-      setCustomer(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCancelBooking = (booking) => {
     setConfirmModal({
@@ -151,7 +144,8 @@ const CustomerDetails = () => {
           setConfirmModal({ show: false, loading: false });
           setSelectedBooking(null);
           showSuccess(`Reservation #${booking.booking_number} cancelled successfully.`, 'Reservation Cancelled');
-          loadHistory();
+          queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
         } catch (err) {
           setConfirmModal({ show: false, loading: false });
           showError(err.response?.data?.message || err.response?.data?.error || 'Failed to cancel reservation.', 'Cancellation Failed');
@@ -175,7 +169,8 @@ const CustomerDetails = () => {
           setConfirmModal({ show: false, loading: false });
           setSelectedBooking(null);
           showSuccess(`Reservation #${booking.booking_number} deleted successfully.`, 'Record Deleted');
-          loadHistory();
+          queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
         } catch (err) {
           setConfirmModal({ show: false, loading: false });
           showError(err.response?.data?.message || err.response?.data?.error || 'Failed to delete reservation.', 'Deletion Failed');
@@ -273,7 +268,8 @@ const CustomerDetails = () => {
     try {
       await updateCustomerApi(customer.id, formData);
       setShowEditModal(false);
-      loadHistory();
+      queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
@@ -296,6 +292,8 @@ const CustomerDetails = () => {
           await deleteCustomerApi(customer.id);
           setConfirmModal({ show: false });
           showSuccess(`Customer profile '${customer.full_name}' deleted successfully.`, 'Customer Deleted');
+          queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
           navigate('/customers');
         } catch (err) {
           showError(err.response?.data?.error || 'Error deleting customer record.', 'Deletion Failed');
@@ -345,7 +343,7 @@ const CustomerDetails = () => {
         res.message || `Payment of ${formatCurrency(numericAmount)} recorded successfully!`,
         'Payment Recorded'
       );
-      loadHistory();
+      queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.detail || 'Failed to record customer payment.';
@@ -391,7 +389,7 @@ const CustomerDetails = () => {
         res.message || `Successfully returned ${formatCurrency(numericAmount)} to guest!`,
         'Refund Processed'
       );
-      loadHistory();
+      queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process refund.';

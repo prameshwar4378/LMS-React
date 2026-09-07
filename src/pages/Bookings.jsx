@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBookingsApi, updateBookingApi, cancelBookingApi, deleteBookingApi } from '../api/bookingApi';
 import { getStaysApi } from '../api/stayApi';
 import { checkAvailabilityApi, getRoomsApi } from '../api/roomApi';
@@ -15,12 +16,22 @@ const Bookings = () => {
   const { user, hasPermission, getPermissionLimit } = useAuth();
   const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
+  const queryClient = useQueryClient();
 
-
-  const [bookings, setBookings] = useState([]);
-  const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('CONFIRMED');
   const [search, setSearch] = useState('');
+
+  // TanStack Query for bookings data fetching
+  const {
+    data: bookings = [],
+    isLoading: loading,
+    refetch: loadBookings,
+  } = useQuery({
+    queryKey: ['bookings', statusFilter, search],
+    queryFn: () => getBookingsApi({ status: statusFilter, search }),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   // Selected Booking for View Details Modal
   const [viewBooking, setViewBooking] = useState(null);
@@ -56,22 +67,6 @@ const Bookings = () => {
   });
 
   const navigate = useNavigate();
-
-  useEffect(() => {
-    loadBookings();
-  }, [statusFilter, search]);
-
-  const loadBookings = async () => {
-    setLoading(true);
-    try {
-      const data = await getBookingsApi({ status: statusFilter, search: search });
-      setBookings(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   // KPI Analytics Counters
   const totalBookings = bookings.length;
@@ -249,7 +244,7 @@ const Bookings = () => {
       });
 
       setEditBooking(null);
-      loadBookings();
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
     } catch (err) {
       console.error(err);
       const serverMsg = err.response?.data?.room?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error updating booking.';
@@ -273,7 +268,7 @@ const Bookings = () => {
         try {
           await cancelBookingApi(booking.id);
           setConfirmModal({ show: false });
-          loadBookings();
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
         } catch (err) {
           alert(err.response?.data?.error || 'Error cancelling booking.');
           setConfirmModal({ show: false });
@@ -297,7 +292,7 @@ const Bookings = () => {
           await deleteBookingApi(booking.id);
           setConfirmModal({ show: false });
           showSuccess(`Booking #${booking.booking_number} deleted successfully.`, 'Booking Deleted');
-          loadBookings();
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
         } catch (err) {
           showError(err.response?.data?.error || 'Error deleting booking record.', 'Deletion Failed');
           setConfirmModal({ show: false });

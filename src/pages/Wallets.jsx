@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   getCustomerWalletsApi,
   recordCustomerPaymentApi,
@@ -78,17 +79,8 @@ const COLUMN_CONFIG = [
 const Wallets = () => {
   const { user, selectedProperty } = useAuth();
   const { showSuccess, showError } = useNotification();
+  const queryClient = useQueryClient();
 
-  const [wallets, setWallets] = useState([]);
-  const [summary, setSummary] = useState({
-    total_active_wallets: 0,
-    total_advance_credit_held: 0,
-    total_customers_with_credit: 0,
-    total_pending_dues: 0,
-    total_customers_with_dues: 0,
-    net_position: 0
-  });
-  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState('all'); // 'all', 'credit_available', 'pending_dues'
   const [sortBy, setSortBy] = useState('credit_desc');
@@ -225,29 +217,31 @@ const Wallets = () => {
   const [ledgerData, setLedgerData] = useState(null);
   const [loadingLedger, setLoadingLedger] = useState(false);
 
-  useEffect(() => {
-    loadWallets();
-  }, [search, activeTab]);
-
-  const loadWallets = async () => {
-    setLoading(true);
-    try {
-      const data = await getCustomerWalletsApi({
+  // TanStack Query for wallets data fetching
+  const {
+    data: walletsData = {},
+    isLoading: loading,
+    refetch: loadWallets,
+  } = useQuery({
+    queryKey: ['wallets', search, activeTab, selectedProperty?.id],
+    queryFn: () =>
+      getCustomerWalletsApi({
         search: search.trim(),
-        tab: activeTab
-      });
-      if (data?.results) {
-        setWallets(data.results);
-        setSummary(data.summary || {});
-      } else {
-        setWallets([]);
-      }
-    } catch (err) {
-      console.error(err);
-      showError('Failed to load customer wallets.', 'Network Error');
-    } finally {
-      setLoading(false);
-    }
+        tab: activeTab,
+      }),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const wallets = walletsData?.results || [];
+  const summary = {
+    total_active_wallets: 0,
+    total_advance_credit_held: 0,
+    total_customers_with_credit: 0,
+    total_pending_dues: 0,
+    total_customers_with_dues: 0,
+    net_position: 0,
+    ...(walletsData?.summary || {}),
   };
 
   // -------------------------------------------------------------
@@ -318,7 +312,7 @@ const Wallets = () => {
         'Deposit Successful'
       );
       setShowDepositModal(false);
-      loadWallets();
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process advance deposit.';
@@ -371,7 +365,7 @@ const Wallets = () => {
         'Refund Completed'
       );
       setShowRefundModal(false);
-      loadWallets();
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process wallet refund.';
@@ -406,7 +400,7 @@ const Wallets = () => {
         res.message || `Successfully applied ₹${canPay.toFixed(2)} from wallet credit to settle stay dues.`,
         'Dues Settled'
       );
-      loadWallets();
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to settle dues from wallet.';
@@ -584,7 +578,7 @@ const Wallets = () => {
           <button
             type="button"
             className="btn btn-outline-secondary d-flex align-items-center gap-1.5 shadow-xs bg-white py-2 px-2.5"
-            onClick={loadWallets}
+            onClick={() => loadWallets()}
             disabled={loading}
             title="Refresh wallets data"
           >

@@ -1,5 +1,7 @@
 import React, { Component } from 'react';
 import { HashRouter } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
+import queryClient from './queryClient';
 import { AuthProvider } from './context/AuthContext';
 import { LoadingProvider } from './context/LoadingContext';
 import { NotificationProvider } from './context/NotificationContext';
@@ -58,15 +60,17 @@ class ErrorBoundary extends Component {
 function App() {
   return (
     <ErrorBoundary>
-      <HashRouter>
-        <AuthProvider>
-          <LoadingProvider>
-            <NotificationProvider>
-              <AppRoutes />
-            </NotificationProvider>
-          </LoadingProvider>
-        </AuthProvider>
-      </HashRouter>
+      <QueryClientProvider client={queryClient}>
+        <HashRouter>
+          <AuthProvider>
+            <LoadingProvider>
+              <NotificationProvider>
+                <AppRoutes />
+              </NotificationProvider>
+            </LoadingProvider>
+          </AuthProvider>
+        </HashRouter>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

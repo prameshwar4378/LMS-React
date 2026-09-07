@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { getShiftDetailsApi } from '../api/shiftApi';
 import { formatCurrency } from '../utils/formatCurrency';
@@ -35,9 +36,8 @@ const ShiftDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasRole, isSingleOwner } = useAuth();
+  const queryClient = useQueryClient();
 
-  const [shift, setShift] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showForceCloseModal, setShowForceCloseModal] = useState(false);
@@ -47,21 +47,17 @@ const ShiftDetails = () => {
   const [thermalMode, setThermalMode] = useState('shift'); // 'shift' | 'expense'
   const [selectedExpense, setSelectedExpense] = useState(null);
 
-  useEffect(() => {
-    loadShift();
-  }, [id]);
-
-  const loadShift = async () => {
-    setLoading(true);
-    try {
-      const data = await getShiftDetailsApi(id);
-      setShift(data);
-    } catch (err) {
-      console.error('Failed to load shift details:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: shift = null,
+    isLoading: loading,
+    refetch: loadShift,
+  } = useQuery({
+    queryKey: ['shift-details', id],
+    queryFn: () => getShiftDetailsApi(id),
+    enabled: !isSingleOwner && !!id,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   const handlePrint = () => {
     window.print();
@@ -611,7 +607,7 @@ const ShiftDetails = () => {
           onClose={() => setShowApprovalModal(false)}
           shift={shift}
           onSuccess={() => {
-            loadShift();
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
           }}
         />
       )}
@@ -636,7 +632,7 @@ const ShiftDetails = () => {
           shift={shift}
           financials={shift.financials}
           onSuccess={() => {
-            loadShift();
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
           }}
         />
       )}
@@ -648,7 +644,7 @@ const ShiftDetails = () => {
           onClose={() => setShowForceCloseModal(false)}
           shift={shift}
           onSuccess={() => {
-            loadShift();
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
           }}
         />
       )}

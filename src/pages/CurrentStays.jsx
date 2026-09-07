@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getStaysApi, extendStayApi, addStayGuestApi } from '../api/stayApi';
 import { createExtraChargeApi, createPaymentApi } from '../api/billingApi';
 import GuestFormModal from '../components/GuestFormModal';
@@ -39,10 +40,8 @@ import {
 
 const CurrentStays = () => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { showError, showSuccess, showWarning, showConfirm } = useNotification();
-
-  const [stays, setStays] = useState([]);
-  const [loading, setLoading] = useState(true);
 
   // View Mode: 'cards' | 'table'
   const [viewMode, setViewMode] = useState('cards');
@@ -73,21 +72,19 @@ const CurrentStays = () => {
   const [showExtendModal, setShowExtendModal] = useState(false);
   const [newExtendCheckout, setNewExtendCheckout] = useState('');
 
-  useEffect(() => {
-    loadStays();
-  }, []);
-
-  const loadStays = async () => {
-    setLoading(true);
-    try {
+  const {
+    data: stays = [],
+    isLoading: loading,
+    refetch: loadStays
+  } = useQuery({
+    queryKey: ['current-stays'],
+    queryFn: async () => {
       const data = await getStaysApi({ current: 'true' });
-      setStays(data || []);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+      return data || [];
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   // Helper: Datetime-based Stay Status Analysis
   const analyzeStayStatus = (s) => {
@@ -237,7 +234,7 @@ const CurrentStays = () => {
     try {
       await addStayGuestApi(formData);
       setShowGuestModal(false);
-      loadStays();
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       alert('Error adding guest.');
     }
@@ -247,7 +244,7 @@ const CurrentStays = () => {
     try {
       await createExtraChargeApi(data);
       setShowChargeModal(false);
-      loadStays();
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       alert('Error adding charge.');
     }
@@ -257,7 +254,7 @@ const CurrentStays = () => {
     try {
       await createPaymentApi(data);
       setShowPaymentModal(false);
-      loadStays();
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       alert('Error adding payment.');
     }
@@ -268,7 +265,7 @@ const CurrentStays = () => {
     try {
       await extendStayApi(activeStayId, newExtendCheckout);
       setShowExtendModal(false);
-      loadStays();
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       alert(err.response?.data?.error || 'Error extending stay.');
     }

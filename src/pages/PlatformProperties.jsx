@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -264,10 +265,43 @@ const PlatformProperties = ({ initialTab = null }) => {
     setSearchParams({ tab });
   };
   const [viewMode, setViewMode] = useState('table'); // 'table' | 'grid'
-  const [loading, setLoading] = useState(true);
-  const [properties, setProperties] = useState([]);
-  const [subscriptionsData, setSubscriptionsData] = useState(null);
-  const [healthData, setHealthData] = useState(null);
+  const queryClient = useQueryClient();
+
+  const {
+    data: propertiesData,
+    isLoading: propertiesLoading,
+    refetch: refetchProperties
+  } = useQuery({
+    queryKey: ['platform-properties'],
+    queryFn: getPlatformPropertiesApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+  const properties = propertiesData?.properties || [];
+
+  const {
+    data: subscriptionsData = null,
+    isLoading: subscriptionsLoading,
+    refetch: refetchSubscriptions
+  } = useQuery({
+    queryKey: ['platform-subscriptions'],
+    queryFn: getPlatformSubscriptionsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: healthData = null,
+    isLoading: healthLoading,
+    refetch: refetchHealth
+  } = useQuery({
+    queryKey: ['platform-health'],
+    queryFn: getPlatformHealthApi,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const loading = propertiesLoading || subscriptionsLoading || healthLoading;
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'expiring' | 'suspended'
 
@@ -457,26 +491,12 @@ const PlatformProperties = ({ initialTab = null }) => {
   const [toastMessage, setToastMessage] = useState(null);
   const [copiedKey, setCopiedKey] = useState(false);
 
-  useEffect(() => {
-    loadAllPlatformData();
-  }, []);
-
   const loadAllPlatformData = async () => {
-    setLoading(true);
-    try {
-      const [propsRes, subsRes, healthRes] = await Promise.all([
-        getPlatformPropertiesApi(),
-        getPlatformSubscriptionsApi(),
-        getPlatformHealthApi()
-      ]);
-      setProperties(propsRes.properties || []);
-      setSubscriptionsData(subsRes);
-      setHealthData(healthRes);
-    } catch (err) {
-      console.error('Failed to load platform data:', err);
-    } finally {
-      setLoading(false);
-    }
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['platform-properties'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform-health'] }),
+    ]);
   };
 
   const showToast = (msg) => {
@@ -980,8 +1000,7 @@ const PlatformProperties = ({ initialTab = null }) => {
         showSuccess(`New plan "${payload.name}" created successfully!`, 'Plan Created');
       }
       setShowPlanModal(false);
-      const subsRes = await getPlatformSubscriptionsApi();
-      setSubscriptionsData(subsRes);
+      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'] });
     } catch (err) {
       console.error('Failed to save plan:', err);
       const errorDetail = err.response?.data?.error || err.message || 'Could not save plan';
@@ -1057,11 +1076,10 @@ const PlatformProperties = ({ initialTab = null }) => {
   const handleRefreshHealth = async () => {
     setHealthRefreshing(true);
     try {
-      const res = await getPlatformHealthApi();
-      setHealthData(res);
-      const pingLatency = res.database?.latency_ms !== undefined ? `${res.database.latency_ms} ms` : 'optimal';
+      const { data: res } = await refetchHealth();
+      const pingLatency = res?.database?.latency_ms !== undefined ? `${res.database.latency_ms} ms` : 'optimal';
       showSuccess(
-        `Host diagnostics pinged: DB latency is ${pingLatency}. Subsystem status: ${res.cluster_status || res.status || 'Active'}.`,
+        `Host diagnostics pinged: DB latency is ${pingLatency}. Subsystem status: ${res?.cluster_status || res?.status || 'Active'}.`,
         'Health Diagnostics Refreshed'
       );
       showToast('Health diagnostics refreshed.');

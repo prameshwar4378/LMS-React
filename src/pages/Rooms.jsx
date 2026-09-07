@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRoomsApi, getRoomTypesApi, createRoomApi, updateRoomStatusApi, deleteRoomApi, createRoomTypeApi } from '../api/roomApi';
 import { getCurrentSubscriptionApi } from '../api/subscriptionApi';
 import StatusBadge from '../components/StatusBadge';
@@ -13,11 +14,39 @@ const Rooms = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
   const { user, isReceptionist, isHotelOwner, isSuperUser, hasPermission, selectedProperty } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [rooms, setRooms] = useState([]);
-  const [roomTypes, setRoomTypes] = useState([]);
-  const [subscriptionData, setSubscriptionData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const {
+    data: rooms = [],
+    isLoading: roomsLoading,
+  } = useQuery({
+    queryKey: ['rooms', selectedProperty?.id],
+    queryFn: getRoomsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: roomTypes = [],
+    isLoading: typesLoading,
+  } = useQuery({
+    queryKey: ['roomTypes', selectedProperty?.id],
+    queryFn: getRoomTypesApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: subscriptionData = null,
+    isLoading: subLoading,
+  } = useQuery({
+    queryKey: ['subscription'],
+    queryFn: () => getCurrentSubscriptionApi().catch(() => null),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const loading = roomsLoading || typesLoading || subLoading;
   const [viewMode, setViewMode] = useState('grid'); // 'grid', 'table', 'calendar'
   const [filterStatus, setFilterStatus] = useState('ALL');
 
@@ -72,7 +101,7 @@ const Rooms = () => {
       });
       setShowQuickCategoryModal(false);
       showSuccess(`Room category "${newCat.name}" created successfully!`, 'Category Created');
-      setRoomTypes(prev => [...prev, newCat]);
+      queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
       setRoomTypeId(newCat.id);
     } catch (err) {
       const msg = err.response?.data?.detail || err.response?.data?.name?.[0] || 'Failed to create room category.';
@@ -82,31 +111,13 @@ const Rooms = () => {
     }
   };
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [roomsData, typesData, subData] = await Promise.all([
-        getRoomsApi(),
-        getRoomTypesApi(),
-        getCurrentSubscriptionApi().catch(() => null)
-      ]);
-      setRooms(roomsData);
-      setRoomTypes(typesData);
-      setSubscriptionData(subData);
-      if (typesData.length > 0 && !roomTypeId) {
-        setRoomTypeId(typesData[0].id);
-      }
-    } catch (err) {
-      console.error(err);
-      showError('Failed to load room data.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadData();
-  }, [selectedProperty?.id]);
+    if (roomTypes.length > 0) {
+      if (!roomTypeId || !roomTypes.some((rt) => rt.id === roomTypeId)) {
+        setRoomTypeId(roomTypes[0].id);
+      }
+    }
+  }, [roomTypes, roomTypeId]);
 
   const maxRoomsAllowed = subscriptionData?.max_rooms_allowed ?? 10;
   const currentRoomsCount = rooms.length;
@@ -178,7 +189,8 @@ const Rooms = () => {
       setRoomNumber('');
       setDescription('');
       showSuccess(`Room ${cleanNum} created and added to inventory successfully!`, 'Room Created');
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['subscription'] });
     } catch (err) {
       const errData = err.response?.data;
       let errorMsg = 'Failed to create room. Please verify your inputs.';
@@ -205,7 +217,7 @@ const Rooms = () => {
     }
     try {
       await updateRoomStatusApi(roomId, newStatus);
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
     } catch (err) {
       showError('Error updating room status.', 'Status Update Failed');
     }
@@ -227,7 +239,8 @@ const Rooms = () => {
         try {
           await deleteRoomApi(room.id);
           showSuccess(`Room ${room.room_number} deleted successfully!`, 'Room Deleted');
-          loadData();
+          queryClient.invalidateQueries({ queryKey: ['rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['subscription'] });
         } catch (err) {
           showError('Cannot delete room with active stays or reservations.', 'Deletion Failed');
         }

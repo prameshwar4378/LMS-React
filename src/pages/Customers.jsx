@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getCustomersApi, createCustomerApi, updateCustomerApi, deleteCustomerApi } from '../api/customerApi';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import ConfirmModal from '../components/ConfirmModal';
@@ -11,11 +12,17 @@ import { useNotification } from '../context/NotificationContext';
 const Customers = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useNotification();
+  const queryClient = useQueryClient();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
-  const [customers, setCustomers] = useState([]);
   const [search, setSearch] = useState('');
-  const [loading, setLoading] = useState(true);
+
+  const { data: customers = [], isLoading: loading, refetch: loadCustomers } = useQuery({
+    queryKey: ['customers', search],
+    queryFn: () => getCustomersApi(search),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   // Add / Edit Modal state
   const [showModal, setShowModal] = useState(false);
@@ -51,22 +58,6 @@ const Customers = () => {
   });
 
   const navigate = useNavigate();
-
-  useEffect(() => {
-    loadCustomers();
-  }, [search]);
-
-  const loadCustomers = async () => {
-    setLoading(true);
-    try {
-      const data = await getCustomersApi(search);
-      setCustomers(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const resetForm = () => {
     setFirstName('');
@@ -151,7 +142,7 @@ const Customers = () => {
       }
       setShowModal(false);
       resetForm();
-      loadCustomers();
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
@@ -173,7 +164,7 @@ const Customers = () => {
           await deleteCustomerApi(c.id);
           setConfirmModal({ show: false });
           showSuccess(`Customer profile '${c.full_name}' deleted successfully.`, 'Customer Deleted');
-          loadCustomers();
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
         } catch (err) {
           showError(err.response?.data?.error || 'Error deleting customer record.', 'Deletion Failed');
           setConfirmModal({ show: false });

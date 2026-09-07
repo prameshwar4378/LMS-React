@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -38,10 +39,43 @@ import {
 const StaffManagement = () => {
   const { user } = useAuth();
   const { showSuccess, showError } = useNotification();
+  const queryClient = useQueryClient();
 
-  const [loading, setLoading] = useState(true);
-  const [usersList, setUsersList] = useState([]);
-  const [branchesList, setBranchesList] = useState([]);
+  const {
+    data: usersList = [],
+    isLoading: usersLoading,
+    refetch: refetchUsers,
+  } = useQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const usersData = await getUsersApi();
+      return Array.isArray(usersData) ? usersData : (usersData?.results || []);
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const {
+    data: branchesList = [],
+    isLoading: branchesLoading,
+    refetch: refetchBranches,
+  } = useQuery({
+    queryKey: ['hotelBranches'],
+    queryFn: async () => {
+      const branchesData = await getHotelBranchesApi();
+      return Array.isArray(branchesData) ? branchesData : [];
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+
+  const loading = usersLoading || branchesLoading;
+
+  const loadData = () => {
+    refetchUsers();
+    refetchBranches();
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedBranchFilter, setSelectedBranchFilter] = useState('all');
   const [selectedRoleFilter, setSelectedRoleFilter] = useState('all');
@@ -72,27 +106,6 @@ const StaffManagement = () => {
 
   // Action Loading
   const [actionUserId, setActionUserId] = useState(null);
-
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
-    setLoading(true);
-    try {
-      const [usersData, branchesData] = await Promise.all([
-        getUsersApi(),
-        getHotelBranchesApi()
-      ]);
-      setUsersList(Array.isArray(usersData) ? usersData : (usersData?.results || []));
-      setBranchesList(Array.isArray(branchesData) ? branchesData : []);
-    } catch (err) {
-      console.error('Failed to load staff management data:', err);
-      showError('Failed to load staff accounts or branches.', 'Error');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleOpenAddModal = (defaultPropertyId = null) => {
     const defaultProp = defaultPropertyId || (branchesList.length > 0 ? branchesList[0].id : '');
@@ -146,7 +159,7 @@ const StaffManagement = () => {
       });
       setShowCredentialsModal(true);
 
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.username?.[0]
@@ -168,7 +181,7 @@ const StaffManagement = () => {
     try {
       const res = await toggleUserActiveApi(targetUser.id);
       showSuccess(res.message, 'Status Updated');
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       showError('Failed to change user status.', 'Error');
     } finally {
@@ -192,7 +205,7 @@ const StaffManagement = () => {
     try {
       await deleteUserApi(targetUser.id);
       showSuccess(`User '${targetUser.username}' has been deleted.`, 'User Deleted');
-      loadData();
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       showError('Failed to delete staff account.', 'Error');
     } finally {

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getSettingsApi, updateSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
@@ -8,33 +9,44 @@ import RolePermissionMatrixModal from '../components/RolePermissionMatrixModal';
 const Settings = () => {
   const { showSuccess, showError } = useNotification();
   const { isHotelOwner } = useAuth();
+  const queryClient = useQueryClient();
+
   const [settings, setSettings] = useState(null);
-  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [showPermModal, setShowPermModal] = useState(false);
 
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
 
-  useEffect(() => {
-    loadSettings();
-  }, []);
+  const {
+    data: initialSettings,
+    isLoading,
+    error,
+    refetch: loadSettings,
+  } = useQuery({
+    queryKey: ['settings'],
+    queryFn: getSettingsApi,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
-  const loadSettings = async () => {
-    setLoading(true);
-    try {
-      const data = await getSettingsApi();
-      setSettings(data);
-      if (data?.logo) {
-        setLogoPreview(data.logo);
+  useEffect(() => {
+    if (initialSettings) {
+      setSettings(initialSettings);
+      if (initialSettings.logo) {
+        setLogoPreview(initialSettings.logo);
       }
-    } catch (err) {
-      console.error(err);
-      showError('Failed to load lodge settings.', 'Load Error');
-    } finally {
-      setLoading(false);
     }
-  };
+  }, [initialSettings]);
+
+  useEffect(() => {
+    if (error) {
+      console.error(error);
+      showError('Failed to load lodge settings.', 'Load Error');
+    }
+  }, [error, showError]);
+
+  const loading = isLoading || !settings;
 
   const handleLogoChange = (e) => {
     const file = e.target.files[0];
@@ -66,6 +78,7 @@ const Settings = () => {
       if (updated?.logo) {
         setLogoPreview(updated.logo);
       }
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
       showSuccess('Lodge settings and branding updated successfully!', 'Settings Saved');
     } catch (err) {
       console.error(err);

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { getStayByIdApi, updateStayApi, addStayGuestApi, updateStayGuestApi, deleteStayGuestApi } from '../api/stayApi';
@@ -30,9 +31,7 @@ const StayDetails = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
-
-  const [stay, setStay] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('overview');
 
   // Explicit Admin Override unlock state for completed stays
@@ -103,21 +102,17 @@ const StayDetails = () => {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionError, setActionError] = useState('');
 
-  useEffect(() => {
-    loadStayDetails();
-  }, [id]);
-
-  const loadStayDetails = async () => {
-    setLoading(true);
-    try {
-      const data = await getStayByIdApi(id);
-      setStay(data);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: stay = null,
+    isLoading: loading,
+    refetch: loadStayDetails,
+  } = useQuery({
+    queryKey: ['stay-details', id],
+    queryFn: () => getStayByIdApi(id),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+    enabled: !!id,
+  });
 
   const isCompleted = stay?.status === 'CHECKED_OUT' || stay?.status === 'COMPLETED';
   // Strict rule: if completed, frozen for everyone by default unless Admin explicitly unlocks override
@@ -140,7 +135,7 @@ const StayDetails = () => {
       await updateStayApi(stay.id, { notes: editNotes });
       setShowEditNotesModal(false);
       showSuccess('Guest & stay notes updated successfully!', 'Notes Saved');
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.notes?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Failed to update notes.';
@@ -252,7 +247,7 @@ const StayDetails = () => {
       });
       setShowEditStayModal(false);
       showSuccess('Room rate & pricing details updated successfully. Stay bill recalculated.', 'Room Rate Updated');
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       setActionError(err.response?.data?.room_rate?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Failed to update stay details.');
     } finally {
@@ -273,7 +268,7 @@ const StayDetails = () => {
         expected_checkout_time: editCheckoutTime,
       });
       setShowEditDatesModal(false);
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       setActionError(err.response?.data?.expected_checkout_date?.[0] || err.response?.data?.error || 'Failed to update stay dates & times.');
     } finally {
@@ -302,7 +297,7 @@ const StayDetails = () => {
 
       await updateCustomerApi(stay.primary_customer, formData);
       setShowEditGuestModal(false);
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to update guest details and documents.');
     } finally {
@@ -324,7 +319,7 @@ const StayDetails = () => {
       setShowExtraDocModal(false);
       setExtraDocTitle('');
       setExtraDocFile(null);
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to upload document.');
     } finally {
@@ -347,7 +342,7 @@ const StayDetails = () => {
           await removeCustomerPhotoApi(stay.primary_customer);
           setConfirmModal({ show: false });
           showSuccess('Guest photo snapshot removed successfully.', 'Photo Removed');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error removing photo.', 'Removal Failed');
           setConfirmModal({ show: false });
@@ -370,7 +365,7 @@ const StayDetails = () => {
           await removeCustomerIdFrontApi(stay.primary_customer);
           setConfirmModal({ show: false });
           showSuccess('Front ID document removed successfully.', 'Document Removed');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error removing Front ID document.', 'Removal Failed');
           setConfirmModal({ show: false });
@@ -393,7 +388,7 @@ const StayDetails = () => {
           await removeCustomerIdBackApi(stay.primary_customer);
           setConfirmModal({ show: false });
           showSuccess('Back ID document removed successfully.', 'Document Removed');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error removing Back ID document.', 'Removal Failed');
           setConfirmModal({ show: false });
@@ -416,7 +411,7 @@ const StayDetails = () => {
           await deleteCustomerDocumentApi(docId);
           setConfirmModal({ show: false });
           showSuccess(`Document '${title}' deleted successfully.`, 'Document Deleted');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error deleting document.', 'Deletion Failed');
           setConfirmModal({ show: false });
@@ -448,7 +443,7 @@ const StayDetails = () => {
       }
       setShowGuestModal(false);
       setEditingAdditionalGuest(null);
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       console.error(err);
       showError('Error saving guest details.', 'Operation Failed');
@@ -470,7 +465,7 @@ const StayDetails = () => {
           await deleteStayGuestApi(guestId);
           setConfirmModal({ show: false });
           showSuccess(`Guest '${guestName}' removed from stay roster.`, 'Guest Removed');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error removing guest from roster.', 'Removal Failed');
           setConfirmModal({ show: false });
@@ -485,7 +480,7 @@ const StayDetails = () => {
       await createExtraChargeApi(chargeData);
       setShowChargeModal(false);
       showSuccess('Extra charge added to bill successfully.', 'Charge Added');
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       showError('Error adding extra charge.', 'Failed');
     }
@@ -506,7 +501,7 @@ const StayDetails = () => {
           await deleteExtraChargeApi(chargeId);
           setConfirmModal({ show: false });
           showSuccess(`Extra charge '${chargeName || 'item'}' deleted from bill.`, 'Charge Deleted');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error deleting charge.', 'Deletion Failed');
           setConfirmModal({ show: false });
@@ -542,7 +537,7 @@ const StayDetails = () => {
       }
       setShowPaymentModal(false);
       setEditPayment(null);
-      loadStayDetails();
+      queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error saving payment record.';
       showError(errMsg, 'Payment Failed');
@@ -564,7 +559,7 @@ const StayDetails = () => {
           await deletePaymentApi(paymentId);
           setConfirmModal({ show: false });
           showSuccess(`Payment transaction #${paymentNumber} deleted.`, 'Payment Deleted');
-          loadStayDetails();
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           showError('Error deleting payment transaction.', 'Deletion Failed');
           setConfirmModal({ show: false });

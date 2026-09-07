@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { getCurrentSubscriptionApi } from '../api/subscriptionApi';
 import PageLoader from '../components/PageLoader';
@@ -23,25 +24,22 @@ import {
 const SubscriptionRenewal = () => {
   const { user, isSuperUser, logout } = useAuth();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
-  const [loading, setLoading] = useState(true);
-  const [subscription, setSubscription] = useState(null);
-
-  useEffect(() => {
-    loadStatus();
-  }, []);
-
-  const loadStatus = async () => {
-    setLoading(true);
-    try {
-      const data = await getCurrentSubscriptionApi();
-      setSubscription(data);
-    } catch (err) {
-      console.error('Failed to load system status:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: subscription = null,
+    isLoading: loading,
+    refetch: loadStatus,
+  } = useQuery({
+    queryKey: ['subscription'],
+    queryFn: () =>
+      getCurrentSubscriptionApi().catch((err) => {
+        console.error('Failed to load system status:', err);
+        return null;
+      }),
+    staleTime: 2 * 60 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
 
   if (loading) return <PageLoader />;
 
