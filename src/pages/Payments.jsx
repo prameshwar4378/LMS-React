@@ -249,11 +249,42 @@ const Payments = () => {
   // -------------------------------------------------------------
   // Pagination Calculation
   // -------------------------------------------------------------
-  const totalPages = Math.ceil(sortedPayments.length / pageSize) || 1;
+  const totalItems = sortedPayments.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 5) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, '...', total];
+    }
+    if (current >= total - 2) {
+      return [1, '...', total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  const columnDefs = [
+    { key: 'index', label: '# (Index)' },
+    { key: 'payment_number', label: 'Payment #' },
+    { key: 'stay_number', label: 'Stay Folio #' },
+    { key: 'room_number', label: 'Room Number' },
+    { key: 'customer_name', label: 'Guest Name' },
+    { key: 'customer_mobile', label: 'Guest Mobile' },
+    { key: 'payment_date', label: 'Date & Time' },
+    { key: 'payment_method', label: 'Method' },
+    { key: 'transaction_reference', label: 'Txn Ref / UTR' },
+    { key: 'received_by_name', label: 'Received By Staff' },
+    { key: 'type', label: 'Transaction Type' },
+    { key: 'amount', label: 'Amount (INR)' }
+  ];
+
   const paginatedPayments = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return sortedPayments.slice(start, start + pageSize);
-  }, [sortedPayments, currentPage, pageSize]);
+    return sortedPayments.slice(startIndex, endIndex);
+  }, [sortedPayments, startIndex, endIndex]);
 
   // Reset page when filters change
   useEffect(() => {
@@ -647,106 +678,6 @@ const Payments = () => {
             <span className="d-none d-sm-inline">Refresh</span>
           </button>
 
-          {/* Column Visibility Selector Dropdown */}
-          <div className="position-relative" ref={colMenuRef}>
-            <button
-              type="button"
-              onClick={() => setShowColMenu(!showColMenu)}
-              className="btn btn-white btn-sm border d-flex align-items-center gap-1.5 shadow-2xs text-secondary fw-semibold transition-all"
-              style={{
-                borderRadius: '10px',
-                height: '34px',
-                borderColor: showColMenu ? '#2563EB' : '#E2E8F0',
-                backgroundColor: showColMenu ? '#EFF6FF' : '#FFF'
-              }}
-              title="Customize Visible Columns"
-            >
-              <SlidersHorizontal size={13} />
-              <span className="d-none d-sm-inline">Columns</span>
-            </button>
-
-            {showColMenu && (
-              <div
-                className="position-absolute end-0 top-100 mt-2 bg-white rounded-4 shadow-xl border z-3 p-3 animate-fadeIn"
-                style={{
-                  minWidth: '240px',
-                  borderColor: '#E2E8F0',
-                  boxShadow: '0 20px 35px -8px rgba(15, 23, 42, 0.18)'
-                }}
-              >
-                <div className="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
-                  <span className="fw-bold text-dark extra-small uppercase tracking-wider" style={{ fontSize: '0.7rem' }}>
-                    Show / Hide Columns
-                  </span>
-                  <button
-                    type="button"
-                    onClick={resetColumnVisibility}
-                    className="btn btn-link p-0 extra-small text-primary text-decoration-none"
-                    style={{ fontSize: '0.675rem' }}
-                  >
-                    Reset
-                  </button>
-                </div>
-
-                <div className="d-flex flex-column gap-1.5" style={{ maxHeight: '260px', overflowY: 'auto' }}>
-                  {[
-                    { key: 'index', label: '# (Index)' },
-                    { key: 'payment_number', label: 'Payment #' },
-                    { key: 'stay_number', label: 'Stay Folio #' },
-                    { key: 'room_number', label: 'Room Number' },
-                    { key: 'customer_name', label: 'Guest Name' },
-                    { key: 'customer_mobile', label: 'Guest Mobile' },
-                    { key: 'payment_date', label: 'Date & Time' },
-                    { key: 'payment_method', label: 'Method' },
-                    { key: 'transaction_reference', label: 'Txn Ref / UTR' },
-                    { key: 'received_by_name', label: 'Received By Staff' },
-                    { key: 'type', label: 'Transaction Type' },
-                    { key: 'amount', label: 'Amount (INR)' }
-                  ].map((col) => (
-                    <label
-                      key={col.key}
-                      className="d-flex align-items-center gap-2 p-1.5 rounded-2 cursor-pointer hover-bg-light transition-all"
-                      style={{ fontSize: '0.775rem', cursor: 'pointer' }}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={visibleColumns[col.key]}
-                        onChange={() => toggleColumn(col.key)}
-                        className="form-check-input m-0"
-                        style={{ cursor: 'pointer' }}
-                      />
-                      <span className="text-secondary fw-medium">{col.label}</span>
-                    </label>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Export Excel Button */}
-          <button
-            type="button"
-            onClick={handleExportExcel}
-            className="btn btn-white btn-sm border d-flex align-items-center gap-1.5 shadow-2xs text-success fw-semibold transition-all"
-            style={{ borderRadius: '10px', height: '34px', borderColor: '#E2E8F0' }}
-            title="Download formatted Excel (.xls) with built-in Landscape page orientation"
-          >
-            <FileSpreadsheet size={14} className="text-success" />
-            <span className="d-none d-sm-inline">Export Excel</span>
-          </button>
-
-          {/* Export PDF (A4 Landscape) Button */}
-          <button
-            type="button"
-            onClick={handleExportPDF}
-            className="btn btn-white btn-sm border d-flex align-items-center gap-1.5 shadow-2xs text-danger fw-semibold transition-all"
-            style={{ borderRadius: '10px', height: '34px', borderColor: '#E2E8F0' }}
-            title="Download true A4 Landscape vector PDF report"
-          >
-            <Download size={14} className="text-danger" />
-            <span className="d-none d-sm-inline">Download PDF</span>
-          </button>
-
           {/* Print Report Button */}
           <button
             type="button"
@@ -1101,6 +1032,109 @@ const Payments = () => {
         <PageLoader fullScreen={false} message="Loading Transaction Ledger..." />
       ) : (
         <div className="card border-0 shadow-xs rounded-4 overflow-hidden bg-white">
+          {/* Standardized Card Header: Page Size & Top-Right Action Controls */}
+          <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-muted small fw-semibold">Show</span>
+              <select
+                className="form-select form-select-sm border-secondary-subtle"
+                style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span className="text-muted small">entries</span>
+              <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+                {totalItems} records
+              </span>
+            </div>
+
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              <div className="dropdown position-relative" ref={colMenuRef}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${showColMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  onClick={() => setShowColMenu(!showColMenu)}
+                  title="Customize visible columns"
+                >
+                  <i className="bi bi-sliders2"></i>
+                  <span>Columns</span>
+                  <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+                </button>
+
+                {showColMenu && (
+                  <div
+                    className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                    style={{ minWidth: '220px', zIndex: 1060 }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                      <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                        Visible Columns
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                        style={{ fontSize: '0.7rem' }}
+                        onClick={resetColumnVisibility}
+                      >
+                        Reset All
+                      </button>
+                    </div>
+                    <div className="d-flex flex-column gap-1 pt-1" style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                      {columnDefs.map((col) => (
+                        <label
+                          key={col.key}
+                          className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                          style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={visibleColumns[col.key]}
+                            onChange={() => toggleColumn(col.key)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export to Excel (.xls)"
+              >
+                <i className="bi bi-file-earmark-excel-fill text-success"></i>
+                <span>Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export to PDF Report"
+              >
+                <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+                <span>PDF</span>
+              </button>
+            </div>
+          </div>
+
           <div className="card-body p-0">
             <div className="table-responsive">
               <table className="table table-hover align-middle m-0" style={{ fontSize: '0.825rem' }}>
@@ -1529,83 +1563,56 @@ const Payments = () => {
               </table>
             </div>
 
-            {/* ----------------------------------------------------------- */}
-            {/* 5. TABLE PAGINATION & PAGE SIZE CONTROLS                    */}
-            {/* ----------------------------------------------------------- */}
-            <div className="p-3 border-top d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3 bg-white">
-              <div className="d-flex align-items-center gap-2 text-muted small">
-                <span>Showing</span>
-                <select
-                  className="form-select form-select-sm rounded-2 border py-1"
-                  style={{ width: '70px', fontSize: '0.785rem' }}
-                  value={pageSize}
-                  onChange={(e) => setPageSize(Number(e.target.value))}
-                >
-                  <option value={10}>10</option>
-                  <option value={25}>25</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                </select>
-                <span>
-                  of <strong className="text-dark">{sortedPayments.length}</strong> transactions
-                </span>
+            {/* Standardized Card Footer: Pagination */}
+            <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div className="text-muted small">
+                Showing <span className="fw-semibold text-dark">{totalItems === 0 ? 0 : startIndex + 1}</span> to{' '}
+                <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+                <span className="fw-semibold text-dark">{totalItems}</span> records
               </div>
-
-              {/* Page Selector Buttons */}
-              <div className="d-flex align-items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 1))}
-                  disabled={currentPage === 1}
-                  className="btn btn-white btn-sm border d-flex align-items-center justify-content-center p-1 rounded-2 text-secondary shadow-2xs"
-                  style={{ width: '32px', height: '32px' }}
-                  title="Previous Page"
-                >
-                  <ChevronLeft size={16} />
-                </button>
-
-                <div className="d-flex align-items-center gap-1">
-                  {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
-                    let pageNum;
-                    if (totalPages <= 5) {
-                      pageNum = i + 1;
-                    } else if (currentPage <= 3) {
-                      pageNum = i + 1;
-                    } else if (currentPage >= totalPages - 2) {
-                      pageNum = totalPages - 4 + i;
-                    } else {
-                      pageNum = currentPage - 2 + i;
-                    }
-
-                    return (
+              {totalPages > 1 && (
+                <nav aria-label="Table pagination">
+                  <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                    <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
                       <button
-                        key={pageNum}
                         type="button"
-                        onClick={() => setCurrentPage(pageNum)}
-                        className={`btn btn-sm rounded-2 font-monospace fw-semibold ${
-                          currentPage === pageNum
-                            ? 'btn-primary shadow-xs text-white'
-                            : 'btn-white border text-secondary shadow-2xs'
-                        }`}
-                        style={{ width: '32px', height: '32px', fontSize: '0.785rem' }}
+                        className="page-link rounded px-2.5 py-1"
+                        onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                        disabled={currentPage === 1}
                       >
-                        {pageNum}
+                        <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
                       </button>
-                    );
-                  })}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setCurrentPage((prev) => Math.min(prev + 1, totalPages))}
-                  disabled={currentPage === totalPages}
-                  className="btn btn-white btn-sm border d-flex align-items-center justify-content-center p-1 rounded-2 text-secondary shadow-2xs"
-                  style={{ width: '32px', height: '32px' }}
-                  title="Next Page"
-                >
-                  <ChevronRight size={16} />
-                </button>
-              </div>
+                    </li>
+                    {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                      p === '...' ? (
+                        <li key={`ellipsis-${idx}`} className="page-item disabled">
+                          <span className="page-link border-0 px-2 py-1">…</span>
+                        </li>
+                      ) : (
+                        <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                          <button
+                            type="button"
+                            className="page-link rounded px-2.5 py-1 fw-semibold"
+                            onClick={() => setCurrentPage(p)}
+                          >
+                            {p}
+                          </button>
+                        </li>
+                      )
+                    )}
+                    <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                      <button
+                        type="button"
+                        className="page-link rounded px-2.5 py-1"
+                        onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                      >
+                        <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              )}
             </div>
           </div>
         </div>

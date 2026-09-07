@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getStaysApi, extendStayApi, addStayGuestApi } from '../api/stayApi';
@@ -10,6 +10,8 @@ import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
+import { exportStaysToExcel, exportStaysToPDF } from '../utils/exportUtils';
 import {
   KeyRound,
   Search,
@@ -42,6 +44,7 @@ const CurrentStays = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showError, showSuccess, showWarning, showConfirm } = useNotification();
+  const { selectedProperty } = useAuth();
 
   // View Mode: 'cards' | 'table'
   const [viewMode, setViewMode] = useState('cards');
@@ -55,7 +58,7 @@ const CurrentStays = () => {
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
-  const pageSize = 12;
+  const [pageSize, setPageSize] = useState(15);
 
   // Modal target stay state
   const [activeStayId, setActiveStayId] = useState(null);
@@ -222,12 +225,194 @@ const CurrentStays = () => {
     setCurrentPage(1);
   };
 
-  // Paginated List
-  const totalPages = Math.ceil(filteredStays.length / pageSize) || 1;
+  // -------------------------------------------------------------
+  // Column Visibility & Definitions
+  // -------------------------------------------------------------
+  const columnDefs = [
+    { key: 'stay_number', label: 'Stay #' },
+    { key: 'room', label: 'Room' },
+    { key: 'status', label: 'Status' },
+    { key: 'primary_guest', label: 'Primary Guest' },
+    { key: 'mobile', label: 'Mobile' },
+    { key: 'check_in', label: 'Check-In' },
+    { key: 'expected_checkout', label: 'Expected Checkout' },
+    { key: 'total', label: 'Total' },
+    { key: 'paid', label: 'Paid' },
+    { key: 'balance', label: 'Balance' },
+    { key: 'actions', label: 'Actions' },
+  ];
+
+  const [columnVisibility, setColumnVisibility] = useState({
+    stay_number: true,
+    room: true,
+    status: true,
+    primary_guest: true,
+    mobile: true,
+    check_in: true,
+    expected_checkout: true,
+    total: true,
+    paid: true,
+    balance: true,
+    actions: true,
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleColumnVisibility = (key) => {
+    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const resetColumnVisibility = () => {
+    setColumnVisibility({
+      stay_number: true,
+      room: true,
+      status: true,
+      primary_guest: true,
+      mobile: true,
+      check_in: true,
+      expected_checkout: true,
+      total: true,
+      paid: true,
+      balance: true,
+      actions: true,
+    });
+  };
+
+  // -------------------------------------------------------------
+  // Sorting State & Logic
+  // -------------------------------------------------------------
+  const [sortColumn, setSortColumn] = useState('check_in');
+  const [sortDirection, setSortDirection] = useState('desc');
+
+  const handleSort = (colKey) => {
+    if (sortColumn === colKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(colKey);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedStays = useMemo(() => {
+    if (!filteredStays || !filteredStays.length) return [];
+    return [...filteredStays].sort((a, b) => {
+      let valA, valB;
+      const billA = a.bill_summary || {};
+      const billB = b.bill_summary || {};
+      const custA = a.primary_customer_detail || {};
+      const custB = b.primary_customer_detail || {};
+
+      switch (sortColumn) {
+        case 'stay_number':
+          valA = (a.stay_number || '').toLowerCase();
+          valB = (b.stay_number || '').toLowerCase();
+          break;
+        case 'room':
+          valA = parseInt(a.room_detail?.room_number, 10) || 0;
+          valB = parseInt(b.room_detail?.room_number, 10) || 0;
+          break;
+        case 'status':
+          valA = (a.status || '').toLowerCase();
+          valB = (b.status || '').toLowerCase();
+          break;
+        case 'primary_guest':
+          valA = (custA.full_name || '').toLowerCase();
+          valB = (custB.full_name || '').toLowerCase();
+          break;
+        case 'mobile':
+          valA = (custA.mobile || '').replace(/[^0-9]/g, '');
+          valB = (custB.mobile || '').replace(/[^0-9]/g, '');
+          break;
+        case 'expected_checkout':
+          valA = new Date(`${a.expected_checkout_date || '1970-01-01'}T${a.expected_checkout_time || '00:00'}`).getTime();
+          valB = new Date(`${b.expected_checkout_date || '1970-01-01'}T${b.expected_checkout_time || '00:00'}`).getTime();
+          break;
+        case 'total':
+          valA = parseFloat(billA.grand_total || billA.subtotal || 0);
+          valB = parseFloat(billB.grand_total || billB.subtotal || 0);
+          break;
+        case 'paid':
+          valA = parseFloat(billA.total_paid || 0);
+          valB = parseFloat(billB.total_paid || 0);
+          break;
+        case 'balance':
+          valA = parseFloat(billA.balance || 0);
+          valB = parseFloat(billB.balance || 0);
+          break;
+        case 'check_in':
+        default:
+          valA = new Date(`${a.check_in_date || '1970-01-01'}T${a.check_in_time || '00:00'}`).getTime();
+          valB = new Date(`${b.check_in_date || '1970-01-01'}T${b.check_in_time || '00:00'}`).getTime();
+          break;
+      }
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      return sortDirection === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+  }, [filteredStays, sortColumn, sortDirection]);
+
+  // -------------------------------------------------------------
+  // Pagination Calculations
+  // -------------------------------------------------------------
+  const totalItems = sortedStays.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
   const paginatedStays = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredStays.slice(start, start + pageSize);
-  }, [filteredStays, currentPage, pageSize]);
+    return sortedStays.slice(startIndex, endIndex);
+  }, [sortedStays, startIndex, endIndex]);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+    if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  const handleExportExcel = () => {
+    exportStaysToExcel(sortedStays, { search: searchQuery }, selectedProperty);
+  };
+
+  const handleExportPDF = () => {
+    exportStaysToPDF(sortedStays, { search: searchQuery }, selectedProperty);
+  };
+
+  const renderSortHeader = (label, colKey, className = '') => (
+    <th
+      className={`${className} text-nowrap`}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => handleSort(colKey)}
+      title={`Sort by ${label}`}
+    >
+      <div className="d-inline-flex align-items-center gap-1.5">
+        <span>{label}</span>
+        {sortColumn === colKey ? (
+          sortDirection === 'asc' ? (
+            <i className="bi bi-arrow-up text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          ) : (
+            <i className="bi bi-arrow-down text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          )
+        ) : (
+          <i className="bi bi-arrow-down-up text-muted opacity-25" style={{ fontSize: '0.7rem' }}></i>
+        )}
+      </div>
+    </th>
+  );
 
   // Modal Handlers
   const handleAddGuestSubmit = async (formData) => {
@@ -671,118 +856,315 @@ const CurrentStays = () => {
           })}
         </div>
       ) : (
-        /* 15. DENSE TABLE VIEW OPTION */
-        <div className="saas-card border-0 shadow-sm overflow-hidden">
-          <div className="table-responsive">
-            <table className="table table-hover align-middle m-0">
-              <thead className="table-light">
-                <tr>
-                  <th>Stay #</th>
-                  <th>Room</th>
-                  <th>Status</th>
-                  <th>Primary Guest</th>
-                  <th>Mobile</th>
-                  <th>Check-In</th>
-                  <th>Expected Checkout</th>
-                  <th className="text-end">Total</th>
-                  <th className="text-end">Paid</th>
-                  <th className="text-end">Balance</th>
-                  <th className="text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {paginatedStays.map((s) => {
-                  const { isOverdue, isDueToday, expDateStr, expTimeStr } = analyzeStayStatus(s);
-                  const bill = s.bill_summary || {};
-                  const grossSubtotal = parseFloat(bill.grand_total || bill.subtotal || 0);
-                  const totalPaid = parseFloat(bill.total_paid || 0);
-                  const balance = parseFloat(bill.balance || 0);
-                  const cust = s.primary_customer_detail || {};
+        /* 15. STANDARDIZED TABLE VIEW */
+        <div className="card border-0 shadow-sm rounded-3 overflow-hidden">
+          {/* Table Header Bar with Entries & Top-Right Export / Column Visibility */}
+          <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+            {/* Left: Page Size Selector & Count Badge */}
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-muted small fw-semibold">Show</span>
+              <select
+                className="form-select form-select-sm border-secondary-subtle"
+                style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span className="text-muted small">entries</span>
+              <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+                {totalItems} records
+              </span>
+            </div>
 
-                  return (
-                    <tr key={s.id} className={isOverdue ? 'table-danger-subtle' : ''}>
-                      <td className="fw-bold text-primary">{s.stay_number}</td>
-                      <td>
-                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle fw-bold">
-                          Room {s.room_detail?.room_number}
-                        </span>
-                      </td>
-                      <td>
-                        {isOverdue ? (
-                          <span className="badge bg-danger text-white">OVERDUE</span>
-                        ) : isDueToday ? (
-                          <span className="badge bg-warning text-dark">DUE TODAY</span>
-                        ) : (
-                          <span className="badge bg-success text-white">ACTIVE</span>
-                        )}
-                      </td>
-                      <td className="fw-bold text-dark">{cust.full_name || 'Guest'}</td>
-                      <td>{cust.mobile || 'N/A'}</td>
-                      <td className="small">{formatDate(s.check_in_date)}</td>
-                      <td className={`small ${isOverdue ? 'text-danger fw-bold' : ''}`}>
-                        {formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}
-                      </td>
-                      <td className="text-end fw-semibold">{formatCurrency(grossSubtotal)}</td>
-                      <td className="text-end text-success fw-semibold">{formatCurrency(totalPaid)}</td>
-                      <td className={`text-end fw-bold ${balance > 0 ? 'text-danger' : 'text-success'}`}>
-                        {formatCurrency(balance)}
-                      </td>
-                      <td className="text-center">
-                        <div className="dropdown">
-                          <button className="btn btn-xs btn-light border dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
-                            Actions
-                          </button>
-                          <ul className="dropdown-menu dropdown-menu-end shadow border-0">
-                            <li>
-                              <Link to={`/stays/${s.id}`} className="dropdown-item py-2 d-flex align-items-center gap-2">
-                                <Eye size={15} className="text-primary" /> View Details
-                              </Link>
-                            </li>
-                            <li>
-                              <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
-                                <UserPlus size={15} className="text-info" /> Add Guest
-                              </button>
-                            </li>
-                            <li>
-                              <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
-                                <ShoppingCart size={15} className="text-warning" /> Add Charge
-                              </button>
-                            </li>
-                            <li>
-                              <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
-                                <DollarSign size={15} className="text-success" /> Add Payment
-                              </button>
-                            </li>
-                            <li>
-                              <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
-                                <CalendarPlus size={15} className="text-primary" /> Extend Stay
-                              </button>
-                            </li>
-                            <li><hr className="dropdown-divider" /></li>
-                            <li>
-                              <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
-                                <LogOut size={15} /> Checkout
-                              </button>
-                            </li>
-                          </ul>
-                        </div>
+            {/* EXACT TOP RIGHT CORNER: Column Visibility + Excel & PDF Small Buttons */}
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              {/* Column Visibility Dropdown */}
+              <div className="dropdown position-relative" ref={columnMenuRef}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${showColumnMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  onClick={() => setShowColumnMenu(!showColumnMenu)}
+                  title="Customize visible columns"
+                >
+                  <i className="bi bi-sliders2"></i>
+                  <span>Columns</span>
+                  <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+                </button>
+
+                {showColumnMenu && (
+                  <div
+                    className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                    style={{ minWidth: '200px', zIndex: 1060 }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                      <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                        Visible Columns
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                        style={{ fontSize: '0.7rem' }}
+                        onClick={resetColumnVisibility}
+                      >
+                        Reset All
+                      </button>
+                    </div>
+                    <div className="d-flex flex-column gap-1 pt-1">
+                      {columnDefs.map((col) => (
+                        <label
+                          key={col.key}
+                          className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                          style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={columnVisibility[col.key]}
+                            onChange={() => toggleColumnVisibility(col.key)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Small Professional Excel Export Button */}
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Active Stays to Excel (.xls)"
+              >
+                <i className="bi bi-file-earmark-excel-fill text-success"></i>
+                <span>Excel</span>
+              </button>
+
+              {/* Small Professional PDF Export Button */}
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Active Stays to PDF Report"
+              >
+                <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+                <span>PDF</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="card-body p-0">
+            <div className="table-responsive">
+              <table className="table table-hover align-middle m-0">
+                <thead className="table-light text-muted small text-uppercase fw-bold">
+                  <tr>
+                    {columnVisibility.stay_number && renderSortHeader('Stay #', 'stay_number', 'ps-3')}
+                    {columnVisibility.room && renderSortHeader('Room', 'room')}
+                    {columnVisibility.status && renderSortHeader('Status', 'status')}
+                    {columnVisibility.primary_guest && renderSortHeader('Primary Guest', 'primary_guest')}
+                    {columnVisibility.mobile && renderSortHeader('Mobile', 'mobile')}
+                    {columnVisibility.check_in && renderSortHeader('Check-In', 'check_in')}
+                    {columnVisibility.expected_checkout && renderSortHeader('Expected Checkout', 'expected_checkout')}
+                    {columnVisibility.total && renderSortHeader('Total', 'total', 'text-end')}
+                    {columnVisibility.paid && renderSortHeader('Paid', 'paid', 'text-end')}
+                    {columnVisibility.balance && renderSortHeader('Balance', 'balance', 'text-end')}
+                    {columnVisibility.actions && <th className="text-center pe-3">Actions</th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedStays.length === 0 ? (
+                    <tr>
+                      <td colSpan={11} className="text-center py-4 text-muted">
+                        No active stays match the current filter.
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  ) : (
+                    paginatedStays.map((s) => {
+                      const { isOverdue, isDueToday, expDateStr, expTimeStr } = analyzeStayStatus(s);
+                      const bill = s.bill_summary || {};
+                      const grossSubtotal = parseFloat(bill.grand_total || bill.subtotal || 0);
+                      const totalPaid = parseFloat(bill.total_paid || 0);
+                      const balance = parseFloat(bill.balance || 0);
+                      const cust = s.primary_customer_detail || {};
+
+                      return (
+                        <tr key={s.id} className={isOverdue ? 'table-danger-subtle' : ''}>
+                          {columnVisibility.stay_number && (
+                            <td className="ps-3 fw-bold text-primary">{s.stay_number}</td>
+                          )}
+                          {columnVisibility.room && (
+                            <td>
+                              <span className="badge bg-primary-subtle text-primary border border-primary-subtle fw-bold">
+                                Room {s.room_detail?.room_number}
+                              </span>
+                            </td>
+                          )}
+                          {columnVisibility.status && (
+                            <td>
+                              {isOverdue ? (
+                                <span className="badge bg-danger text-white">OVERDUE</span>
+                              ) : isDueToday ? (
+                                <span className="badge bg-warning text-dark">DUE TODAY</span>
+                              ) : (
+                                <span className="badge bg-success text-white">ACTIVE</span>
+                              )}
+                            </td>
+                          )}
+                          {columnVisibility.primary_guest && (
+                            <td className="fw-bold text-dark">{cust.full_name || 'Guest'}</td>
+                          )}
+                          {columnVisibility.mobile && (
+                            <td>{cust.mobile || 'N/A'}</td>
+                          )}
+                          {columnVisibility.check_in && (
+                            <td className="small">{formatDate(s.check_in_date)}</td>
+                          )}
+                          {columnVisibility.expected_checkout && (
+                            <td className={`small ${isOverdue ? 'text-danger fw-bold' : ''}`}>
+                              {formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}
+                            </td>
+                          )}
+                          {columnVisibility.total && (
+                            <td className="text-end fw-semibold">{formatCurrency(grossSubtotal)}</td>
+                          )}
+                          {columnVisibility.paid && (
+                            <td className="text-end text-success fw-semibold">{formatCurrency(totalPaid)}</td>
+                          )}
+                          {columnVisibility.balance && (
+                            <td className={`text-end fw-bold ${balance > 0 ? 'text-danger' : 'text-success'}`}>
+                              {formatCurrency(balance)}
+                            </td>
+                          )}
+                          {columnVisibility.actions && (
+                            <td className="text-center pe-3">
+                              <div className="dropdown">
+                                <button className="btn btn-xs btn-light border dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
+                                  Actions
+                                </button>
+                                <ul className="dropdown-menu dropdown-menu-end shadow border-0">
+                                  <li>
+                                    <Link to={`/stays/${s.id}`} className="dropdown-item py-2 d-flex align-items-center gap-2">
+                                      <Eye size={15} className="text-primary" /> View Details
+                                    </Link>
+                                  </li>
+                                  <li>
+                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
+                                      <UserPlus size={15} className="text-info" /> Add Guest
+                                    </button>
+                                  </li>
+                                  <li>
+                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
+                                      <ShoppingCart size={15} className="text-warning" /> Add Charge
+                                    </button>
+                                  </li>
+                                  <li>
+                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
+                                      <DollarSign size={15} className="text-success" /> Add Payment
+                                    </button>
+                                  </li>
+                                  <li>
+                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
+                                      <CalendarPlus size={15} className="text-primary" /> Extend Stay
+                                    </button>
+                                  </li>
+                                  <li><hr className="dropdown-divider" /></li>
+                                  <li>
+                                    <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
+                                      <LogOut size={15} /> Checkout
+                                    </button>
+                                  </li>
+                                </ul>
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Table Footer with Showing X to Y of Z and Pagination */}
+          <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div className="text-muted small">
+              Showing <span className="fw-semibold text-dark">{totalItems === 0 ? 0 : startIndex + 1}</span> to{' '}
+              <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+              <span className="fw-semibold text-dark">{totalItems}</span> records
+            </div>
+
+            {totalPages > 1 && (
+              <nav aria-label="Table pagination">
+                <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                  <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      className="page-link rounded px-2.5 py-1"
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={currentPage === 1}
+                      aria-label="Previous page"
+                    >
+                      <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                    </button>
+                  </li>
+
+                  {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                    p === '...' ? (
+                      <li key={`ellipsis-${idx}`} className="page-item disabled">
+                        <span className="page-link border-0 px-2 py-1">…</span>
+                      </li>
+                    ) : (
+                      <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                        <button
+                          type="button"
+                          className="page-link rounded px-2.5 py-1 fw-semibold"
+                          onClick={() => setCurrentPage(p)}
+                        >
+                          {p}
+                        </button>
+                      </li>
+                    )
+                  )}
+
+                  <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      className="page-link rounded px-2.5 py-1"
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      aria-label="Next page"
+                    >
+                      <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                    </button>
+                  </li>
+                </ul>
+              </nav>
+            )}
           </div>
         </div>
       )}
 
-      {/* 17. PAGINATION CONTROL */}
-      {filteredStays.length > pageSize && (
+      {/* Cards View Pagination Control */}
+      {viewMode === 'cards' && totalPages > 1 && (
         <div className="d-flex flex-column flex-sm-row align-items-center justify-content-between gap-3 mt-4 pt-3 border-top">
           <div className="text-muted small">
             Showing <strong className="text-dark">{(currentPage - 1) * pageSize + 1}</strong> to{' '}
-            <strong className="text-dark">{Math.min(currentPage * pageSize, filteredStays.length)}</strong> of{' '}
-            <strong className="text-dark">{filteredStays.length}</strong> active stays
+            <strong className="text-dark">{Math.min(currentPage * pageSize, totalItems)}</strong> of{' '}
+            <strong className="text-dark">{totalItems}</strong> active stays
           </div>
 
           <div className="d-flex align-items-center gap-1">
@@ -794,9 +1176,10 @@ const CurrentStays = () => {
               <ChevronLeft size={16} /> Previous
             </button>
 
-            {Array.from({ length: totalPages }).map((_, idx) => {
-              const p = idx + 1;
-              return (
+            {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+              p === '...' ? (
+                <span key={`ellipsis-${idx}`} className="px-2 text-muted">…</span>
+              ) : (
                 <button
                   key={p}
                   className={`btn btn-sm ${currentPage === p ? 'btn-primary fw-bold' : 'btn-light border'}`}
@@ -804,8 +1187,8 @@ const CurrentStays = () => {
                 >
                   {p}
                 </button>
-              );
-            })}
+              )
+            )}
 
             <button
               className="btn btn-sm btn-light border"

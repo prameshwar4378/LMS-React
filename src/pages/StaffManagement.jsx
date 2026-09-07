@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -12,6 +12,7 @@ import {
 import { getHotelBranchesApi } from '../api/settingsApi';
 import PageLoader from '../components/PageLoader';
 import RolePermissionMatrixModal from '../components/RolePermissionMatrixModal';
+import { exportStaffToExcel, exportStaffToPDF } from '../utils/exportUtils';
 import {
   Users,
   UserPlus,
@@ -37,7 +38,7 @@ import {
 } from 'lucide-react';
 
 const StaffManagement = () => {
-  const { user } = useAuth();
+  const { user, selectedProperty } = useAuth();
   const { showSuccess, showError } = useNotification();
   const queryClient = useQueryClient();
 
@@ -292,6 +293,172 @@ const StaffManagement = () => {
     return matchesSearch && matchesBranch && matchesRole;
   });
 
+  // -------------------------------------------------------------
+  // Column Visibility & Definitions
+  // -------------------------------------------------------------
+  const columnDefs = [
+    { key: 'user_info', label: 'User' },
+    { key: 'full_name', label: 'Full Name' },
+    { key: 'location', label: 'Assigned Location' },
+    { key: 'role', label: 'Role' },
+    { key: 'contact', label: 'Contact' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Security Actions' },
+  ];
+
+  const [columnVisibility, setColumnVisibility] = useState({
+    user_info: true,
+    full_name: true,
+    location: true,
+    role: true,
+    contact: true,
+    status: true,
+    actions: true,
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleColumnVisibility = (key) => {
+    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const resetColumnVisibility = () => {
+    setColumnVisibility({
+      user_info: true,
+      full_name: true,
+      location: true,
+      role: true,
+      contact: true,
+      status: true,
+      actions: true,
+    });
+  };
+
+  // -------------------------------------------------------------
+  // Sorting State & Logic
+  // -------------------------------------------------------------
+  const [sortColumn, setSortColumn] = useState('username');
+  const [sortDirection, setSortDirection] = useState('asc');
+
+  const handleSort = (colKey) => {
+    if (sortColumn === colKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(colKey);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedUsers = useMemo(() => {
+    if (!filteredUsers || !filteredUsers.length) return [];
+    return [...filteredUsers].sort((a, b) => {
+      let valA, valB;
+      switch (sortColumn) {
+        case 'user_info':
+        case 'username':
+          valA = (a.username || '').toLowerCase();
+          valB = (b.username || '').toLowerCase();
+          break;
+        case 'full_name':
+          valA = `${a.first_name || ''} ${a.last_name || ''}`.trim().toLowerCase();
+          valB = `${b.first_name || ''} ${b.last_name || ''}`.trim().toLowerCase();
+          break;
+        case 'location':
+          valA = (a.property_name || '').toLowerCase();
+          valB = (b.property_name || '').toLowerCase();
+          break;
+        case 'role':
+          valA = (a.role || '').toLowerCase();
+          valB = (b.role || '').toLowerCase();
+          break;
+        case 'contact':
+          valA = (a.email || '').toLowerCase();
+          valB = (b.email || '').toLowerCase();
+          break;
+        case 'status':
+          valA = a.is_active ? 1 : 0;
+          valB = b.is_active ? 1 : 0;
+          break;
+        default:
+          valA = a.id;
+          valB = b.id;
+      }
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      return sortDirection === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+  }, [filteredUsers, sortColumn, sortDirection]);
+
+  // -------------------------------------------------------------
+  // Pagination State & Calculations
+  // -------------------------------------------------------------
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedBranchFilter, selectedRoleFilter]);
+
+  const totalItems = sortedUsers.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  const paginatedUsers = useMemo(() => {
+    return sortedUsers.slice(startIndex, endIndex);
+  }, [sortedUsers, startIndex, endIndex]);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+    if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  const handleExportExcel = () => {
+    exportStaffToExcel(sortedUsers, { searchQuery }, selectedProperty);
+  };
+
+  const handleExportPDF = () => {
+    exportStaffToPDF(sortedUsers, { searchQuery }, selectedProperty);
+  };
+
+  const renderSortHeader = (label, colKey, className = '') => (
+    <th
+      className={`${className} text-nowrap`}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => handleSort(colKey)}
+      title={`Sort by ${label}`}
+    >
+      <div className="d-inline-flex align-items-center gap-1.5">
+        <span>{label}</span>
+        {sortColumn === colKey ? (
+          sortDirection === 'asc' ? (
+            <i className="bi bi-arrow-up text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          ) : (
+            <i className="bi bi-arrow-down text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          )
+        ) : (
+          <i className="bi bi-arrow-down-up text-muted opacity-25" style={{ fontSize: '0.7rem' }}></i>
+        )}
+      </div>
+    </th>
+  );
+
   // Calculate Metrics
   const totalStaff = usersList.length;
   const managersCount = usersList.filter(u => u.role === 'MANAGER').length;
@@ -533,125 +700,130 @@ const StaffManagement = () => {
           </div>
         </div>
 
+        {/* Table Header Bar with Entries & Top-Right Export / Column Visibility */}
+        <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+          {/* Left: Page Size Selector & Count Badge */}
+          <div className="d-flex align-items-center gap-2">
+            <span className="text-muted small fw-semibold">Show</span>
+            <select
+              className="form-select form-select-sm border-secondary-subtle"
+              style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+              value={pageSize}
+              onChange={(e) => {
+                setPageSize(Number(e.target.value));
+                setCurrentPage(1);
+              }}
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+            <span className="text-muted small">entries</span>
+            <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+              {totalItems} records
+            </span>
+          </div>
+
+          {/* EXACT TOP RIGHT CORNER: Column Visibility + Excel & PDF Small Buttons */}
+          <div className="d-flex align-items-center gap-2 ms-auto">
+            {/* Column Visibility Dropdown */}
+            <div className="dropdown position-relative" ref={columnMenuRef}>
+              <button
+                type="button"
+                className={`btn btn-sm ${showColumnMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                onClick={() => setShowColumnMenu(!showColumnMenu)}
+                title="Customize visible columns"
+              >
+                <i className="bi bi-sliders2"></i>
+                <span>Columns</span>
+                <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+              </button>
+
+              {showColumnMenu && (
+                <div
+                  className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                  style={{ minWidth: '200px', zIndex: 1060 }}
+                >
+                  <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                    <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                      Visible Columns
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                      style={{ fontSize: '0.7rem' }}
+                      onClick={resetColumnVisibility}
+                    >
+                      Reset All
+                    </button>
+                  </div>
+                  <div className="d-flex flex-column gap-1 pt-1">
+                    {columnDefs.map((col) => (
+                      <label
+                        key={col.key}
+                        className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                        style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        <input
+                          type="checkbox"
+                          className="form-check-input m-0"
+                          checked={columnVisibility[col.key]}
+                          onChange={() => toggleColumnVisibility(col.key)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span>{col.label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Small Professional Excel Export Button */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+              style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+              title="Export Staff Directory to Excel (.xls)"
+            >
+              <i className="bi bi-file-earmark-excel-fill text-success"></i>
+              <span>Excel</span>
+            </button>
+
+            {/* Small Professional PDF Export Button */}
+            <button
+              type="button"
+              onClick={handleExportPDF}
+              className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+              style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+              title="Export Staff Directory to PDF Report"
+            >
+              <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+              <span>PDF</span>
+            </button>
+          </div>
+        </div>
+
         {/* Table Content */}
         <div className="table-responsive">
           <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.875rem' }}>
             <thead className="bg-light text-secondary extra-small text-uppercase fw-bold border-bottom">
               <tr>
-                <th className="ps-3.5 py-3">User</th>
-                <th>Full Name</th>
-                <th>Assigned Location</th>
-                <th>Role</th>
-                <th>Contact</th>
-                <th>Status</th>
-                <th className="text-end pe-3.5">Security Actions</th>
+                {columnVisibility.user_info && renderSortHeader('User', 'user_info', 'ps-3.5 py-3')}
+                {columnVisibility.full_name && renderSortHeader('Full Name', 'full_name')}
+                {columnVisibility.location && renderSortHeader('Assigned Location', 'location')}
+                {columnVisibility.role && renderSortHeader('Role', 'role')}
+                {columnVisibility.contact && renderSortHeader('Contact', 'contact')}
+                {columnVisibility.status && renderSortHeader('Status', 'status')}
+                {columnVisibility.actions && <th className="text-end pe-3.5">Security Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {filteredUsers.map((u) => {
-                const assignedBranch = branchesList.find(b =>
-                  b.id === u.property || b.id === u.property_id
-                );
-                const locationLabel = assignedBranch
-                  ? assignedBranch.name
-                  : (u.property_name || user?.property_name || 'Primary Hotel');
-                const isBranchUnit = assignedBranch ? assignedBranch.is_branch : Boolean(u.is_branch);
-
-                return (
-                  <tr key={u.id}>
-                    <td className="ps-3.5">
-                      <div className="d-flex align-items-center gap-2.5">
-                        <div
-                          className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold shadow-xs flex-shrink-0"
-                          style={{
-                            width: '34px',
-                            height: '34px',
-                            fontSize: '0.8rem',
-                            backgroundColor: u.role === 'HOTEL_OWNER' ? '#0F172A' : (u.role === 'MANAGER' ? '#2563EB' : '#0D9488')
-                          }}
-                        >
-                          {(u.first_name || u.username || 'U').charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <div className="fw-bold text-dark font-monospace">{u.username}</div>
-                          <span className="extra-small text-muted font-monospace">ID #{u.id}</span>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td>
-                      <div className="text-dark fw-semibold">
-                        {u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '—'}
-                      </div>
-                    </td>
-
-                    <td>
-                      <div className="d-flex align-items-center gap-1.5">
-                        <span className={`badge extra-small ${isBranchUnit ? 'bg-info-subtle text-info border' : 'bg-primary-subtle text-primary border'}`}>
-                          {isBranchUnit ? <GitBranch size={11} className="me-1 d-inline" /> : <Building2 size={11} className="me-1 d-inline" />}
-                          {locationLabel}
-                        </span>
-                      </div>
-                    </td>
-
-                    <td>
-                      <span className={`badge rounded-pill extra-small fw-bold px-2.5 py-1 ${
-                        u.role === 'HOTEL_OWNER'
-                          ? 'bg-dark text-white'
-                          : (u.role === 'MANAGER' ? 'bg-primary text-white' : 'bg-success text-white')
-                      }`}>
-                        {u.role}
-                      </span>
-                    </td>
-
-                    <td>
-                      <div className="text-muted extra-small text-truncate" style={{ maxWidth: '180px' }}>
-                        {u.email || 'No email attached'}
-                      </div>
-                    </td>
-
-                    <td>
-                      <button
-                        type="button"
-                        className={`badge border-0 rounded-pill px-2.5 py-1 extra-small fw-bold ${u.is_active ? 'bg-success text-white' : 'bg-danger text-white'}`}
-                        onClick={() => handleToggleActive(u)}
-                        disabled={actionUserId === u.id || u.id === user?.id}
-                        title="Click to toggle status"
-                      >
-                        {u.is_active ? 'ACTIVE' : 'SUSPENDED'}
-                      </button>
-                    </td>
-
-                    <td className="text-end pe-3.5">
-                      <div className="d-flex align-items-center justify-content-end gap-1.5">
-                        <button
-                          type="button"
-                          className="btn btn-outline-secondary btn-sm px-2 py-1 extra-small rounded-2 d-flex align-items-center gap-1"
-                          onClick={() => handleOpenResetModal(u)}
-                          title="Reset staff password"
-                        >
-                          <Key size={13} />
-                          <span>Reset Password</span>
-                        </button>
-
-                        {u.id !== user?.id && u.role !== 'HOTEL_OWNER' && (
-                          <button
-                            type="button"
-                            className="btn btn-outline-danger btn-sm p-1 extra-small rounded-2"
-                            onClick={() => handleDeleteUser(u)}
-                            disabled={actionUserId === u.id}
-                            title="Delete staff account"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredUsers.length === 0 && (
+              {paginatedUsers.length === 0 ? (
                 <tr>
                   <td colSpan="7" className="text-center py-5 text-muted">
                     <Users size={36} className="text-muted mb-2 opacity-50" />
@@ -661,9 +833,183 @@ const StaffManagement = () => {
                     </span>
                   </td>
                 </tr>
+              ) : (
+                paginatedUsers.map((u) => {
+                  const assignedBranch = branchesList.find(b =>
+                    b.id === u.property || b.id === u.property_id
+                  );
+                  const locationLabel = assignedBranch
+                    ? assignedBranch.name
+                    : (u.property_name || user?.property_name || 'Primary Hotel');
+                  const isBranchUnit = assignedBranch ? assignedBranch.is_branch : Boolean(u.is_branch);
+
+                  return (
+                    <tr key={u.id}>
+                      {columnVisibility.user_info && (
+                        <td className="ps-3.5">
+                          <div className="d-flex align-items-center gap-2.5">
+                            <div
+                              className="rounded-circle text-white d-flex align-items-center justify-content-center fw-bold shadow-xs flex-shrink-0"
+                              style={{
+                                width: '34px',
+                                height: '34px',
+                                fontSize: '0.8rem',
+                                backgroundColor: u.role === 'HOTEL_OWNER' ? '#0F172A' : (u.role === 'MANAGER' ? '#2563EB' : '#0D9488')
+                              }}
+                            >
+                              {(u.first_name || u.username || 'U').charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <div className="fw-bold text-dark font-monospace">{u.username}</div>
+                              <span className="extra-small text-muted font-monospace">ID #{u.id}</span>
+                            </div>
+                          </div>
+                        </td>
+                      )}
+
+                      {columnVisibility.full_name && (
+                        <td>
+                          <div className="text-dark fw-semibold">
+                            {u.first_name || u.last_name ? `${u.first_name || ''} ${u.last_name || ''}`.trim() : '—'}
+                          </div>
+                        </td>
+                      )}
+
+                      {columnVisibility.location && (
+                        <td>
+                          <div className="d-flex align-items-center gap-1.5">
+                            <span className={`badge extra-small ${isBranchUnit ? 'bg-info-subtle text-info border' : 'bg-primary-subtle text-primary border'}`}>
+                              {isBranchUnit ? <GitBranch size={11} className="me-1 d-inline" /> : <Building2 size={11} className="me-1 d-inline" />}
+                              {locationLabel}
+                            </span>
+                          </div>
+                        </td>
+                      )}
+
+                      {columnVisibility.role && (
+                        <td>
+                          <span className={`badge rounded-pill extra-small fw-bold px-2.5 py-1 ${
+                            u.role === 'HOTEL_OWNER'
+                              ? 'bg-dark text-white'
+                              : (u.role === 'MANAGER' ? 'bg-primary text-white' : 'bg-success text-white')
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                      )}
+
+                      {columnVisibility.contact && (
+                        <td>
+                          <div className="text-muted extra-small text-truncate" style={{ maxWidth: '180px' }}>
+                            {u.email || 'No email attached'}
+                          </div>
+                        </td>
+                      )}
+
+                      {columnVisibility.status && (
+                        <td>
+                          <button
+                            type="button"
+                            className={`badge border-0 rounded-pill px-2.5 py-1 extra-small fw-bold ${u.is_active ? 'bg-success text-white' : 'bg-danger text-white'}`}
+                            onClick={() => handleToggleActive(u)}
+                            disabled={actionUserId === u.id || u.id === user?.id}
+                            title="Click to toggle status"
+                          >
+                            {u.is_active ? 'ACTIVE' : 'SUSPENDED'}
+                          </button>
+                        </td>
+                      )}
+
+                      {columnVisibility.actions && (
+                        <td className="text-end pe-3.5">
+                          <div className="d-flex align-items-center justify-content-end gap-1.5">
+                            <button
+                              type="button"
+                              className="btn btn-outline-secondary btn-sm px-2 py-1 extra-small rounded-2 d-flex align-items-center gap-1"
+                              onClick={() => handleOpenResetModal(u)}
+                              title="Reset staff password"
+                            >
+                              <Key size={13} />
+                              <span>Reset Password</span>
+                            </button>
+
+                            {u.id !== user?.id && u.role !== 'HOTEL_OWNER' && (
+                              <button
+                                type="button"
+                                className="btn btn-outline-danger btn-sm p-1 extra-small rounded-2"
+                                onClick={() => handleDeleteUser(u)}
+                                disabled={actionUserId === u.id}
+                                title="Delete staff account"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Table Footer with Showing X to Y of Z and Pagination */}
+        <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div className="text-muted small">
+            Showing <span className="fw-semibold text-dark">{totalItems === 0 ? 0 : startIndex + 1}</span> to{' '}
+            <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+            <span className="fw-semibold text-dark">{totalItems}</span> records
+          </div>
+
+          {totalPages > 1 && (
+            <nav aria-label="Table pagination">
+              <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                  <button
+                    type="button"
+                    className="page-link rounded px-2.5 py-1"
+                    onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                    disabled={currentPage === 1}
+                    aria-label="Previous page"
+                  >
+                    <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                  </button>
+                </li>
+
+                {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                  p === '...' ? (
+                    <li key={`ellipsis-${idx}`} className="page-item disabled">
+                      <span className="page-link border-0 px-2 py-1">…</span>
+                    </li>
+                  ) : (
+                    <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                      <button
+                        type="button"
+                        className="page-link rounded px-2.5 py-1 fw-semibold"
+                        onClick={() => setCurrentPage(p)}
+                      >
+                        {p}
+                      </button>
+                    </li>
+                  )
+                )}
+
+                <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                  <button
+                    type="button"
+                    className="page-link rounded px-2.5 py-1"
+                    onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                    disabled={currentPage === totalPages}
+                    aria-label="Next page"
+                  >
+                    <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                  </button>
+                </li>
+              </ul>
+            </nav>
+          )}
         </div>
       </div>
 

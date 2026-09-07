@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,7 @@ import {
 import { getSettingsApi } from '../api/settingsApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { generateShiftThermalHtml, printThermalContent } from '../utils/thermalPrinter';
+import { exportShiftsListToExcel, exportShiftsListToPDF } from '../utils/exportUtils';
 import PageLoader from '../components/PageLoader';
 import OpenShiftModal from '../components/OpenShiftModal';
 import CloseShiftModal from '../components/CloseShiftModal';
@@ -139,6 +140,149 @@ const Shifts = () => {
   });
 
   const loading = currentLoading;
+
+  // Standardized Column Visibility & Table Control States
+  const [columnVisibility, setColumnVisibility] = useState({
+    shift_number: true,
+    user_name: true,
+    opened_at: true,
+    closed_at: true,
+    opening_balance: true,
+    expected_cash: true,
+    actual_cash: true,
+    cash_difference: true,
+    status: true,
+    actions: true,
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef(null);
+
+  // Sorting State
+  const [sortField, setSortField] = useState('opened_at');
+  const [sortDirection, setSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  // Pagination State
+  const [pageSize, setPageSize] = useState(15);
+  const [currentPage, setCurrentPage] = useState(1);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const columnDefs = [
+    { key: 'shift_number', label: 'Shift #' },
+    { key: 'user_name', label: 'Receptionist' },
+    { key: 'opened_at', label: 'Opened' },
+    { key: 'closed_at', label: 'Closed' },
+    { key: 'opening_balance', label: 'Opening (₹)' },
+    { key: 'expected_cash', label: 'Expected (₹)' },
+    { key: 'actual_cash', label: 'Actual (₹)' },
+    { key: 'cash_difference', label: 'Difference' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Actions' },
+  ];
+
+  const toggleColumnVisibility = (key) => {
+    setColumnVisibility(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const resetColumnVisibility = () => {
+    const allVisible = {};
+    columnDefs.forEach(c => { allVisible[c.key] = true; });
+    setColumnVisibility(allVisible);
+  };
+
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(prev => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  const sortedShifts = useMemo(() => {
+    if (!Array.isArray(shiftsList)) return [];
+    const list = [...shiftsList];
+    if (!sortField) return list;
+
+    return list.sort((a, b) => {
+      let aVal = a[sortField];
+      let bVal = b[sortField];
+
+      if (sortField === 'expected_cash') {
+        aVal = a.financials?.expected_cash ?? a.expected_cash ?? 0;
+        bVal = b.financials?.expected_cash ?? b.expected_cash ?? 0;
+      }
+
+      if (aVal === null || aVal === undefined) aVal = '';
+      if (bVal === null || bVal === undefined) bVal = '';
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortDirection === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return sortDirection === 'asc'
+        ? String(aVal).localeCompare(String(bVal))
+        : String(bVal).localeCompare(String(aVal));
+    });
+  }, [shiftsList, sortField, sortDirection]);
+
+  // Pagination calculation
+  const totalItems = sortedShifts.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+  const paginatedShifts = useMemo(() => {
+    return sortedShifts.slice(startIndex, endIndex);
+  }, [sortedShifts, startIndex, endIndex]);
+
+  const handleExportExcel = () => {
+    exportShiftsListToExcel(sortedShifts);
+  };
+
+  const handleExportPDF = () => {
+    exportShiftsListToPDF(sortedShifts);
+  };
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 5) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, '...', total];
+    }
+    if (current >= total - 2) {
+      return [1, '...', total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  const renderSortHeader = (field, label, className = '') => {
+    const isSorted = sortField === field;
+    return (
+      <th
+        className={`${className} user-select-none`}
+        style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
+        onClick={() => handleSort(field)}
+        title={`Click to sort by ${label}`}
+      >
+        <div className="d-inline-flex align-items-center gap-1">
+          <span>{label}</span>
+          {isSorted ? (
+            <i className={`bi bi-arrow-${sortDirection === 'asc' ? 'up' : 'down'} text-primary fw-bold`}></i>
+          ) : (
+            <i className="bi bi-arrow-down-up text-muted opacity-50" style={{ fontSize: '0.75rem' }}></i>
+          )}
+        </div>
+      </th>
+    );
+  };
 
   const loadAllShiftData = () => {
     queryClient.invalidateQueries({ queryKey: ['shifts'] });
@@ -1052,135 +1196,312 @@ const Shifts = () => {
 
           {/* Table */}
           <div className="card border-0 shadow-xs bg-white rounded-4 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+            {/* Standardized Card Header: Page Size & Top-Right Action Controls */}
+            <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted small fw-semibold">Show</span>
+                <select
+                  className="form-select form-select-sm border-secondary-subtle"
+                  style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                >
+                  <option value="10">10</option>
+                  <option value="15">15</option>
+                  <option value="25">25</option>
+                  <option value="50">50</option>
+                  <option value="100">100</option>
+                </select>
+                <span className="text-muted small">entries</span>
+                <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+                  {totalItems} records
+                </span>
+              </div>
+
+              <div className="d-flex align-items-center gap-2 ms-auto">
+                <div className="dropdown position-relative" ref={columnMenuRef}>
+                  <button
+                    type="button"
+                    className={`btn btn-sm ${showColumnMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                    style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                    onClick={() => setShowColumnMenu(!showColumnMenu)}
+                    title="Customize visible columns"
+                  >
+                    <i className="bi bi-sliders2"></i>
+                    <span>Columns</span>
+                    <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+                  </button>
+
+                  {showColumnMenu && (
+                    <div
+                      className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                      style={{ minWidth: '200px', zIndex: 1060 }}
+                    >
+                      <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                        <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                          Visible Columns
+                        </span>
+                        <button
+                          type="button"
+                          className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                          style={{ fontSize: '0.7rem' }}
+                          onClick={resetColumnVisibility}
+                        >
+                          Reset All
+                        </button>
+                      </div>
+                      <div className="d-flex flex-column gap-1 pt-1">
+                        {columnDefs.map((col) => (
+                          <label
+                            key={col.key}
+                            className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                            style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="form-check-input m-0"
+                              checked={columnVisibility[col.key]}
+                              onChange={() => toggleColumnVisibility(col.key)}
+                              style={{ cursor: 'pointer' }}
+                            />
+                            <span>{col.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleExportExcel}
+                  className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  title="Export to Excel (.xls)"
+                >
+                  <i className="bi bi-file-earmark-excel-fill text-success"></i>
+                  <span>Excel</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportPDF}
+                  className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  title="Export to PDF Report"
+                >
+                  <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+                  <span>PDF</span>
+                </button>
+              </div>
+            </div>
+
             {loadingList ? (
               <div className="p-5 text-center text-secondary small">
                 <span className="spinner-border spinner-border-sm me-2"></span> Loading shift audit ledger...
               </div>
-            ) : shiftsList.length === 0 ? (
+            ) : totalItems === 0 ? (
               <div className="p-5 text-center text-secondary small">
                 No shift history matching your filters.
               </div>
             ) : (
-              <div className="table-responsive">
-                <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.825rem' }}>
-                  <thead className="table-light text-secondary extra-small">
-                    <tr>
-                      <th className="ps-3 py-2.5">Shift #</th>
-                      <th className="py-2.5">Receptionist</th>
-                      <th className="py-2.5">Opened</th>
-                      <th className="py-2.5">Closed</th>
-                      <th className="text-end py-2.5">Opening (₹)</th>
-                      <th className="text-end py-2.5">Expected (₹)</th>
-                      <th className="text-end py-2.5">Actual (₹)</th>
-                      <th className="text-center py-2.5">Difference</th>
-                      <th className="py-2.5">Status</th>
-                      <th className="text-end pe-3 py-2.5">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shiftsList.map((s) => {
-                      const diff = s.cash_difference || 0;
-                      const isShort = diff < -0.01;
-                      const isOver = diff > 0.01;
-                      const isExact = s.actual_cash !== null && !isShort && !isOver;
+              <>
+                <div className="table-responsive">
+                  <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.825rem' }}>
+                    <thead className="table-light text-secondary extra-small">
+                      <tr>
+                        {columnVisibility.shift_number && renderSortHeader('shift_number', 'Shift #', 'ps-3 py-2.5')}
+                        {columnVisibility.user_name && renderSortHeader('user_name', 'Receptionist', 'py-2.5')}
+                        {columnVisibility.opened_at && renderSortHeader('opened_at', 'Opened', 'py-2.5')}
+                        {columnVisibility.closed_at && renderSortHeader('closed_at', 'Closed', 'py-2.5')}
+                        {columnVisibility.opening_balance && renderSortHeader('opening_balance', 'Opening (₹)', 'text-end py-2.5')}
+                        {columnVisibility.expected_cash && renderSortHeader('expected_cash', 'Expected (₹)', 'text-end py-2.5')}
+                        {columnVisibility.actual_cash && renderSortHeader('actual_cash', 'Actual (₹)', 'text-end py-2.5')}
+                        {columnVisibility.cash_difference && renderSortHeader('cash_difference', 'Difference', 'text-center py-2.5')}
+                        {columnVisibility.status && renderSortHeader('status', 'Status', 'py-2.5')}
+                        {columnVisibility.actions && <th className="text-end pe-3 py-2.5">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedShifts.map((s) => {
+                        const diff = s.cash_difference || 0;
+                        const isShort = diff < -0.01;
+                        const isOver = diff > 0.01;
+                        const isExact = s.actual_cash !== null && !isShort && !isOver;
 
-                      return (
-                        <tr key={s.id}>
-                          <td className="ps-3 fw-bold text-dark font-monospace">
-                            <Link to={`/shifts/${s.id}`} className="text-decoration-none text-primary hover-underline">
-                              {s.shift_number}
-                            </Link>
-                          </td>
-                          <td className="fw-semibold text-dark">{s.user_name}</td>
-                          <td className="text-secondary extra-small">
-                            {new Date(s.opened_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                          </td>
-                          <td className="text-secondary extra-small">
-                            {s.closed_at ? new Date(s.closed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
-                          </td>
-                          <td className="text-end font-monospace">{formatCurrency(s.opening_balance)}</td>
-                          <td className="text-end font-monospace fw-bold text-dark">{formatCurrency(s.financials?.expected_cash ?? s.expected_cash)}</td>
-                          <td className="text-end font-monospace">{s.actual_cash !== null ? formatCurrency(s.actual_cash) : '—'}</td>
-                          <td className="text-center">
-                            {s.actual_cash === null ? (
-                              <span className="text-muted extra-small fst-italic">Active</span>
-                            ) : isExact ? (
-                              <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill extra-small px-2 py-0.5">
-                                Reconciled ₹0
-                              </span>
-                            ) : isShort ? (
-                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill extra-small px-2 py-0.5 fw-bold">
-                                {formatCurrency(diff)} Short
-                              </span>
-                            ) : (
-                              <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill extra-small px-2 py-0.5 fw-bold">
-                                +{formatCurrency(diff)} Excess
-                              </span>
+                        return (
+                          <tr key={s.id}>
+                            {columnVisibility.shift_number && (
+                              <td className="ps-3 fw-bold text-dark font-monospace">
+                                <Link to={`/shifts/${s.id}`} className="text-decoration-none text-primary hover-underline">
+                                  {s.shift_number}
+                                </Link>
+                              </td>
                             )}
-                          </td>
-                          <td>
-                            <span className={`badge px-2.5 py-1 rounded-pill extra-small fw-semibold ${
-                              s.status === 'CLOSED' ? 'bg-success text-white' :
-                              s.status === 'FORCED_CLOSED' ? 'bg-dark text-white' :
-                              s.status === 'PENDING_APPROVAL' ? 'bg-danger text-white' :
-                              s.status === 'PENDING_REVIEW' ? 'bg-warning text-dark' :
-                              'bg-primary text-white'
-                            }`}>
-                              {s.status_display}
-                            </span>
-                          </td>
-                          <td className="text-end pe-3">
-                            <div className="d-flex align-items-center justify-content-end gap-1.5">
-                              <Link
-                                to={`/shifts/${s.id}`}
-                                className="btn btn-xs btn-light border text-secondary px-2 py-1 rounded-2 text-decoration-none"
-                                title="View Audit Details"
+                            {columnVisibility.user_name && (
+                              <td className="fw-semibold text-dark">{s.user_name}</td>
+                            )}
+                            {columnVisibility.opened_at && (
+                              <td className="text-secondary extra-small">
+                                {new Date(s.opened_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                              </td>
+                            )}
+                            {columnVisibility.closed_at && (
+                              <td className="text-secondary extra-small">
+                                {s.closed_at ? new Date(s.closed_at).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : '—'}
+                              </td>
+                            )}
+                            {columnVisibility.opening_balance && (
+                              <td className="text-end font-monospace">{formatCurrency(s.opening_balance)}</td>
+                            )}
+                            {columnVisibility.expected_cash && (
+                              <td className="text-end font-monospace fw-bold text-dark">{formatCurrency(s.financials?.expected_cash ?? s.expected_cash)}</td>
+                            )}
+                            {columnVisibility.actual_cash && (
+                              <td className="text-end font-monospace">{s.actual_cash !== null ? formatCurrency(s.actual_cash) : '—'}</td>
+                            )}
+                            {columnVisibility.cash_difference && (
+                              <td className="text-center">
+                                {s.actual_cash === null ? (
+                                  <span className="text-muted extra-small fst-italic">Active</span>
+                                ) : isExact ? (
+                                  <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill extra-small px-2 py-0.5">
+                                    Reconciled ₹0
+                                  </span>
+                                ) : isShort ? (
+                                  <span className="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill extra-small px-2 py-0.5 fw-bold">
+                                    {formatCurrency(diff)} Short
+                                  </span>
+                                ) : (
+                                  <span className="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill extra-small px-2 py-0.5 fw-bold">
+                                    +{formatCurrency(diff)} Excess
+                                  </span>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.status && (
+                              <td>
+                                <span className={`badge px-2.5 py-1 rounded-pill extra-small fw-semibold ${
+                                  s.status === 'CLOSED' ? 'bg-success text-white' :
+                                  s.status === 'FORCED_CLOSED' ? 'bg-dark text-white' :
+                                  s.status === 'PENDING_APPROVAL' ? 'bg-danger text-white' :
+                                  s.status === 'PENDING_REVIEW' ? 'bg-warning text-dark' :
+                                  'bg-primary text-white'
+                                }`}>
+                                  {s.status_display}
+                                </span>
+                              </td>
+                            )}
+                            {columnVisibility.actions && (
+                              <td className="text-end pe-3">
+                                <div className="d-flex align-items-center justify-content-end gap-1.5">
+                                  <Link
+                                    to={`/shifts/${s.id}`}
+                                    className="btn btn-xs btn-light border text-secondary px-2 py-1 rounded-2 text-decoration-none"
+                                    title="View Audit Details"
+                                  >
+                                    <Eye size={12} /> View
+                                  </Link>
+                                  {s.status !== 'CLOSED' && s.status !== 'FORCED_CLOSED' && hasRole(['SUPER_ADMIN', 'MANAGER']) && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-outline-danger px-2 py-1 rounded-2 fw-bold"
+                                      onClick={() => {
+                                        setSelectedShiftForForceClose(s);
+                                        setShowForceCloseModal(true);
+                                      }}
+                                      title="Admin Force Close Shift"
+                                    >
+                                      Force Close
+                                    </button>
+                                  )}
+                                  {s.status === 'PENDING_APPROVAL' && hasRole(['SUPER_ADMIN', 'MANAGER']) && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-warning text-dark px-2 py-1 rounded-2 fw-bold"
+                                      onClick={() => {
+                                        setSelectedShiftForApproval(s);
+                                        setShowApprovalModal(true);
+                                      }}
+                                    >
+                                      Review
+                                    </button>
+                                  )}
+                                  {s.status === 'CLOSED' && hasRole(['SUPER_ADMIN']) && (
+                                    <button
+                                      type="button"
+                                      className="btn btn-xs btn-outline-secondary px-1.5 py-1 rounded-2"
+                                      onClick={() => handleReopen(s.id)}
+                                      title="Reopen Shift (Admin only)"
+                                    >
+                                      <RotateCcw size={12} />
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Standardized Card Footer: Pagination */}
+                <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+                  <div className="text-muted small">
+                    Showing <span className="fw-semibold text-dark">{totalItems === 0 ? 0 : startIndex + 1}</span> to{' '}
+                    <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+                    <span className="fw-semibold text-dark">{totalItems}</span> records
+                  </div>
+                  {totalPages > 1 && (
+                    <nav aria-label="Table pagination">
+                      <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                        <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                          <button
+                            type="button"
+                            className="page-link rounded px-2.5 py-1"
+                            onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                            disabled={currentPage === 1}
+                          >
+                            <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                          </button>
+                        </li>
+                        {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                          p === '...' ? (
+                            <li key={`ellipsis-${idx}`} className="page-item disabled">
+                              <span className="page-link border-0 px-2 py-1">…</span>
+                            </li>
+                          ) : (
+                            <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                              <button
+                                type="button"
+                                className="page-link rounded px-2.5 py-1 fw-semibold"
+                                onClick={() => setCurrentPage(p)}
                               >
-                                <Eye size={12} /> View
-                              </Link>
-                              {s.status !== 'CLOSED' && s.status !== 'FORCED_CLOSED' && hasRole(['SUPER_ADMIN', 'MANAGER']) && (
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-outline-danger px-2 py-1 rounded-2 fw-bold"
-                                  onClick={() => {
-                                    setSelectedShiftForForceClose(s);
-                                    setShowForceCloseModal(true);
-                                  }}
-                                  title="Admin Force Close Shift"
-                                >
-                                  Force Close
-                                </button>
-                              )}
-                              {s.status === 'PENDING_APPROVAL' && hasRole(['SUPER_ADMIN', 'MANAGER']) && (
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-warning text-dark px-2 py-1 rounded-2 fw-bold"
-                                  onClick={() => {
-                                    setSelectedShiftForApproval(s);
-                                    setShowApprovalModal(true);
-                                  }}
-                                >
-                                  Review
-                                </button>
-                              )}
-                              {s.status === 'CLOSED' && hasRole(['SUPER_ADMIN']) && (
-                                <button
-                                  type="button"
-                                  className="btn btn-xs btn-outline-secondary px-1.5 py-1 rounded-2"
-                                  onClick={() => handleReopen(s.id)}
-                                  title="Reopen Shift (Admin only)"
-                                >
-                                  <RotateCcw size={12} />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                                {p}
+                              </button>
+                            </li>
+                          )
+                        )}
+                        <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                          <button
+                            type="button"
+                            className="page-link rounded px-2.5 py-1"
+                            onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                            disabled={currentPage === totalPages}
+                          >
+                            <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                          </button>
+                        </li>
+                      </ul>
+                    </nav>
+                  )}
+                </div>
+              </>
             )}
           </div>
         </div>

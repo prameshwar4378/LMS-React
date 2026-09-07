@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getRoomsApi, getRoomTypesApi, createRoomApi, updateRoomStatusApi, deleteRoomApi, createRoomTypeApi } from '../api/roomApi';
@@ -9,6 +9,7 @@ import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { exportRoomsToExcel, exportRoomsToPDF } from '../utils/exportUtils';
 
 const Rooms = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
@@ -277,6 +278,179 @@ const Rooms = () => {
     return r.status === filterStatus;
   });
 
+  // -------------------------------------------------------------
+  // Column Visibility & Definitions
+  // -------------------------------------------------------------
+  const columnDefs = [
+    { key: 'room_number', label: 'Room #' },
+    { key: 'room_type', label: 'Room Type' },
+    { key: 'floor', label: 'Floor' },
+    { key: 'base_price', label: 'Base Rate' },
+    { key: 'capacity', label: 'Capacity' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Action' },
+  ];
+
+  const [columnVisibility, setColumnVisibility] = useState({
+    room_number: true,
+    room_type: true,
+    floor: true,
+    base_price: true,
+    capacity: true,
+    status: true,
+    actions: true,
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleColumnVisibility = (key) => {
+    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const resetColumnVisibility = () => {
+    setColumnVisibility({
+      room_number: true,
+      room_type: true,
+      floor: true,
+      base_price: true,
+      capacity: true,
+      status: true,
+      actions: true,
+    });
+  };
+
+  // -------------------------------------------------------------
+  // Sorting State & Logic
+  // -------------------------------------------------------------
+  const [sortColumn, setSortColumn] = useState('room_number');
+  const [sortDirection, setSortDirection] = useState('asc');
+
+  const handleSort = (colKey) => {
+    if (sortColumn === colKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(colKey);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedRooms = useMemo(() => {
+    if (!filteredRooms || !filteredRooms.length) return [];
+    return [...filteredRooms].sort((a, b) => {
+      let valA, valB;
+      switch (sortColumn) {
+        case 'room_number': {
+          const numA = parseInt(a.room_number, 10);
+          const numB = parseInt(b.room_number, 10);
+          if (!isNaN(numA) && !isNaN(numB)) {
+            valA = numA;
+            valB = numB;
+          } else {
+            valA = String(a.room_number || '').toLowerCase();
+            valB = String(b.room_number || '').toLowerCase();
+          }
+          break;
+        }
+        case 'room_type':
+          valA = (a.room_type_name || '').toLowerCase();
+          valB = (b.room_type_name || '').toLowerCase();
+          break;
+        case 'floor':
+          valA = (a.floor || '').toLowerCase();
+          valB = (b.floor || '').toLowerCase();
+          break;
+        case 'base_price':
+          valA = parseFloat(a.base_price) || 0;
+          valB = parseFloat(b.base_price) || 0;
+          break;
+        case 'capacity':
+          valA = (a.max_adults || 0) + (a.max_children || 0);
+          valB = (b.max_adults || 0) + (b.max_children || 0);
+          break;
+        case 'status':
+          valA = (a.status || '').toLowerCase();
+          valB = (b.status || '').toLowerCase();
+          break;
+        default:
+          valA = a.id;
+          valB = b.id;
+      }
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      return sortDirection === 'asc'
+        ? String(valA).localeCompare(String(valB))
+        : String(valB).localeCompare(String(valA));
+    });
+  }, [filteredRooms, sortColumn, sortDirection]);
+
+  // -------------------------------------------------------------
+  // Pagination State & Logic
+  // -------------------------------------------------------------
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filterStatus]);
+
+  const totalItems = sortedRooms.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  const paginatedRooms = useMemo(() => {
+    return sortedRooms.slice(startIndex, endIndex);
+  }, [sortedRooms, startIndex, endIndex]);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+    if (current <= 4) return [1, 2, 3, 4, 5, '...', total];
+    if (current >= total - 3) return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  const handleExportExcel = () => {
+    exportRoomsToExcel(sortedRooms, { filterStatus }, selectedProperty);
+  };
+
+  const handleExportPDF = () => {
+    exportRoomsToPDF(sortedRooms, { filterStatus }, selectedProperty);
+  };
+
+  const renderSortHeader = (label, colKey, className = '') => (
+    <th
+      className={`${className} text-nowrap`}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => handleSort(colKey)}
+      title={`Sort by ${label}`}
+    >
+      <div className="d-inline-flex align-items-center gap-1.5">
+        <span>{label}</span>
+        {sortColumn === colKey ? (
+          sortDirection === 'asc' ? (
+            <i className="bi bi-arrow-up text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          ) : (
+            <i className="bi bi-arrow-down text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          )
+        ) : (
+          <i className="bi bi-arrow-down-up text-muted opacity-25" style={{ fontSize: '0.7rem' }}></i>
+        )}
+      </div>
+    </th>
+  );
+
   return (
     <div>
       {/* Header */}
@@ -462,48 +636,235 @@ const Rooms = () => {
         </div>
       ) : (
         /* Table View */
-        <div className="card border-0 shadow-sm">
+        <div className="card border-0 shadow-sm rounded-3 overflow-hidden">
+          {/* Table Header Bar with Entries & Top-Right Export / Column Visibility */}
+          <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+            {/* Left: Page Size Selector & Count Badge */}
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-muted small fw-semibold">Show</span>
+              <select
+                className="form-select form-select-sm border-secondary-subtle"
+                style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span className="text-muted small">entries</span>
+              <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+                {totalItems} records
+              </span>
+            </div>
+
+            {/* EXACT TOP RIGHT CORNER: Column Visibility + Excel & PDF Small Buttons */}
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              {/* Column Visibility Dropdown */}
+              <div className="dropdown position-relative" ref={columnMenuRef}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${showColumnMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  onClick={() => setShowColumnMenu(!showColumnMenu)}
+                  title="Customize visible columns"
+                >
+                  <i className="bi bi-sliders2"></i>
+                  <span>Columns</span>
+                  <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+                </button>
+
+                {showColumnMenu && (
+                  <div
+                    className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                    style={{ minWidth: '200px', zIndex: 1060 }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                      <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                        Visible Columns
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                        style={{ fontSize: '0.7rem' }}
+                        onClick={resetColumnVisibility}
+                      >
+                        Reset All
+                      </button>
+                    </div>
+                    <div className="d-flex flex-column gap-1 pt-1">
+                      {columnDefs.map((col) => (
+                        <label
+                          key={col.key}
+                          className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                          style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={columnVisibility[col.key]}
+                            onChange={() => toggleColumnVisibility(col.key)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Small Professional Excel Export Button */}
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Room Inventory to Excel (.xls)"
+              >
+                <i className="bi bi-file-earmark-excel-fill text-success"></i>
+                <span>Excel</span>
+              </button>
+
+              {/* Small Professional PDF Export Button */}
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Room Inventory to PDF Report"
+              >
+                <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+                <span>PDF</span>
+              </button>
+            </div>
+          </div>
+
           <div className="card-body p-0">
             <div className="table-responsive">
               <table className="table table-hover align-middle m-0">
-                <thead className="table-light">
+                <thead className="table-light text-muted small text-uppercase fw-bold">
                   <tr>
-                    <th>Room #</th>
-                    <th>Room Type</th>
-                    <th>Floor</th>
-                    <th>Base Rate</th>
-                    <th>Capacity</th>
-                    <th>Status</th>
-                    <th>Action</th>
+                    {columnVisibility.room_number && renderSortHeader('Room #', 'room_number', 'ps-3')}
+                    {columnVisibility.room_type && renderSortHeader('Room Type', 'room_type')}
+                    {columnVisibility.floor && renderSortHeader('Floor', 'floor')}
+                    {columnVisibility.base_price && renderSortHeader('Base Rate', 'base_price')}
+                    {columnVisibility.capacity && renderSortHeader('Capacity', 'capacity')}
+                    {columnVisibility.status && renderSortHeader('Status', 'status')}
+                    {columnVisibility.actions && <th className="text-end pe-3">Action</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRooms.map((room) => (
-                    <tr key={room.id}>
-                      <td className="fw-bold fs-6">Room {room.room_number}</td>
-                      <td>{room.room_type_name}</td>
-                      <td>{room.floor}</td>
-                      <td className="fw-bold">{formatCurrency(room.base_price)}</td>
-                      <td>{room.max_adults} Adults, {room.max_children} Children</td>
-                      <td><StatusBadge status={room.status} /></td>
-                      <td>
-                        <select
-                          className="form-select form-select-sm w-auto"
-                          value={room.status}
-                          onChange={(e) => handleStatusChange(room.id, e.target.value)}
-                        >
-                          <option value="AVAILABLE">AVAILABLE</option>
-                          <option value="RESERVED">RESERVED</option>
-                          <option value="OCCUPIED">OCCUPIED</option>
-                          <option value="CLEANING">CLEANING</option>
-                          <option value="MAINTENANCE">MAINTENANCE</option>
-                        </select>
+                  {paginatedRooms.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="text-center py-4 text-muted">
+                        No rooms match the current filter.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    paginatedRooms.map((room) => (
+                      <tr key={room.id}>
+                        {columnVisibility.room_number && (
+                          <td className="ps-3 fw-bold fs-6 text-dark">Room {room.room_number}</td>
+                        )}
+                        {columnVisibility.room_type && (
+                          <td className="fw-semibold text-primary">{room.room_type_name}</td>
+                        )}
+                        {columnVisibility.floor && (
+                          <td className="text-muted">{room.floor}</td>
+                        )}
+                        {columnVisibility.base_price && (
+                          <td className="fw-bold">{formatCurrency(room.base_price)}</td>
+                        )}
+                        {columnVisibility.capacity && (
+                          <td className="small text-muted">{room.max_adults} Adults, {room.max_children} Children</td>
+                        )}
+                        {columnVisibility.status && (
+                          <td><StatusBadge status={room.status} /></td>
+                        )}
+                        {columnVisibility.actions && (
+                          <td className="text-end pe-3">
+                            <select
+                              className="form-select form-select-sm w-auto d-inline-block"
+                              value={room.status}
+                              onChange={(e) => handleStatusChange(room.id, e.target.value)}
+                            >
+                              <option value="AVAILABLE">AVAILABLE</option>
+                              <option value="RESERVED">RESERVED</option>
+                              <option value="OCCUPIED">OCCUPIED</option>
+                              <option value="CLEANING">CLEANING</option>
+                              <option value="MAINTENANCE">MAINTENANCE</option>
+                            </select>
+                          </td>
+                        )}
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* Table Footer with Showing X to Y of Z and Pagination */}
+          <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <div className="text-muted small">
+              Showing <span className="fw-semibold text-dark">{totalItems === 0 ? 0 : startIndex + 1}</span> to{' '}
+              <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+              <span className="fw-semibold text-dark">{totalItems}</span> records
+            </div>
+
+            {totalPages > 1 && (
+              <nav aria-label="Table pagination">
+                <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                  <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      className="page-link rounded px-2.5 py-1"
+                      onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                      disabled={currentPage === 1}
+                      aria-label="Previous page"
+                    >
+                      <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                    </button>
+                  </li>
+
+                  {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                    p === '...' ? (
+                      <li key={`ellipsis-${idx}`} className="page-item disabled">
+                        <span className="page-link border-0 px-2 py-1">…</span>
+                      </li>
+                    ) : (
+                      <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                        <button
+                          type="button"
+                          className="page-link rounded px-2.5 py-1 fw-semibold"
+                          onClick={() => setCurrentPage(p)}
+                        >
+                          {p}
+                        </button>
+                      </li>
+                    )
+                  )}
+
+                  <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                    <button
+                      type="button"
+                      className="page-link rounded px-2.5 py-1"
+                      onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      aria-label="Next page"
+                    >
+                      <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                    </button>
+                  </li>
+                </ul>
+              </nav>
+            )}
           </div>
         </div>
       )}

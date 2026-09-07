@@ -4026,4 +4026,1325 @@ export const exportCustomersToPDF = (customers, filterInfo = {}, propertyInfo = 
   return doc;
 };
 
+/**
+ * Exports room inventory to Excel (.xls)
+ */
+export const exportRoomsToExcel = (rooms, filterInfo = {}, propertyInfo = {}) => {
+  if (!rooms || rooms.length === 0) {
+    alert('No room records available to export.');
+    return;
+  }
 
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const hotelCode = propertyInfo?.property_code || 'PMS-ROOMS';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalRooms = rooms.length;
+  const availableRooms = rooms.filter(r => r.status === 'AVAILABLE').length;
+  const occupiedRooms = rooms.filter(r => r.status === 'OCCUPIED').length;
+  const reservedRooms = rooms.filter(r => r.status === 'RESERVED').length;
+  const maintenanceRooms = rooms.filter(r => r.status === 'MAINTENANCE' || r.status === 'CLEANING').length;
+
+  const xmlRows = rooms.map((r, idx) => `
+    <Row ss:Height="20">
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+      <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">Room ${escapeXml(r.room_number)}</Data></Cell>
+      <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(r.room_type_name || 'Standard')}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(r.floor || '1st Floor')}</Data></Cell>
+      <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${parseFloat(r.base_price || 0).toFixed(2)}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${r.max_adults || 2} Adults, ${r.max_children || 0} Children</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(r.status || 'AVAILABLE')}</Data></Cell>
+    </Row>
+  `).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardAvailable">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#16A34A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardOccupied">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#EA580C" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardOther">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#64748B" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCurrency">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <NumberFormat ss:Format="₹#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Rooms Inventory">
+  <Table>
+   <Column ss:Width="35"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="100"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="6" ss:StyleID="MetaLabel"><Data ss:Type="String">Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Room Inventory &amp; Status Register</Data></Cell>
+    <Cell ss:Index="6" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="1" ss:StyleID="KpiCardTotal"><Data ss:Type="String">TOTAL: ${totalRooms}</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="KpiCardAvailable"><Data ss:Type="String">AVAILABLE: ${availableRooms}</Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="KpiCardOccupied"><Data ss:Type="String">OCCUPIED: ${occupiedRooms}</Data></Cell>
+    <Cell ss:StyleID="KpiCardOther"><Data ss:Type="String">OTHER: ${maintenanceRooms + reservedRooms}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Room Number</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Room Type</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Floor</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Base Rate (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Capacity</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Status</Data></Cell>
+   </Row>
+   ${xmlRows}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Room_Inventory_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports room inventory to A4 Landscape vector PDF
+ */
+export const exportRoomsToPDF = (rooms, filterInfo = {}, propertyInfo = {}) => {
+  if (!rooms || rooms.length === 0) {
+    alert('No room records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalRooms = rooms.length;
+  const availableRooms = rooms.filter(r => r.status === 'AVAILABLE').length;
+  const occupiedRooms = rooms.filter(r => r.status === 'OCCUPIED').length;
+  const reservedRooms = rooms.filter(r => r.status === 'RESERVED').length;
+  const maintenanceRooms = rooms.filter(r => r.status === 'MAINTENANCE' || r.status === 'CLEANING').length;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('ROOM INVENTORY & STATUS REGISTER', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName}${filterInfo.filterStatus && filterInfo.filterStatus !== 'ALL' ? ` | Filter: ${filterInfo.filterStatus}` : ''}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Rooms: ${totalRooms}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL ROOMS', val: String(totalRooms), color: [37, 99, 235] },
+    { label: 'AVAILABLE', val: String(availableRooms), color: [22, 163, 74] },
+    { label: 'OCCUPIED', val: String(occupiedRooms), color: [234, 88, 12] },
+    { label: 'RESERVED / SERVICE', val: String(reservedRooms + maintenanceRooms), color: [100, 116, 139] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    doc.setFontSize(9);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table
+  const tableHeaders = [
+    ['#', 'Room Number', 'Room Category / Type', 'Floor', 'Base Rate (Per Night)', 'Guest Capacity', 'Current Status']
+  ];
+
+  const tableRows = rooms.map((r, idx) => [
+    String(idx + 1),
+    `Room ${r.room_number}`,
+    r.room_type_name || 'Standard',
+    r.floor || '1st Floor',
+    formatPdfCurrency(r.base_price || 0),
+    `${r.max_adults || 2} Adults, ${r.max_children || 0} Children`,
+    r.status || 'AVAILABLE'
+  ]);
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 8,
+      cellPadding: 2.5,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 12 },
+      1: { halign: 'left', cellWidth: 35, fontStyle: 'bold' },
+      2: { halign: 'left', cellWidth: 55 },
+      3: { halign: 'center', cellWidth: 35 },
+      4: { halign: 'right', cellWidth: 45, fontStyle: 'bold' },
+      5: { halign: 'center', cellWidth: 45 },
+      6: { halign: 'center', cellWidth: 42, fontStyle: 'bold' },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Room Inventory • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Room_Inventory_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Exports active stays to Excel (.xls)
+ */
+export const exportStaysToExcel = (stays, filterInfo = {}, propertyInfo = {}) => {
+  if (!stays || stays.length === 0) {
+    alert('No active stay records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const hotelCode = propertyInfo?.property_code || 'PMS-STAYS';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalStays = stays.length;
+  let totalGrand = 0;
+  let totalPaid = 0;
+  let totalBalance = 0;
+
+  const xmlRows = stays.map((s, idx) => {
+    const bill = s.bill_summary || {};
+    const grand = parseFloat(bill.grand_total || bill.subtotal || 0);
+    const paid = parseFloat(bill.total_paid || 0);
+    const bal = parseFloat(bill.balance || 0);
+    totalGrand += grand;
+    totalPaid += paid;
+    totalBalance += bal;
+
+    const cust = s.primary_customer_detail || {};
+    return `
+      <Row ss:Height="20">
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+        <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(s.stay_number)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">Room ${escapeXml(s.room_detail?.room_number || '')}</Data></Cell>
+        <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(cust.full_name || 'Guest')}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(cust.mobile || '—')}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(s.check_in_date || '')} ${escapeXml(s.check_in_time?.substring(0, 5) || '')}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(s.expected_checkout_date || '')} ${escapeXml(s.expected_checkout_time?.substring(0, 5) || '')}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${grand.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${paid.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${bal.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(s.status || 'ACTIVE')}</Data></Cell>
+      </Row>
+    `;
+  }).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardPaid">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#16A34A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardBalance">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#DC2626" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCurrency">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <NumberFormat ss:Format="₹#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="TotalLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TotalVal">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="₹#,##0.00"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Active Stays">
+  <Table>
+   <Column ss:Width="30"/>
+   <Column ss:Width="95"/>
+   <Column ss:Width="70"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="95"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="85"/>
+   <Column ss:Width="85"/>
+   <Column ss:Width="85"/>
+   <Column ss:Width="75"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="10" ss:StyleID="MetaLabel"><Data ss:Type="String">Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Active Guest Stays &amp; Billing Register</Data></Cell>
+    <Cell ss:Index="10" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="3" ss:StyleID="KpiCardTotal"><Data ss:Type="String">ACTIVE STAYS: ${totalStays} | TOTAL: ₹${totalGrand.toFixed(2)}</Data></Cell>
+    <Cell ss:MergeAcross="3" ss:StyleID="KpiCardPaid"><Data ss:Type="String">TOTAL COLLECTED: ₹${totalPaid.toFixed(2)}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardBalance"><Data ss:Type="String">OUTSTANDING DUES: ₹${totalBalance.toFixed(2)}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Stay #</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Room</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Guest Name</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Mobile</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Check-In</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Expected Checkout</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Total (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Paid (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Balance (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Status</Data></Cell>
+   </Row>
+   ${xmlRows}
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="6" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTALS:</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalGrand.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalPaid.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalBalance.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Active_Stays_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports active stays to A4 Landscape vector PDF
+ */
+export const exportStaysToPDF = (stays, filterInfo = {}, propertyInfo = {}) => {
+  if (!stays || stays.length === 0) {
+    alert('No active stay records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalStays = stays.length;
+  let totalGrand = 0;
+  let totalPaid = 0;
+  let totalBalance = 0;
+
+  stays.forEach((s) => {
+    const bill = s.bill_summary || {};
+    totalGrand += parseFloat(bill.grand_total || bill.subtotal || 0);
+    totalPaid += parseFloat(bill.total_paid || 0);
+    totalBalance += parseFloat(bill.balance || 0);
+  });
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CURRENT GUEST STAYS & FOLIO REGISTER', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName}${filterInfo.search ? ` | Search: "${filterInfo.search}"` : ''}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Active Stays: ${totalStays}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'ACTIVE GUEST STAYS', val: String(totalStays), color: [37, 99, 235] },
+    { label: 'TOTAL CHARGES', val: formatPdfCurrency(totalGrand), color: [15, 23, 42] },
+    { label: 'TOTAL COLLECTED', val: formatPdfCurrency(totalPaid), color: [22, 163, 74] },
+    { label: 'OUTSTANDING DUES', val: formatPdfCurrency(totalBalance), color: [220, 38, 38] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table
+  const tableHeaders = [
+    ['#', 'Stay #', 'Room', 'Primary Guest', 'Mobile', 'Check-In', 'Expected Checkout', 'Total', 'Paid', 'Balance', 'Status']
+  ];
+
+  const tableRows = stays.map((s, idx) => {
+    const bill = s.bill_summary || {};
+    const grand = parseFloat(bill.grand_total || bill.subtotal || 0);
+    const paid = parseFloat(bill.total_paid || 0);
+    const bal = parseFloat(bill.balance || 0);
+    const cust = s.primary_customer_detail || {};
+
+    return [
+      String(idx + 1),
+      s.stay_number,
+      `Room ${s.room_detail?.room_number || '—'}`,
+      cust.full_name || 'Guest',
+      cust.mobile || '—',
+      `${s.check_in_date || ''} ${s.check_in_time?.substring(0, 5) || ''}`.trim(),
+      `${s.expected_checkout_date || ''} ${s.expected_checkout_time?.substring(0, 5) || ''}`.trim(),
+      formatPdfCurrency(grand),
+      formatPdfCurrency(paid),
+      formatPdfCurrency(bal),
+      s.status || 'ACTIVE'
+    ];
+  });
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    foot: [
+      ['', 'TOTALS', '', '', '', '', '', formatPdfCurrency(totalGrand), formatPdfCurrency(totalPaid), formatPdfCurrency(totalBalance), '']
+    ],
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7.5,
+      cellPadding: 2,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'left', cellWidth: 26, fontStyle: 'bold' },
+      2: { halign: 'center', cellWidth: 22 },
+      3: { halign: 'left', cellWidth: 42, fontStyle: 'bold' },
+      4: { halign: 'center', cellWidth: 26 },
+      5: { halign: 'center', cellWidth: 30 },
+      6: { halign: 'center', cellWidth: 32 },
+      7: { halign: 'right', cellWidth: 24 },
+      8: { halign: 'right', cellWidth: 24, textColor: [22, 163, 74] },
+      9: { halign: 'right', cellWidth: 24, fontStyle: 'bold', textColor: [220, 38, 38] },
+      10: { halign: 'center', cellWidth: 20 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Active Stays & Folios • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Active_Stays_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Exports staff accounts to Excel (.xls)
+ */
+export const exportStaffToExcel = (staffList, filterInfo = {}, propertyInfo = {}) => {
+  if (!staffList || staffList.length === 0) {
+    alert('No staff accounts available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const hotelCode = propertyInfo?.property_code || 'PMS-STAFF';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalStaff = staffList.length;
+  const activeCount = staffList.filter(s => s.is_active).length;
+  const receptionists = staffList.filter(s => s.role === 'RECEPTIONIST').length;
+  const managers = staffList.filter(s => s.role === 'MANAGER').length;
+
+  const xmlRows = staffList.map((u, idx) => `
+    <Row ss:Height="20">
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">#${u.id}</Data></Cell>
+      <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(u.username)}</Data></Cell>
+      <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(`${u.first_name || ''} ${u.last_name || ''}`.trim() || '—')}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(u.property_name || 'Primary Hotel')}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(u.role)}</Data></Cell>
+      <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(u.email || '—')}</Data></Cell>
+      <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${u.is_active ? 'ACTIVE' : 'SUSPENDED'}</Data></Cell>
+    </Row>
+  `).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardActive">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#16A34A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardRoles">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Staff Directory">
+  <Table>
+   <Column ss:Width="35"/>
+   <Column ss:Width="60"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="150"/>
+   <Column ss:Width="85"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="7" ss:StyleID="MetaLabel"><Data ss:Type="String">Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Staff Directory &amp; Security Roles Register</Data></Cell>
+    <Cell ss:Index="7" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="1" ss:StyleID="KpiCardTotal"><Data ss:Type="String">TOTAL STAFF: ${totalStaff}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardActive"><Data ss:Type="String">ACTIVE ACCOUNTS: ${activeCount}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardRoles"><Data ss:Type="String">RECEPTION: ${receptionists} | MANAGERS: ${managers}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Staff ID</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Username</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Full Name</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Assigned Location</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">System Role</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Email</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Account Status</Data></Cell>
+   </Row>
+   ${xmlRows}
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Staff_Directory_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports staff accounts to A4 Landscape vector PDF
+ */
+export const exportStaffToPDF = (staffList, filterInfo = {}, propertyInfo = {}) => {
+  if (!staffList || staffList.length === 0) {
+    alert('No staff records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalStaff = staffList.length;
+  const activeCount = staffList.filter(s => s.is_active).length;
+  const receptionists = staffList.filter(s => s.role === 'RECEPTIONIST').length;
+  const managers = staffList.filter(s => s.role === 'MANAGER').length;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('STAFF DIRECTORY & SECURITY REGISTER', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName}${filterInfo.searchQuery ? ` | Search: "${filterInfo.searchQuery}"` : ''}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Staff: ${totalStaff}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL STAFF', val: String(totalStaff), color: [37, 99, 235] },
+    { label: 'ACTIVE ACCOUNTS', val: String(activeCount), color: [22, 163, 74] },
+    { label: 'RECEPTIONISTS', val: String(receptionists), color: [2, 132, 199] },
+    { label: 'MANAGERS / ADMINS', val: String(managers), color: [15, 23, 42] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    doc.setFontSize(9);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table
+  const tableHeaders = [
+    ['#', 'User ID', 'Username', 'Full Name', 'Assigned Location', 'Role', 'Email Address', 'Status']
+  ];
+
+  const tableRows = staffList.map((u, idx) => [
+    String(idx + 1),
+    `#${u.id}`,
+    u.username,
+    `${u.first_name || ''} ${u.last_name || ''}`.trim() || '—',
+    u.property_name || 'Primary Hotel',
+    u.role,
+    u.email || '—',
+    u.is_active ? 'ACTIVE' : 'SUSPENDED'
+  ]);
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 8,
+      cellPadding: 2.5,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 12 },
+      1: { halign: 'center', cellWidth: 20 },
+      2: { halign: 'left', cellWidth: 35, fontStyle: 'bold' },
+      3: { halign: 'left', cellWidth: 45 },
+      4: { halign: 'left', cellWidth: 48 },
+      5: { halign: 'center', cellWidth: 32, fontStyle: 'bold' },
+      6: { halign: 'left', cellWidth: 50 },
+      7: { halign: 'center', cellWidth: 26, fontStyle: 'bold' },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Staff Directory • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Staff_Directory_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Exports shift history audit list to Excel (.xls)
+ */
+export const exportShiftsListToExcel = (shiftsList, filterInfo = {}, propertyInfo = {}) => {
+  if (!shiftsList || shiftsList.length === 0) {
+    alert('No shift audit records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const hotelCode = propertyInfo?.property_code || 'PMS-SHIFTS';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalShifts = shiftsList.length;
+  let totalOpening = 0;
+  let totalExpected = 0;
+  let totalActual = 0;
+
+  const xmlRows = shiftsList.map((s, idx) => {
+    const opening = parseFloat(s.opening_balance || 0);
+    const expected = parseFloat(s.financials?.expected_cash ?? s.expected_cash ?? 0);
+    const actual = s.actual_cash !== null ? parseFloat(s.actual_cash) : 0;
+    const diff = parseFloat(s.cash_difference || 0);
+
+    totalOpening += opening;
+    totalExpected += expected;
+    if (s.actual_cash !== null) totalActual += actual;
+
+    return `
+      <Row ss:Height="20">
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+        <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(s.shift_number)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(s.user_name || 'Staff')}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(new Date(s.opened_at).toLocaleString('en-IN'))}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${s.closed_at ? escapeXml(new Date(s.closed_at).toLocaleString('en-IN')) : '—'}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${opening.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${expected.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${s.actual_cash !== null ? actual.toFixed(2) : 0}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${diff.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(s.status_display || s.status || '')}</Data></Cell>
+      </Row>
+    `;
+  }).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Font ss:FontName="Segoe UI" ss:Size="8" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#2563EB" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="KpiCardExpected">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#16A34A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCurrency">
+   <Alignment ss:Horizontal="Right"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <NumberFormat ss:Format="₹#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="TotalLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="TotalVal">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="₹#,##0.00"/>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Shift Audit Ledger">
+  <Table>
+   <Column ss:Width="30"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="90"/>
+   <Column ss:Width="80"/>
+   <Column ss:Width="90"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="9" ss:StyleID="MetaLabel"><Data ss:Type="String">Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Shift Audit &amp; Cashier Reconciliation Ledger</Data></Cell>
+    <Cell ss:Index="9" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="4" ss:StyleID="KpiCardTotal"><Data ss:Type="String">TOTAL SHIFTS: ${totalShifts} | TOTAL OPENING: ₹${totalOpening.toFixed(2)}</Data></Cell>
+    <Cell ss:MergeAcross="4" ss:StyleID="KpiCardExpected"><Data ss:Type="String">TOTAL EXPECTED CASH: ₹${totalExpected.toFixed(2)}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Shift #</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Receptionist</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Opened At</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Closed At</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Opening (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Expected (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Actual (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Difference (₹)</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Status</Data></Cell>
+   </Row>
+   ${xmlRows}
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="4" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTALS:</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalOpening.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalExpected.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalActual.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${(totalActual - totalExpected).toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Shift_Audit_Ledger_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports shift history audit list to A4 Landscape vector PDF
+ */
+export const exportShiftsListToPDF = (shiftsList, filterInfo = {}, propertyInfo = {}) => {
+  if (!shiftsList || shiftsList.length === 0) {
+    alert('No shift audit records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalShifts = shiftsList.length;
+  let totalOpening = 0;
+  let totalExpected = 0;
+  let totalActual = 0;
+
+  shiftsList.forEach((s) => {
+    totalOpening += parseFloat(s.opening_balance || 0);
+    totalExpected += parseFloat(s.financials?.expected_cash ?? s.expected_cash ?? 0);
+    if (s.actual_cash !== null) totalActual += parseFloat(s.actual_cash);
+  });
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('SHIFT AUDIT & CASHIER RECONCILIATION LEDGER', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName}${filterInfo.dateRange ? ` | Range: ${filterInfo.dateRange}` : ''}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Shifts: ${totalShifts}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL SHIFTS RECORDED', val: String(totalShifts), color: [37, 99, 235] },
+    { label: 'TOTAL OPENING FLOAT', val: formatPdfCurrency(totalOpening), color: [100, 116, 139] },
+    { label: 'TOTAL EXPECTED CASH', val: formatPdfCurrency(totalExpected), color: [15, 23, 42] },
+    { label: 'TOTAL ACTUAL CASH', val: formatPdfCurrency(totalActual), color: [22, 163, 74] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    doc.setFontSize(8.5);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table
+  const tableHeaders = [
+    ['#', 'Shift #', 'Receptionist', 'Opened At', 'Closed At', 'Opening', 'Expected', 'Actual', 'Diff', 'Status']
+  ];
+
+  const tableRows = shiftsList.map((s, idx) => {
+    const opening = parseFloat(s.opening_balance || 0);
+    const expected = parseFloat(s.financials?.expected_cash ?? s.expected_cash ?? 0);
+    const actual = s.actual_cash !== null ? parseFloat(s.actual_cash) : null;
+    const diff = parseFloat(s.cash_difference || 0);
+
+    return [
+      String(idx + 1),
+      s.shift_number,
+      s.user_name || 'Staff',
+      new Date(s.opened_at).toLocaleDateString('en-IN') + ' ' + new Date(s.opened_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
+      s.closed_at ? (new Date(s.closed_at).toLocaleDateString('en-IN') + ' ' + new Date(s.closed_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })) : 'Active',
+      formatPdfCurrency(opening),
+      formatPdfCurrency(expected),
+      actual !== null ? formatPdfCurrency(actual) : '—',
+      actual !== null ? (diff === 0 ? 'Exact' : formatPdfCurrency(diff, true)) : '—',
+      s.status_display || s.status
+    ];
+  });
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    foot: [
+      ['', 'TOTALS', '', '', '', formatPdfCurrency(totalOpening), formatPdfCurrency(totalExpected), formatPdfCurrency(totalActual), '', '']
+    ],
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7.5,
+      cellPadding: 2,
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'left', cellWidth: 28, fontStyle: 'bold' },
+      2: { halign: 'left', cellWidth: 32 },
+      3: { halign: 'center', cellWidth: 32 },
+      4: { halign: 'center', cellWidth: 32 },
+      5: { halign: 'right', cellWidth: 24 },
+      6: { halign: 'right', cellWidth: 26, fontStyle: 'bold' },
+      7: { halign: 'right', cellWidth: 26 },
+      8: { halign: 'center', cellWidth: 26, fontStyle: 'bold' },
+      9: { halign: 'center', cellWidth: 28 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Shift Audit Ledger • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Shift_Audit_Ledger_${safeDate}.pdf`);
+  return doc;
+};

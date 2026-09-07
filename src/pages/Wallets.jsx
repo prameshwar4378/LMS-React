@@ -539,6 +539,21 @@ const Wallets = () => {
   const isAllPages = pageSize === 'all';
   const effectivePageSize = isAllPages ? totalRecords : Number(pageSize);
   const totalPages = isAllPages ? 1 : Math.max(1, Math.ceil(totalRecords / effectivePageSize));
+  const startIndex = (currentPage - 1) * effectivePageSize;
+  const endIndex = Math.min(startIndex + effectivePageSize, totalRecords);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 5) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 3) {
+      return [1, 2, 3, 4, '...', total];
+    }
+    if (current >= total - 2) {
+      return [1, '...', total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
 
   const paginatedWallets = useMemo(() => {
     if (isAllPages) return sortedWallets;
@@ -627,42 +642,6 @@ const Wallets = () => {
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
             <span className="small fw-semibold d-none d-sm-inline">Refresh</span>
-          </button>
-
-          {/* Export to Excel (.xls Spreadsheet with Landscape Setup) */}
-          <button
-            type="button"
-            className="btn btn-outline-success d-flex align-items-center gap-1.5 shadow-xs bg-white py-2 px-3 fw-semibold small"
-            onClick={() => exportWalletsToExcel(sortedWallets, summary, hotelInfo)}
-            disabled={sortedWallets.length === 0}
-            title="Export wallet directory to Excel (.xls) with built-in Landscape page setup"
-          >
-            <FileSpreadsheet size={16} className="text-success" />
-            <span>Export Excel</span>
-          </button>
-
-          {/* Download Vector A4 Landscape PDF */}
-          <button
-            type="button"
-            className="btn btn-outline-danger d-flex align-items-center gap-1.5 shadow-xs bg-white py-2 px-3 fw-semibold small"
-            onClick={() => exportWalletsToPDF(sortedWallets, summary, hotelInfo, { action: 'download' })}
-            disabled={sortedWallets.length === 0}
-            title="Download true A4 Landscape PDF report"
-          >
-            <Download size={16} className="text-danger" />
-            <span>Download PDF</span>
-          </button>
-
-          {/* Print A4 Landscape Report */}
-          <button
-            type="button"
-            className="btn btn-outline-primary d-flex align-items-center gap-1.5 shadow-xs bg-white py-2 px-3 fw-semibold small"
-            onClick={() => exportWalletsToPDF(sortedWallets, summary, hotelInfo, { action: 'print' })}
-            disabled={sortedWallets.length === 0}
-            title="Open and print A4 Landscape financial report"
-          >
-            <Printer size={16} className="text-primary" />
-            <span>Print Report</span>
           </button>
 
           {/* Record Advance Deposit */}
@@ -872,74 +851,6 @@ const Wallets = () => {
               </span>
             </button>
 
-            {/* Column Visibility Customizer Dropdown */}
-            <div className="position-relative" ref={colDropdownRef}>
-              <button
-                type="button"
-                className={`btn btn-sm ${
-                  showColDropdown ? 'btn-primary text-white' : 'btn-outline-secondary bg-white text-dark'
-                } d-flex align-items-center gap-1.5 rounded-3 py-1.5 px-2.5 shadow-xs`}
-                onClick={() => setShowColDropdown((prev) => !prev)}
-                title="Customize Visible Table Columns"
-              >
-                <SlidersHorizontal size={14} />
-                <span className="small fw-semibold d-none d-sm-inline">Columns</span>
-                <span className="badge bg-secondary-subtle text-dark extra-small px-1.5 py-0.5 rounded-pill">
-                  {visibleColCount}/8
-                </span>
-                <ChevronDown size={12} className="text-muted" />
-              </button>
-
-              {showColDropdown && (
-                <div
-                  className="position-absolute end-0 mt-2 p-2.5 bg-white rounded-3 shadow-lg border z-3"
-                  style={{ minWidth: '240px', zIndex: 1050 }}
-                >
-                  <div className="d-flex align-items-center justify-content-between pb-2 mb-2 border-bottom px-1">
-                    <span className="fw-bold extra-small text-uppercase text-secondary">
-                      Toggle Columns
-                    </span>
-                    <button
-                      type="button"
-                      className="btn btn-link p-0 extra-small text-primary text-decoration-none fw-semibold"
-                      onClick={resetColumns}
-                    >
-                      Reset All
-                    </button>
-                  </div>
-                  <div className="d-flex flex-column gap-1">
-                    {COLUMN_CONFIG.map((col) => {
-                      const isChecked = !!columnVisibility[col.key];
-                      return (
-                        <label
-                          key={col.key}
-                          className="d-flex align-items-center justify-content-between px-2 py-1.5 rounded-2 hover-bg-light cursor-pointer extra-small user-select-none"
-                          style={{ cursor: 'pointer' }}
-                        >
-                          <div className="d-flex align-items-center gap-2">
-                            <input
-                              type="checkbox"
-                              className="form-check-input m-0"
-                              checked={isChecked}
-                              onChange={() => toggleColumn(col.key)}
-                            />
-                            <span className={isChecked ? 'fw-semibold text-dark' : 'text-muted'}>
-                              {col.label}
-                            </span>
-                          </div>
-                          {isChecked ? (
-                            <Eye size={12} className="text-primary flex-shrink-0" />
-                          ) : (
-                            <EyeOff size={12} className="text-muted flex-shrink-0" />
-                          )}
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-            </div>
-
             {/* Sort Selector Dropdown */}
             <div className="d-flex align-items-center gap-1.5">
               <span className="text-muted extra-small fw-semibold d-none d-sm-inline">Sort:</span>
@@ -984,6 +895,116 @@ const Wallets = () => {
                 </button>
               )}
             </div>
+          </div>
+        </div>
+
+        {/* Standardized Card Header: Page Size & Top-Right Action Controls */}
+        <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+          <div className="d-flex align-items-center gap-2">
+            <span className="text-muted small fw-semibold">Show</span>
+            <select
+              className="form-select form-select-sm border-secondary-subtle"
+              style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+              value={pageSize}
+              onChange={(e) => {
+                const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
+                setPageSize(val);
+                setCurrentPage(1);
+              }}
+            >
+              <option value="10">10</option>
+              <option value="15">15</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="all">All</option>
+            </select>
+            <span className="text-muted small">entries</span>
+            <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+              {totalRecords} records
+            </span>
+          </div>
+
+          <div className="d-flex align-items-center gap-2 ms-auto">
+            <div className="dropdown position-relative" ref={colDropdownRef}>
+              <button
+                type="button"
+                className={`btn btn-sm ${showColDropdown ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                onClick={() => setShowColDropdown(!showColDropdown)}
+                title="Customize visible columns"
+              >
+                <i className="bi bi-sliders2"></i>
+                <span>Columns</span>
+                <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+              </button>
+
+              {showColDropdown && (
+                <div
+                  className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                  style={{ minWidth: '220px', zIndex: 1060 }}
+                >
+                  <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                    <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                      Visible Columns
+                    </span>
+                    <button
+                      type="button"
+                      className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                      style={{ fontSize: '0.7rem' }}
+                      onClick={resetColumns}
+                    >
+                      Reset All
+                    </button>
+                  </div>
+                  <div className="d-flex flex-column gap-1 pt-1">
+                    {COLUMN_CONFIG.map((col) => {
+                      const isChecked = !!columnVisibility[col.key];
+                      return (
+                        <label
+                          key={col.key}
+                          className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                          style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={isChecked}
+                            onChange={() => toggleColumn(col.key)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => exportWalletsToExcel(sortedWallets, summary, hotelInfo)}
+              disabled={sortedWallets.length === 0}
+              className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+              style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+              title="Export to Excel (.xls)"
+            >
+              <i className="bi bi-file-earmark-excel-fill text-success"></i>
+              <span>Excel</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => exportWalletsToPDF(sortedWallets, summary, hotelInfo, { action: 'download' })}
+              disabled={sortedWallets.length === 0}
+              className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+              style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+              title="Export to PDF Report"
+            >
+              <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+              <span>PDF</span>
+            </button>
           </div>
         </div>
 
@@ -1442,102 +1463,57 @@ const Wallets = () => {
                 </table>
               </div>
 
-              {/* Table Pagination & Item Counts Bar */}
-              {totalRecords > 0 && (
-                <div className="p-3 border-top bg-light-subtle d-flex flex-column flex-sm-row justify-content-between align-items-center gap-3">
-                  {/* Left: Showing entries info & Page Size Selector */}
-                  <div className="d-flex align-items-center gap-2 text-secondary extra-small flex-wrap">
-                    <span>
-                      Showing{' '}
-                      <strong className="text-dark">
-                        {isAllPages ? 1 : Math.min((currentPage - 1) * effectivePageSize + 1, totalRecords)}
-                      </strong>{' '}
-                      to{' '}
-                      <strong className="text-dark">
-                        {isAllPages ? totalRecords : Math.min(currentPage * effectivePageSize, totalRecords)}
-                      </strong>{' '}
-                      of <strong className="text-dark">{totalRecords}</strong> customer accounts
-                    </span>
-
-                    <div className="d-flex align-items-center gap-1 ms-sm-2">
-                      <span>Rows:</span>
-                      <select
-                        className="form-select form-select-sm py-0.5 px-2 rounded-2 border bg-white extra-small"
-                        style={{ width: '70px', height: '26px' }}
-                        value={pageSize}
-                        onChange={(e) => {
-                          const val = e.target.value === 'all' ? 'all' : Number(e.target.value);
-                          setPageSize(val);
-                        }}
-                      >
-                        <option value={10}>10</option>
-                        <option value={25}>25</option>
-                        <option value={50}>50</option>
-                        <option value={100}>100</option>
-                        <option value="all">All</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Right: Pagination buttons */}
-                  {!isAllPages && totalPages > 1 && (
-                    <div className="d-flex align-items-center gap-1">
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary py-1 px-2 rounded-2 extra-small"
-                        disabled={currentPage === 1}
-                        onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-                        title="Previous Page"
-                      >
-                        <ChevronLeft size={14} />
-                      </button>
-
-                      {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter((p) => p === 1 || p === totalPages || Math.abs(p - currentPage) <= 1)
-                        .reduce((acc, p, idx, arr) => {
-                          if (idx > 0 && p - arr[idx - 1] > 1) {
-                            acc.push('ellipsis-' + p);
-                          }
-                          acc.push(p);
-                          return acc;
-                        }, [])
-                        .map((item) => {
-                          if (typeof item === 'string') {
-                            return (
-                              <span key={item} className="px-1 text-muted extra-small">
-                                &hellip;
-                              </span>
-                            );
-                          }
-                          return (
-                            <button
-                              key={item}
-                              type="button"
-                              className={`btn btn-sm rounded-2 extra-small px-2.5 py-1 ${
-                                currentPage === item
-                                  ? 'btn-primary fw-bold text-white shadow-xs'
-                                  : 'btn-outline-secondary border-0 text-dark hover-bg-light'
-                              }`}
-                              onClick={() => setCurrentPage(item)}
-                            >
-                              {item}
-                            </button>
-                          );
-                        })}
-
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-outline-secondary py-1 px-2 rounded-2 extra-small"
-                        disabled={currentPage === totalPages}
-                        onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-                        title="Next Page"
-                      >
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                  )}
+              {/* Standardized Card Footer: Pagination */}
+              <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div className="text-muted small">
+                  Showing <span className="fw-semibold text-dark">{totalRecords === 0 ? 0 : startIndex + 1}</span> to{' '}
+                  <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+                  <span className="fw-semibold text-dark">{totalRecords}</span> records
                 </div>
-              )}
+                {!isAllPages && totalPages > 1 && (
+                  <nav aria-label="Table pagination">
+                    <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                      <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                        <button
+                          type="button"
+                          className="page-link rounded px-2.5 py-1"
+                          onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                          disabled={currentPage === 1}
+                        >
+                          <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                        </button>
+                      </li>
+                      {getPageNumbers(currentPage, totalPages).map((p, idx) =>
+                        p === '...' ? (
+                          <li key={`ellipsis-${idx}`} className="page-item disabled">
+                            <span className="page-link border-0 px-2 py-1">…</span>
+                          </li>
+                        ) : (
+                          <li key={p} className={`page-item ${currentPage === p ? 'active' : ''}`}>
+                            <button
+                              type="button"
+                              className="page-link rounded px-2.5 py-1 fw-semibold"
+                              onClick={() => setCurrentPage(p)}
+                            >
+                              {p}
+                            </button>
+                          </li>
+                        )
+                      )}
+                      <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                        <button
+                          type="button"
+                          className="page-link rounded px-2.5 py-1"
+                          onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                          disabled={currentPage === totalPages}
+                        >
+                          <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                        </button>
+                      </li>
+                    </ul>
+                  </nav>
+                )}
+              </div>
             </>
           )}
         </div>
