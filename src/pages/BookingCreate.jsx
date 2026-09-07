@@ -341,7 +341,11 @@ const BookingCreate = () => {
           id_type: 'Aadhaar'
         });
         customerIdToUse = newCust.id;
-        queryClient.invalidateQueries({ queryKey: ['customers'] });
+        queryClient.setQueriesData({ queryKey: ['customers'] }, (old) => {
+          if (!Array.isArray(old)) return [newCust];
+          return [newCust, ...old];
+        });
+        queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
       } catch (err) {
         const errMsg = extractErrorMessage(err, 'Failed to create customer profile.');
         setError(errMsg);
@@ -387,9 +391,9 @@ const BookingCreate = () => {
         });
       }
 
-      queryClient.invalidateQueries({ queryKey: ['bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['booking-create-data'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['booking-create-data'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       showSuccess('Advance reservation created successfully!', 'Reservation Created');
       navigate('/bookings');
     } catch (err) {

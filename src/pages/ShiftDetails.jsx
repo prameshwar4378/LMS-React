@@ -607,7 +607,9 @@ const ShiftDetails = () => {
           onClose={() => setShowApprovalModal(false)}
           shift={shift}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'CLOSED', status_display: 'Closed' } : old));
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
           }}
         />
       )}
@@ -632,7 +634,9 @@ const ShiftDetails = () => {
           shift={shift}
           financials={shift.financials}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'PENDING_APPROVAL', status_display: 'Pending Sign-Off' } : old));
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
           }}
         />
       )}
@@ -644,7 +648,9 @@ const ShiftDetails = () => {
           onClose={() => setShowForceCloseModal(false)}
           shift={shift}
           onSuccess={() => {
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'CLOSED', status_display: 'Closed (Forced)' } : old));
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
           }}
         />
       )}

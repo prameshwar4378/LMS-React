@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBookingsApi, updateBookingApi, cancelBookingApi, deleteBookingApi } from '../api/bookingApi';
@@ -9,11 +9,12 @@ import ConfirmModal from '../components/ConfirmModal';
 import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
+import { exportBookingsToExcel, exportBookingsToPDF } from '../utils/exportUtils';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 
 const Bookings = () => {
-  const { user, hasPermission, getPermissionLimit } = useAuth();
+  const { user, selectedProperty, hasPermission, getPermissionLimit } = useAuth();
   const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
   const queryClient = useQueryClient();
@@ -73,6 +74,211 @@ const Bookings = () => {
   const confirmedBookings = bookings.filter((b) => b.status === 'CONFIRMED').length;
   const checkedInBookings = bookings.filter((b) => b.status === 'CHECKED_IN').length;
   const totalAdvancePaid = bookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
+
+  // -------------------------------------------------------------
+  // Column Visibility & Definitions
+  // -------------------------------------------------------------
+  const columnDefs = [
+    { key: 'booking_number', label: 'Booking #' },
+    { key: 'guest_profile', label: 'Guest Profile' },
+    { key: 'assigned_room', label: 'Assigned Room' },
+    { key: 'check_in', label: 'Check-In' },
+    { key: 'expected_checkout', label: 'Expected Check-Out' },
+    { key: 'agreed_rate', label: 'Agreed Rate' },
+    { key: 'advance_paid', label: 'Advance Paid' },
+    { key: 'status', label: 'Status' },
+    { key: 'actions', label: 'Actions' },
+  ];
+
+  const [columnVisibility, setColumnVisibility] = useState({
+    booking_number: true,
+    guest_profile: true,
+    assigned_room: true,
+    check_in: true,
+    expected_checkout: true,
+    agreed_rate: true,
+    advance_paid: true,
+    status: true,
+    actions: true,
+  });
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const columnMenuRef = useRef(null);
+
+  // Close column visibility dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (columnMenuRef.current && !columnMenuRef.current.contains(e.target)) {
+        setShowColumnMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const toggleColumnVisibility = (key) => {
+    setColumnVisibility((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const resetColumnVisibility = () => {
+    setColumnVisibility({
+      booking_number: true,
+      guest_profile: true,
+      assigned_room: true,
+      check_in: true,
+      expected_checkout: true,
+      agreed_rate: true,
+      advance_paid: true,
+      status: true,
+      actions: true,
+    });
+  };
+
+  const visibleColumnCount = Object.values(columnVisibility).filter(Boolean).length || 1;
+
+  // -------------------------------------------------------------
+  // Column-wise Sorting State & Logic
+  // -------------------------------------------------------------
+  const [sortColumn, setSortColumn] = useState('check_in_date');
+  const [sortDirection, setSortDirection] = useState('desc'); // 'asc' | 'desc'
+
+  const handleSort = (columnKey) => {
+    if (sortColumn === columnKey) {
+      setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortColumn(columnKey);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
+  const sortedBookings = useMemo(() => {
+    if (!bookings || !bookings.length) return [];
+    const list = [...bookings];
+
+    return list.sort((a, b) => {
+      let valA, valB;
+      switch (sortColumn) {
+        case 'booking_number':
+          valA = a.booking_number || '';
+          valB = b.booking_number || '';
+          break;
+        case 'guest_profile':
+          valA = (a.customer_detail?.full_name || '').toLowerCase();
+          valB = (b.customer_detail?.full_name || '').toLowerCase();
+          break;
+        case 'assigned_room':
+          valA = Number(a.room_detail?.room_number) || (a.room_detail?.room_number || '');
+          valB = Number(b.room_detail?.room_number) || (b.room_detail?.room_number || '');
+          break;
+        case 'check_in_date':
+          valA = new Date(`${a.check_in_date || '1970-01-01'}T${a.check_in_time || '12:00'}`).getTime();
+          valB = new Date(`${b.check_in_date || '1970-01-01'}T${b.check_in_time || '12:00'}`).getTime();
+          break;
+        case 'expected_checkout_date':
+          valA = new Date(`${a.expected_checkout_date || a.check_in_date || '1970-01-01'}T${a.expected_checkout_time || '11:00'}`).getTime();
+          valB = new Date(`${b.expected_checkout_date || b.check_in_date || '1970-01-01'}T${b.expected_checkout_time || '11:00'}`).getTime();
+          break;
+        case 'room_rate':
+          valA = parseFloat(a.room_rate || 0);
+          valB = parseFloat(b.room_rate || 0);
+          break;
+        case 'advance_amount':
+          valA = parseFloat(a.advance_amount || 0);
+          valB = parseFloat(b.advance_amount || 0);
+          break;
+        case 'status':
+          valA = a.status || '';
+          valB = b.status || '';
+          break;
+        default:
+          valA = a[sortColumn] || '';
+          valB = b[sortColumn] || '';
+      }
+
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      valA = String(valA);
+      valB = String(valB);
+      return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+    });
+  }, [bookings, sortColumn, sortDirection]);
+
+  // -------------------------------------------------------------
+  // Pagination State & Calculations
+  // -------------------------------------------------------------
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search, statusFilter]);
+
+  const totalItems = sortedBookings.length;
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  const startIndex = (currentPage - 1) * pageSize;
+  const endIndex = Math.min(startIndex + pageSize, totalItems);
+
+  const paginatedBookings = useMemo(() => {
+    return sortedBookings.slice(startIndex, endIndex);
+  }, [sortedBookings, startIndex, endIndex]);
+
+  const getPageNumbers = (current, total) => {
+    if (total <= 7) {
+      return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    if (current <= 4) {
+      return [1, 2, 3, 4, 5, '...', total];
+    }
+    if (current >= total - 3) {
+      return [1, '...', total - 4, total - 3, total - 2, total - 1, total];
+    }
+    return [1, '...', current - 1, current, current + 1, '...', total];
+  };
+
+  // -------------------------------------------------------------
+  // Export Handlers
+  // -------------------------------------------------------------
+  const handleExportExcel = () => {
+    exportBookingsToExcel(
+      sortedBookings,
+      { status: statusFilter || 'ALL', search },
+      selectedProperty
+    );
+  };
+
+  const handleExportPDF = () => {
+    exportBookingsToPDF(
+      sortedBookings,
+      { status: statusFilter || 'ALL', search },
+      selectedProperty
+    );
+  };
+
+  const renderSortHeader = (label, columnKey, className = '') => (
+    <th
+      className={`${className} text-nowrap`}
+      style={{ cursor: 'pointer', userSelect: 'none' }}
+      onClick={() => handleSort(columnKey)}
+      title={`Sort by ${label} (${sortColumn === columnKey && sortDirection === 'asc' ? 'Descending' : 'Ascending'})`}
+    >
+      <div className="d-inline-flex align-items-center gap-1.5">
+        <span>{label}</span>
+        {sortColumn === columnKey ? (
+          sortDirection === 'asc' ? (
+            <i className="bi bi-arrow-up text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          ) : (
+            <i className="bi bi-arrow-down text-primary fw-bold" style={{ fontSize: '0.75rem' }}></i>
+          )
+        ) : (
+          <i className="bi bi-arrow-down-up text-muted opacity-25" style={{ fontSize: '0.7rem' }}></i>
+        )}
+      </div>
+    </th>
+  );
 
   // Helper to determine if a checked-in booking is overdue for checkout
   const isBookingOverdue = (b) => {
@@ -228,7 +434,7 @@ const Bookings = () => {
     setEditError('');
 
     try {
-      await updateBookingApi(editBooking.id, {
+      const updatedBooking = await updateBookingApi(editBooking.id, {
         customer: editBooking.customer,
         room: parseInt(editForm.room),
         check_in_date: editForm.check_in_date,
@@ -244,7 +450,12 @@ const Bookings = () => {
       });
 
       setEditBooking(null);
-      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      showSuccess(`Booking #${editBooking.booking_number} updated successfully.`, 'Booking Updated');
+      queryClient.setQueriesData({ queryKey: ['bookings'] }, (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((b) => (b.id === updatedBooking.id ? { ...b, ...updatedBooking } : b));
+      });
+      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const serverMsg = err.response?.data?.room?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error updating booking.';
@@ -264,14 +475,27 @@ const Bookings = () => {
       confirmBtnClass: 'btn-warning text-dark',
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        // Optimistic cancellation (0.0s)
+        setConfirmModal({ show: false });
+        const prevBookings = queryClient.getQueryData(['bookings', statusFilter, search]);
+        queryClient.setQueriesData({ queryKey: ['bookings'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          if (statusFilter === 'CONFIRMED') {
+            return old.filter((b) => b.id !== booking.id);
+          }
+          return old.map((b) => (b.id === booking.id ? { ...b, status: 'CANCELLED' } : b));
+        });
+        showSuccess(`Booking #${booking.booking_number} cancelled.`, 'Booking Cancelled');
+
         try {
           await cancelBookingApi(booking.id);
-          setConfirmModal({ show: false });
-          queryClient.invalidateQueries({ queryKey: ['bookings'] });
+          queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['rooms'] });
         } catch (err) {
-          alert(err.response?.data?.error || 'Error cancelling booking.');
-          setConfirmModal({ show: false });
+          if (prevBookings) {
+            queryClient.setQueryData(['bookings', statusFilter, search], prevBookings);
+          }
+          showError(err.response?.data?.error || 'Error cancelling booking.', 'Cancellation Failed');
         }
       },
     });
@@ -287,15 +511,24 @@ const Bookings = () => {
       confirmBtnClass: 'btn-danger',
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        // Optimistic delete (0.0s)
+        setConfirmModal({ show: false });
+        const prevBookings = queryClient.getQueryData(['bookings', statusFilter, search]);
+        queryClient.setQueriesData({ queryKey: ['bookings'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.filter((b) => b.id !== booking.id);
+        });
+        showSuccess(`Booking #${booking.booking_number} deleted successfully.`, 'Booking Deleted');
+
         try {
           await deleteBookingApi(booking.id);
-          setConfirmModal({ show: false });
-          showSuccess(`Booking #${booking.booking_number} deleted successfully.`, 'Booking Deleted');
-          queryClient.invalidateQueries({ queryKey: ['bookings'] });
+          queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['rooms'] });
         } catch (err) {
+          if (prevBookings) {
+            queryClient.setQueryData(['bookings', statusFilter, search], prevBookings);
+          }
           showError(err.response?.data?.error || 'Error deleting booking record.', 'Deletion Failed');
-          setConfirmModal({ show: false });
         }
       },
     });
@@ -442,180 +675,367 @@ const Bookings = () => {
       {loading ? (
         <PageLoader fullScreen={false} message="Loading Reservations & Analytics..." />
       ) : (
-        <div className="card border-0 shadow-sm rounded-3">
+        <div className="card border-0 shadow-sm rounded-3 overflow-hidden">
+          {/* Table Header Bar with Entries & Top-Right Export / Column Visibility */}
+          <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
+            {/* Left: Page Size Selector & Count Badge */}
+            <div className="d-flex align-items-center gap-2">
+              <span className="text-muted small fw-semibold">Show</span>
+              <select
+                className="form-select form-select-sm border-secondary-subtle"
+                style={{ width: '70px', height: '31px', fontSize: '0.8rem', cursor: 'pointer' }}
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+              >
+                <option value="10">10</option>
+                <option value="15">15</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+              <span className="text-muted small">entries</span>
+              <span className="badge bg-light text-secondary border ms-1 px-2 py-1 extra-small">
+                {totalItems} records
+              </span>
+            </div>
+
+            {/* EXACT TOP RIGHT CORNER: Column Visibility + Excel & PDF Small Buttons */}
+            <div className="d-flex align-items-center gap-2 ms-auto">
+              {/* Column Visibility Dropdown */}
+              <div className="dropdown position-relative" ref={columnMenuRef}>
+                <button
+                  type="button"
+                  className={`btn btn-sm ${showColumnMenu ? 'btn-secondary text-white' : 'btn-outline-secondary'} d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs`}
+                  style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                  onClick={() => setShowColumnMenu(!showColumnMenu)}
+                  title="Customize visible columns"
+                >
+                  <i className="bi bi-sliders2"></i>
+                  <span>Columns</span>
+                  <i className="bi bi-chevron-down" style={{ fontSize: '0.65rem' }}></i>
+                </button>
+
+                {showColumnMenu && (
+                  <div
+                    className="dropdown-menu dropdown-menu-end show p-2 shadow-lg border-0 rounded-3 mt-1"
+                    style={{ minWidth: '210px', zIndex: 1060 }}
+                  >
+                    <div className="d-flex justify-content-between align-items-center px-2 py-1 mb-1 border-bottom">
+                      <span className="fw-bold extra-small text-uppercase text-muted" style={{ fontSize: '0.7rem' }}>
+                        Visible Columns
+                      </span>
+                      <button
+                        type="button"
+                        className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                        style={{ fontSize: '0.7rem' }}
+                        onClick={resetColumnVisibility}
+                      >
+                        Reset All
+                      </button>
+                    </div>
+                    <div className="d-flex flex-column gap-1 pt-1">
+                      {columnDefs.map((col) => (
+                        <label
+                          key={col.key}
+                          className="dropdown-item d-flex align-items-center gap-2 py-1 px-2 rounded cursor-pointer small m-0"
+                          style={{ cursor: 'pointer', fontSize: '0.8rem' }}
+                        >
+                          <input
+                            type="checkbox"
+                            className="form-check-input m-0"
+                            checked={columnVisibility[col.key]}
+                            onChange={() => toggleColumnVisibility(col.key)}
+                            style={{ cursor: 'pointer' }}
+                          />
+                          <span>{col.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Small Professional Excel Export Button */}
+              <button
+                type="button"
+                onClick={handleExportExcel}
+                className="btn btn-sm btn-outline-success d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Bookings to Excel (.xls)"
+              >
+                <i className="bi bi-file-earmark-excel-fill text-success"></i>
+                <span>Excel</span>
+              </button>
+
+              {/* Small Professional PDF Export Button */}
+              <button
+                type="button"
+                onClick={handleExportPDF}
+                className="btn btn-sm btn-outline-danger d-inline-flex align-items-center gap-1.5 fw-semibold shadow-2xs"
+                style={{ height: '30px', fontSize: '0.785rem', borderRadius: '6px' }}
+                title="Export Bookings to PDF Report"
+              >
+                <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
+                <span>PDF</span>
+              </button>
+            </div>
+          </div>
+
           <div className="card-body p-0">
             <div className="table-responsive">
               <table className="table table-hover align-middle m-0">
                 <thead className="table-light text-muted small text-uppercase fw-bold">
                   <tr>
-                    <th className="ps-4">Booking #</th>
-                    <th>Guest Profile</th>
-                    <th>Assigned Room</th>
-                    <th>Check-In</th>
-                    <th>Expected Check-Out</th>
-                    <th>Agreed Rate</th>
-                    <th>Advance Paid</th>
-                    <th>Status</th>
-                    <th className="text-end pe-4">Actions</th>
+                    {columnVisibility.booking_number && renderSortHeader('Booking #', 'booking_number', 'ps-4')}
+                    {columnVisibility.guest_profile && renderSortHeader('Guest Profile', 'guest_profile')}
+                    {columnVisibility.assigned_room && renderSortHeader('Assigned Room', 'assigned_room')}
+                    {columnVisibility.check_in && renderSortHeader('Check-In', 'check_in_date')}
+                    {columnVisibility.expected_checkout && renderSortHeader('Expected Check-Out', 'expected_checkout_date')}
+                    {columnVisibility.agreed_rate && renderSortHeader('Agreed Rate', 'room_rate')}
+                    {columnVisibility.advance_paid && renderSortHeader('Advance Paid', 'advance_amount')}
+                    {columnVisibility.status && renderSortHeader('Status', 'status')}
+                    {columnVisibility.actions && <th className="text-end pe-4 text-nowrap">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
-                  {bookings.length === 0 ? (
+                  {paginatedBookings.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="text-center py-5 text-muted">
+                      <td colSpan={visibleColumnCount} className="text-center py-5 text-muted">
                         <i className="bi bi-inbox fs-1 d-block text-muted opacity-50 mb-2"></i>
                         No reservation bookings found matching your search.
                       </td>
                     </tr>
                   ) : (
-                    bookings.map((b) => {
+                    paginatedBookings.map((b) => {
                       const overdue = isBookingOverdue(b);
                       return (
-                      <tr key={b.id}>
-                        <td className="ps-4">
-                          <span className="fw-bold text-primary">{b.booking_number}</span>
-                          <span className="d-block text-muted extra-small">
-                            {formatDate(b.created_at)}
-                          </span>
-                        </td>
+                        <tr key={b.id}>
+                          {columnVisibility.booking_number && (
+                            <td className="ps-4">
+                              <span className="fw-bold text-primary">{b.booking_number}</span>
+                              <span className="d-block text-muted extra-small">
+                                {formatDate(b.created_at)}
+                              </span>
+                            </td>
+                          )}
 
-                        <td>
-                          <div className="d-flex align-items-center">
-                            {b.customer_detail?.photo ? (
-                              <img
-                                src={b.customer_detail.photo}
-                                alt=""
-                                className="rounded-circle me-2 object-fit-cover"
-                                width="36"
-                                height="36"
-                              />
-                            ) : (
-                              <div className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2 fw-bold" style={{ width: 36, height: 36 }}>
-                                {b.customer_detail?.first_name?.[0] || 'G'}
+                          {columnVisibility.guest_profile && (
+                            <td>
+                              <div className="d-flex align-items-center">
+                                {b.customer_detail?.photo ? (
+                                  <img
+                                    src={b.customer_detail.photo}
+                                    alt=""
+                                    className="rounded-circle me-2 object-fit-cover"
+                                    width="36"
+                                    height="36"
+                                  />
+                                ) : (
+                                  <div className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2 fw-bold" style={{ width: 36, height: 36 }}>
+                                    {b.customer_detail?.first_name?.[0] || 'G'}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="fw-bold text-dark">{b.customer_detail?.full_name || 'Guest'}</div>
+                                  <span className="text-muted small">
+                                    <i className="bi bi-telephone me-1"></i>{b.customer_detail?.mobile}
+                                  </span>
+                                </div>
                               </div>
-                            )}
-                            <div>
-                              <div className="fw-bold text-dark">{b.customer_detail?.full_name || 'Guest'}</div>
-                              <span className="text-muted small">
-                                <i className="bi bi-telephone me-1"></i>{b.customer_detail?.mobile}
+                            </td>
+                          )}
+
+                          {columnVisibility.assigned_room && (
+                            <td>
+                              <div className="fw-bold text-dark">Room {b.room_detail?.room_number}</div>
+                              <span className="badge bg-light text-muted border extra-small">
+                                {b.room_detail?.room_type_name}
                               </span>
-                            </div>
-                          </div>
-                        </td>
+                            </td>
+                          )}
 
-                        <td>
-                          <div className="fw-bold text-dark">Room {b.room_detail?.room_number}</div>
-                          <span className="badge bg-light text-muted border extra-small">
-                            {b.room_detail?.room_type_name}
-                          </span>
-                        </td>
+                          {columnVisibility.check_in && (
+                            <td>
+                              <div className="fw-semibold text-dark">{formatDate(b.check_in_date)}</div>
+                              <span className="text-muted extra-small">{b.check_in_time || '12:00 PM'}</span>
+                            </td>
+                          )}
 
-                        <td>
-                          <div className="fw-semibold text-dark">{formatDate(b.check_in_date)}</div>
-                          <span className="text-muted extra-small">{b.check_in_time || '12:00 PM'}</span>
-                        </td>
+                          {columnVisibility.expected_checkout && (
+                            <td>
+                              <div className={`fw-semibold ${overdue ? 'text-danger' : 'text-dark'}`}>
+                                {formatDate(b.expected_checkout_date)}
+                              </div>
+                              <div className="d-flex align-items-center gap-1">
+                                <span className={`${overdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
+                                  {b.expected_checkout_time || '11:00 AM'}
+                                </span>
+                                {overdue && (
+                                  <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
+                                    Overdue
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          )}
 
-                        <td>
-                          <div className={`fw-semibold ${overdue ? 'text-danger' : 'text-dark'}`}>
-                            {formatDate(b.expected_checkout_date)}
-                          </div>
-                          <div className="d-flex align-items-center gap-1">
-                            <span className={`${overdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
-                              {b.expected_checkout_time || '11:00 AM'}
-                            </span>
-                            {overdue && (
-                              <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
-                                Overdue
-                              </span>
-                            )}
-                          </div>
-                        </td>
+                          {columnVisibility.agreed_rate && (
+                            <td className="fw-semibold text-dark">
+                              {formatCurrency(b.room_rate)}
+                              <span className="text-muted extra-small d-block">/ night</span>
+                            </td>
+                          )}
 
-                        <td className="fw-semibold text-dark">
-                          {formatCurrency(b.room_rate)}
-                          <span className="text-muted extra-small d-block">/ night</span>
-                        </td>
+                          {columnVisibility.advance_paid && (
+                            <td>
+                              <span className="fw-bold text-success">{formatCurrency(b.advance_amount)}</span>
+                            </td>
+                          )}
 
-                        <td>
-                          <span className="fw-bold text-success">{formatCurrency(b.advance_amount)}</span>
-                        </td>
+                          {columnVisibility.status && (
+                            <td>
+                              <div className="d-flex flex-column align-items-start gap-1">
+                                <StatusBadge status={b.status} />
+                                {overdue && (
+                                  <span className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm animate-pulse">
+                                    <i className="bi bi-exclamation-circle-fill"></i> OVERDUE
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          )}
 
-                        <td>
-                          <div className="d-flex flex-column align-items-start gap-1">
-                            <StatusBadge status={b.status} />
-                            {overdue && (
-                              <span className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm animate-pulse">
-                                <i className="bi bi-exclamation-circle-fill"></i> OVERDUE
-                              </span>
-                            )}
-                          </div>
-                        </td>
+                          {columnVisibility.actions && (
+                            <td className="text-end pe-4">
+                              <div className="btn-group btn-group-sm">
+                                {/* View Details */}
+                                <button
+                                  className="btn btn-outline-secondary"
+                                  title="View Details"
+                                  onClick={() => setViewBooking(b)}
+                                >
+                                  <i className="bi bi-eye"></i>
+                                </button>
 
-                        <td className="text-end pe-4">
-                          <div className="btn-group btn-group-sm">
-                            {/* View Details */}
-                            <button
-                              className="btn btn-outline-secondary"
-                              title="View Details"
-                              onClick={() => setViewBooking(b)}
-                            >
-                              <i className="bi bi-eye"></i>
-                            </button>
+                                {/* Edit Booking */}
+                                {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
+                                  <button
+                                    className="btn btn-outline-primary"
+                                    title="Edit Booking"
+                                    onClick={() => handleOpenEdit(b)}
+                                  >
+                                    <i className="bi bi-pencil-square"></i>
+                                  </button>
+                                )}
 
-                            {/* Edit Booking */}
-                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
-                              <button
-                                className="btn btn-outline-primary"
-                                title="Edit Booking"
-                                onClick={() => handleOpenEdit(b)}
-                              >
-                                <i className="bi bi-pencil-square"></i>
-                              </button>
-                            )}
+                                {/* Check-In */}
+                                {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
+                                  <button
+                                    className="btn btn-success fw-semibold"
+                                    title="Process Check-In"
+                                    onClick={() => handleCheckIn(b.id)}
+                                  >
+                                    <i className="bi bi-key me-1"></i>Check-In
+                                  </button>
+                                )}
 
-                            {/* Check-In */}
-                            {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
-                              <button
-                                className="btn btn-success fw-semibold"
-                                title="Process Check-In"
-                                onClick={() => handleCheckIn(b.id)}
-                              >
-                                <i className="bi bi-key me-1"></i>Check-In
-                              </button>
-                            )}
+                                {/* Cancel */}
+                                {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
+                                  <button
+                                    className="btn btn-outline-warning text-dark"
+                                    title="Cancel Booking"
+                                    onClick={() => handleCancel(b)}
+                                  >
+                                    <i className="bi bi-x-circle"></i>
+                                  </button>
+                                )}
 
-                            {/* Cancel */}
-                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
-                              <button
-                                className="btn btn-outline-warning text-dark"
-                                title="Cancel Booking"
-                                onClick={() => handleCancel(b)}
-                              >
-                                <i className="bi bi-x-circle"></i>
-                              </button>
-                            )}
-
-                            {/* Delete */}
-                            {hasPermission('bookings', 'can_delete') && (
-                              <button
-                                className="btn btn-outline-danger"
-                                title="Delete Record"
-                                onClick={() => handleDelete(b)}
-                              >
-                                <i className="bi bi-trash"></i>
-                              </button>
-                            )}
-                          </div>
-
-                        </td>
-                      </tr>
-                    );
-                  })
+                                {/* Delete */}
+                                {hasPermission('bookings', 'can_delete') && (
+                                  <button
+                                    className="btn btn-outline-danger"
+                                    title="Delete Record"
+                                    onClick={() => handleDelete(b)}
+                                  >
+                                    <i className="bi bi-trash"></i>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {/* Pagination Footer */}
+          {totalItems > 0 && (
+            <div className="card-footer bg-white py-2.5 px-3 border-top d-flex flex-wrap justify-content-between align-items-center gap-2">
+              <div className="text-muted small">
+                Showing <span className="fw-semibold text-dark">{startIndex + 1}</span> to{' '}
+                <span className="fw-semibold text-dark">{endIndex}</span> of{' '}
+                <span className="fw-semibold text-dark">{totalItems}</span> bookings
+              </div>
+
+              {totalPages > 1 && (
+                <nav aria-label="Bookings pagination">
+                  <ul className="pagination pagination-sm m-0 gap-1 align-items-center">
+                    <li className={`page-item ${currentPage === 1 ? 'disabled' : ''}`}>
+                      <button
+                        type="button"
+                        className="page-link rounded px-2.5 py-1"
+                        onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+                        disabled={currentPage === 1}
+                        aria-label="Previous page"
+                      >
+                        <i className="bi bi-chevron-left" style={{ fontSize: '0.7rem' }}></i>
+                      </button>
+                    </li>
+
+                    {getPageNumbers(currentPage, totalPages).map((page, idx) => {
+                      if (page === '...') {
+                        return (
+                          <li key={`ellipsis-${idx}`} className="page-item disabled">
+                            <span className="page-link border-0 bg-transparent px-1.5 text-muted">...</span>
+                          </li>
+                        );
+                      }
+                      return (
+                        <li key={page} className={`page-item ${currentPage === page ? 'active' : ''}`}>
+                          <button
+                            type="button"
+                            className="page-link rounded px-2.5 py-1"
+                            onClick={() => setCurrentPage(page)}
+                          >
+                            {page}
+                          </button>
+                        </li>
+                      );
+                    })}
+
+                    <li className={`page-item ${currentPage === totalPages ? 'disabled' : ''}`}>
+                      <button
+                        type="button"
+                        className="page-link rounded px-2.5 py-1"
+                        onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+                        disabled={currentPage === totalPages}
+                        aria-label="Next page"
+                      >
+                        <i className="bi bi-chevron-right" style={{ fontSize: '0.7rem' }}></i>
+                      </button>
+                    </li>
+                  </ul>
+                </nav>
+              )}
+            </div>
+          )}
         </div>
       )}
 

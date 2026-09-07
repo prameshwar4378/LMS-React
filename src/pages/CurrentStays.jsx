@@ -231,43 +231,47 @@ const CurrentStays = () => {
 
   // Modal Handlers
   const handleAddGuestSubmit = async (formData) => {
+    setShowGuestModal(false);
     try {
       await addStayGuestApi(formData);
-      setShowGuestModal(false);
+      showSuccess('Guest added to stay roster successfully.', 'Guest Added');
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
-      alert('Error adding guest.');
+      showError('Error adding guest.', 'Failed');
     }
   };
 
   const handleAddChargeSubmit = async (data) => {
+    setShowChargeModal(false);
     try {
       await createExtraChargeApi(data);
-      setShowChargeModal(false);
+      showSuccess('Extra charge added to bill.', 'Charge Added');
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
-      alert('Error adding charge.');
+      showError('Error adding charge.', 'Failed');
     }
   };
 
   const handleAddPaymentSubmit = async (data) => {
+    setShowPaymentModal(false);
     try {
       await createPaymentApi(data);
-      setShowPaymentModal(false);
+      showSuccess('Payment recorded successfully.', 'Payment Recorded');
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
-      alert('Error adding payment.');
+      showError('Error adding payment.', 'Failed');
     }
   };
 
   const handleExtendSubmit = async (e) => {
     e.preventDefault();
+    setShowExtendModal(false);
     try {
       await extendStayApi(activeStayId, newExtendCheckout);
-      setShowExtendModal(false);
+      showSuccess('Stay extended successfully.', 'Stay Extended');
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
-      alert(err.response?.data?.error || 'Error extending stay.');
+      showError(err.response?.data?.error || 'Error extending stay.', 'Failed');
     }
   };
 

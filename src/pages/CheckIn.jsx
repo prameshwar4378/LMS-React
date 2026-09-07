@@ -12,6 +12,7 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { getSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { compressImage } from '../utils/imageCompressor';
 
 import {
   DoorOpen,
@@ -579,14 +580,24 @@ const CheckIn = () => {
         expected_checkout_time: checkoutTime,
         chargeable_nights: nightsCount,
       };
+
+      // Optimistically update room to OCCUPIED in rooms list
+      const targetRoomId = reallocatedRoomId || selectedBooking.room;
+      if (targetRoomId) {
+        queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map((r) => (r.id === targetRoomId ? { ...r, status: 'OCCUPIED' } : r));
+        });
+      }
+
       const res = await checkInBookingApi(selectedBooking.id, payload);
-      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
-      queryClient.invalidateQueries({ queryKey: ['checkin-advance-bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
-      queryClient.invalidateQueries({ queryKey: ['stays'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['checkin-advance-bookings'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
       showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
       navigate(`/stays/${stayId}`);
@@ -606,7 +617,6 @@ const CheckIn = () => {
       return;
     }
     setError('');
-
 
     if (!selectedRoomId) {
       const msg = 'Please select an available room.';
@@ -650,17 +660,36 @@ const CheckIn = () => {
       formData.append('advance_payment', advancePayment || 0);
       formData.append('payment_method', paymentMethod);
 
-      if (photoFile) formData.append('photo', photoFile);
-      if (docFile) formData.append('id_document', docFile);
-      if (docBackFile) formData.append('id_document_back', docBackFile);
+      // Compress photos/documents for fast upload
+      if (photoFile) {
+        const compressedPhoto = await compressImage(photoFile);
+        formData.append('photo', compressedPhoto);
+      }
+      if (docFile) {
+        const compressedDoc = await compressImage(docFile);
+        formData.append('id_document', compressedDoc);
+      }
+      if (docBackFile) {
+        const compressedDocBack = await compressImage(docBackFile);
+        formData.append('id_document_back', compressedDocBack);
+      }
+
+      // Optimistically mark room as OCCUPIED
+      const chosenRoomId = parseInt(selectedRoomId);
+      if (chosenRoomId) {
+        queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map((r) => (r.id === chosenRoomId ? { ...r, status: 'OCCUPIED' } : r));
+        });
+      }
 
       const res = await createWalkInStayApi(formData);
-      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
-      queryClient.invalidateQueries({ queryKey: ['stays'] });
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       showSuccess(`Walk-In Check-In for ${firstName} ${lastName} completed successfully!`, 'Check-In Successful');
       const stayId = res?.data?.id || res?.id || res?.data?.stay_id || res?.stay_id;
       if (stayId) {

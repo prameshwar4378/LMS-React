@@ -101,7 +101,10 @@ const Rooms = () => {
       });
       setShowQuickCategoryModal(false);
       showSuccess(`Room category "${newCat.name}" created successfully!`, 'Category Created');
-      queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
+      queryClient.setQueriesData({ queryKey: ['roomTypes'] }, (old) => {
+        if (!Array.isArray(old)) return [newCat];
+        return [...old, newCat];
+      });
       setRoomTypeId(newCat.id);
     } catch (err) {
       const msg = err.response?.data?.detail || err.response?.data?.name?.[0] || 'Failed to create room category.';
@@ -178,7 +181,7 @@ const Rooms = () => {
     setSavingRoom(true);
     setModalError(null);
     try {
-      await createRoomApi({
+      const newRoom = await createRoomApi({
         room_number: cleanNum,
         room_type: roomTypeId,
         floor: floor,
@@ -189,7 +192,12 @@ const Rooms = () => {
       setRoomNumber('');
       setDescription('');
       showSuccess(`Room ${cleanNum} created and added to inventory successfully!`, 'Room Created');
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+        if (!Array.isArray(old)) return [newRoom];
+        return [...old, newRoom].sort((a, b) =>
+          (a.room_number || '').toString().localeCompare((b.room_number || '').toString(), undefined, { numeric: true })
+        );
+      });
       queryClient.invalidateQueries({ queryKey: ['subscription'] });
     } catch (err) {
       const errData = err.response?.data;
@@ -215,10 +223,18 @@ const Rooms = () => {
       showError('Your staff role is not authorized to change room housekeeping status.', 'Permission Denied');
       return;
     }
+    const prevRooms = queryClient.getQueryData(['rooms', selectedProperty?.id]);
+    queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((r) => (r.id === roomId ? { ...r, status: newStatus } : r));
+    });
     try {
       await updateRoomStatusApi(roomId, newStatus);
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
     } catch (err) {
+      if (prevRooms) {
+        queryClient.setQueryData(['rooms', selectedProperty?.id], prevRooms);
+      }
       showError('Error updating room status.', 'Status Update Failed');
     }
   };
@@ -236,12 +252,20 @@ const Rooms = () => {
       cancelText: 'Cancel',
       confirmVariant: 'danger',
       onConfirm: async () => {
+        const prevRooms = queryClient.getQueryData(['rooms', selectedProperty?.id]);
+        queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.filter((r) => r.id !== room.id);
+        });
+        showSuccess(`Room ${room.room_number} deleted successfully!`, 'Room Deleted');
         try {
           await deleteRoomApi(room.id);
-          showSuccess(`Room ${room.room_number} deleted successfully!`, 'Room Deleted');
-          queryClient.invalidateQueries({ queryKey: ['rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
           queryClient.invalidateQueries({ queryKey: ['subscription'] });
         } catch (err) {
+          if (prevRooms) {
+            queryClient.setQueryData(['rooms', selectedProperty?.id], prevRooms);
+          }
           showError('Cannot delete room with active stays or reservations.', 'Deletion Failed');
         }
       },

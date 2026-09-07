@@ -312,7 +312,20 @@ const Wallets = () => {
         'Deposit Successful'
       );
       setShowDepositModal(false);
-      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+
+      // Direct cache update for instant table refresh
+      queryClient.setQueriesData({ queryKey: ['wallets'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        return {
+          ...old,
+          results: old.results.map((c) =>
+            c.id === selectedCustForDeposit.id
+              ? { ...c, total_available_credit: (c.total_available_credit || 0) + numAmt }
+              : c
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process advance deposit.';
@@ -365,7 +378,20 @@ const Wallets = () => {
         'Refund Completed'
       );
       setShowRefundModal(false);
-      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+
+      // Direct cache update for instant table refresh
+      queryClient.setQueriesData({ queryKey: ['wallets'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        return {
+          ...old,
+          results: old.results.map((c) =>
+            c.id === selectedCustForRefund.id
+              ? { ...c, total_available_credit: Math.max(0, (c.total_available_credit || 0) - numAmt) }
+              : c
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process wallet refund.';
@@ -400,7 +426,24 @@ const Wallets = () => {
         res.message || `Successfully applied ₹${canPay.toFixed(2)} from wallet credit to settle stay dues.`,
         'Dues Settled'
       );
-      queryClient.invalidateQueries({ queryKey: ['wallets'] });
+
+      // Direct cache update for instant table refresh
+      queryClient.setQueriesData({ queryKey: ['wallets'] }, (old) => {
+        if (!old || !Array.isArray(old.results)) return old;
+        return {
+          ...old,
+          results: old.results.map((c) =>
+            c.id === cust.id
+              ? {
+                  ...c,
+                  total_available_credit: Math.max(0, (c.total_available_credit || 0) - canPay),
+                  pending_dues: Math.max(0, (c.pending_dues || 0) - canPay),
+                }
+              : c
+          ),
+        };
+      });
+      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to settle dues from wallet.';

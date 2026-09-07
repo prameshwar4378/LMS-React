@@ -63,15 +63,25 @@ const RoomTypes = () => {
     };
 
     try {
+      let saved;
       if (editingId) {
-        await updateRoomTypeApi(editingId, payload);
+        saved = await updateRoomTypeApi(editingId, payload);
+        showSuccess(`Room type "${saved.name || name}" updated successfully!`, 'Saved');
       } else {
-        await createRoomTypeApi(payload);
+        saved = await createRoomTypeApi(payload);
+        showSuccess(`Room type "${saved.name || name}" created successfully!`, 'Created');
       }
       setShowModal(false);
-      queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
+      queryClient.setQueriesData({ queryKey: ['roomTypes'] }, (old) => {
+        if (!Array.isArray(old)) return [saved];
+        if (editingId) {
+          return old.map((x) => (x.id === saved.id ? saved : x));
+        }
+        return [...old, saved];
+      });
+      queryClient.invalidateQueries({ queryKey: ['roomTypes'], refetchType: 'none' });
     } catch (err) {
-      alert('Error saving room type.');
+      showError(err.response?.data?.detail || 'Error saving room type.', 'Save Failed');
     }
   };
 
@@ -83,11 +93,21 @@ const RoomTypes = () => {
       cancelText: 'Cancel',
       confirmVariant: 'danger',
       onConfirm: async () => {
+        const prevRoomTypes = queryClient.getQueryData(['roomTypes']);
+        // Optimistically remove from list immediately (0.0s)
+        queryClient.setQueriesData({ queryKey: ['roomTypes'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.filter((item) => item.id !== rt.id);
+        });
+        showSuccess(`Room type "${rt.name}" deleted successfully!`, 'Deleted');
+
         try {
           await deleteRoomTypeApi(rt.id);
-          showSuccess(`Room type "${rt.name}" deleted successfully!`, 'Deleted');
-          queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
+          queryClient.invalidateQueries({ queryKey: ['roomTypes'], refetchType: 'none' });
         } catch (err) {
+          if (prevRoomTypes) {
+            queryClient.setQueryData(['roomTypes'], prevRoomTypes);
+          }
           showError('Cannot delete room type in use.', 'Deletion Failed');
         }
       },

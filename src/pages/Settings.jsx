@@ -5,6 +5,7 @@ import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import PageLoader from '../components/PageLoader';
 import RolePermissionMatrixModal from '../components/RolePermissionMatrixModal';
+import { compressImage } from '../utils/imageCompressor';
 
 const Settings = () => {
   const { showSuccess, showError } = useNotification();
@@ -62,13 +63,14 @@ const Settings = () => {
     try {
       let payload;
       if (logoFile) {
+        const compressedLogo = await compressImage(logoFile, { maxWidth: 800, maxHeight: 800 });
         payload = new FormData();
         Object.keys(settings).forEach((k) => {
           if (settings[k] !== null && settings[k] !== undefined && k !== 'logo') {
             payload.append(k, settings[k]);
           }
         });
-        payload.append('logo', logoFile);
+        payload.append('logo', compressedLogo);
       } else {
         payload = { ...settings };
       }
@@ -78,7 +80,8 @@ const Settings = () => {
       if (updated?.logo) {
         setLogoPreview(updated.logo);
       }
-      queryClient.invalidateQueries({ queryKey: ['settings'] });
+      queryClient.setQueryData(['settings'], updated);
+      queryClient.invalidateQueries({ queryKey: ['settings'], refetchType: 'none' });
       showSuccess('Lodge settings and branding updated successfully!', 'Settings Saved');
     } catch (err) {
       console.error(err);

@@ -308,12 +308,12 @@ const Checkout = () => {
         payload.payment_date = `${refundDate}T${timeStr}:00`;
       }
 
+      setShowRefundModal(false);
       await createPaymentApi(payload);
       showSuccess(`Refund of ₹${amt.toFixed(2)} returned to guest and logged as debit transaction!`, 'Refund Processed');
-      setShowRefundModal(false);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
-      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to process refund transaction.';
@@ -326,13 +326,13 @@ const Checkout = () => {
 
   // Handle Add Received Payment
   const handleRecordPayment = async (payData) => {
+    setShowPaymentModal(false);
     try {
       await createPaymentApi(payData);
       showSuccess('Payment transaction recorded successfully!', 'Payment Received');
-      setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
-      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error recording payment.';
       showError(errMsg, 'Payment Failed');
@@ -359,12 +359,21 @@ const Checkout = () => {
         room_status: roomNextStatus,
       };
 
+      // Optimistically update room housekeeping status in inventory
+      const roomNum = stay?.room_detail?.id || stay?.room;
+      if (roomNum) {
+        queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.map((r) => (r.id === roomNum ? { ...r, status: roomNextStatus } : r));
+        });
+      }
+
       await checkoutStayApi(id, payload);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
-      queryClient.invalidateQueries({ queryKey: ['stays'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
       showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
       setShowInvoice(true);
     } catch (err) {

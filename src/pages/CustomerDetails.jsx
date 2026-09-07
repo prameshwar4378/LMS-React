@@ -13,6 +13,7 @@ import { getMediaUrl } from '../utils/mediaUtils';
 import { exportTransactionsToExcel, exportTransactionsToPDF } from '../utils/exportUtils';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { compressImage } from '../utils/imageCompressor';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -261,15 +262,33 @@ const CustomerDetails = () => {
     formData.append('id_type', idType);
     if (idNumber) formData.append('id_number', idNumber);
 
-    if (photoFile) formData.append('photo', photoFile);
-    if (docFile) formData.append('id_document', docFile);
-    if (docBackFile) formData.append('id_document_back', docBackFile);
-
     try {
-      await updateCustomerApi(customer.id, formData);
+      // Compress photos/documents for fast upload
+      if (photoFile) {
+        const compressedPhoto = await compressImage(photoFile);
+        formData.append('photo', compressedPhoto);
+      }
+      if (docFile) {
+        const compressedDoc = await compressImage(docFile);
+        formData.append('id_document', compressedDoc);
+      }
+      if (docBackFile) {
+        const compressedDocBack = await compressImage(docBackFile);
+        formData.append('id_document_back', compressedDocBack);
+      }
+
+      const updatedCustomer = await updateCustomerApi(customer.id, formData);
       setShowEditModal(false);
-      queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
-      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      showSuccess(`Customer profile updated successfully.`, 'Profile Updated');
+
+      // Direct cache updates for instant refresh without re-download
+      queryClient.setQueryData(['customer-details', id], (old) => (old ? { ...old, ...updatedCustomer } : updatedCustomer));
+      queryClient.setQueriesData({ queryKey: ['customers'] }, (old) => {
+        if (!Array.isArray(old)) return old;
+        return old.map((c) => (c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c));
+      });
+      queryClient.invalidateQueries({ queryKey: ['customer-details', id], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
@@ -287,17 +306,21 @@ const CustomerDetails = () => {
       message: `Are you sure you want to permanently delete customer "${customer.full_name}" (${customer.mobile})? All associated records will be removed.`,
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        // Optimistic delete: Close modal and navigate immediately in 0.0s
+        setConfirmModal({ show: false });
+        queryClient.setQueriesData({ queryKey: ['customers'] }, (old) => {
+          if (!Array.isArray(old)) return old;
+          return old.filter((c) => c.id !== customer.id);
+        });
+        showSuccess(`Customer profile '${customer.full_name}' deleted successfully.`, 'Customer Deleted');
+        navigate('/customers');
+
         try {
           await deleteCustomerApi(customer.id);
-          setConfirmModal({ show: false });
-          showSuccess(`Customer profile '${customer.full_name}' deleted successfully.`, 'Customer Deleted');
-          queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
-          queryClient.invalidateQueries({ queryKey: ['customers'] });
-          navigate('/customers');
+          queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
         } catch (err) {
           showError(err.response?.data?.error || 'Error deleting customer record.', 'Deletion Failed');
-          setConfirmModal({ show: false });
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
         }
       },
     });

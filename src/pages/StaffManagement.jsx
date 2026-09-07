@@ -159,7 +159,11 @@ const StaffManagement = () => {
       });
       setShowCredentialsModal(true);
 
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
+      queryClient.setQueriesData({ queryKey: ['staff'] }, (old) => {
+        if (!Array.isArray(old)) return [res];
+        return [res, ...old];
+      });
+      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.username?.[0]
@@ -178,11 +182,21 @@ const StaffManagement = () => {
       return;
     }
     setActionUserId(targetUser.id);
+    const prevStaff = queryClient.getQueryData(['staff']);
+    // Optimistic toggle active status (0.0s)
+    queryClient.setQueriesData({ queryKey: ['staff'] }, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((u) => (u.id === targetUser.id ? { ...u, is_active: !u.is_active } : u));
+    });
+
     try {
       const res = await toggleUserActiveApi(targetUser.id);
       showSuccess(res.message, 'Status Updated');
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
+      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
     } catch (err) {
+      if (prevStaff) {
+        queryClient.setQueryData(['staff'], prevStaff);
+      }
       showError('Failed to change user status.', 'Error');
     } finally {
       setActionUserId(null);
@@ -202,11 +216,21 @@ const StaffManagement = () => {
       return;
     }
     setActionUserId(targetUser.id);
+    const prevStaff = queryClient.getQueryData(['staff']);
+    // Optimistic delete staff (0.0s)
+    queryClient.setQueriesData({ queryKey: ['staff'] }, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.filter((u) => u.id !== targetUser.id);
+    });
+    showSuccess(`User '${targetUser.username}' has been deleted.`, 'User Deleted');
+
     try {
       await deleteUserApi(targetUser.id);
-      showSuccess(`User '${targetUser.username}' has been deleted.`, 'User Deleted');
-      queryClient.invalidateQueries({ queryKey: ['staff'] });
+      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
     } catch (err) {
+      if (prevStaff) {
+        queryClient.setQueryData(['staff'], prevStaff);
+      }
       showError('Failed to delete staff account.', 'Error');
     } finally {
       setActionUserId(null);

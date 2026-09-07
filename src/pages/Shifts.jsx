@@ -1269,7 +1269,12 @@ const Shifts = () => {
         pendingHandovers={currentData?.pending_handovers || []}
         onSuccess={(newShift) => {
           showSuccessToast(`Shift #${newShift.shift_number} opened successfully.`);
-          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          queryClient.setQueryData(['shifts', 'current'], (old) => ({
+            ...(old || {}),
+            has_active_shift: true,
+            shift: newShift,
+          }));
+          queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
         }}
       />
 
@@ -1283,7 +1288,12 @@ const Shifts = () => {
         financials={selectedShiftForClose?.financials || currentFin}
         onSuccess={(closedShift) => {
           showSuccessToast(`Shift closing submitted successfully.`);
-          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          queryClient.setQueryData(['shifts', 'current'], (old) => ({
+            ...(old || {}),
+            has_active_shift: false,
+            shift: null,
+          }));
+          queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
         }}
       />
 

@@ -3249,3 +3249,781 @@ export const exportShiftReconciliationToPDF = (data, hotelInfo = {}, options = {
   doc.save(fileName);
   return doc;
 };
+
+/**
+ * Exports advance bookings and reservations list to Excel (.xls) with native SpreadsheetML formatting.
+ */
+export const exportBookingsToExcel = (bookings, filterInfo = {}, propertyInfo = {}) => {
+  if (!bookings || bookings.length === 0) {
+    alert('No bookings available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'Lodge & Hotel Management';
+  const hotelCode = propertyInfo?.code || propertyInfo?.property_code || 'HOTEL-PMS';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalBookings = bookings.length;
+  const confirmedCount = bookings.filter((b) => b.status === 'CONFIRMED').length;
+  const checkedInCount = bookings.filter((b) => b.status === 'CHECKED_IN').length;
+  const totalAdvance = bookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
+  const totalRate = bookings.reduce((sum, b) => sum + parseFloat(b.room_rate || 0), 0);
+
+  const xmlRows = bookings.map((b, idx) => {
+    const checkInStr = b.check_in_date ? `${b.check_in_date} ${b.check_in_time || '12:00'}` : '—';
+    const checkOutStr = b.expected_checkout_date ? `${b.expected_checkout_date} ${b.expected_checkout_time || '11:00'}` : '—';
+    const guestName = b.customer_detail?.full_name || 'Guest';
+    const mobile = b.customer_detail?.mobile || 'N/A';
+    const roomNum = b.room_detail?.room_number ? `Room ${b.room_detail.room_number}` : 'Unassigned';
+    const roomType = b.room_detail?.room_type_name || 'Standard';
+    const rateVal = parseFloat(b.room_rate || 0);
+    const advanceVal = parseFloat(b.advance_amount || 0);
+    const bookedOn = b.created_at ? new Date(b.created_at).toLocaleDateString('en-IN') : '—';
+
+    return `
+      <Row ss:Height="20">
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+        <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(b.booking_number || `BK-${b.id}`)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(bookedOn)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(guestName)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(mobile)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(roomNum)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(roomType)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(checkInStr)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(checkOutStr)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrency"><Data ss:Type="Number">${rateVal.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCurrencyCredit"><Data ss:Type="Number">${advanceVal.toFixed(2)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(b.status || 'CONFIRMED')}</Data></Cell>
+      </Row>
+    `;
+  }).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Italic="1" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8.5" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8.5" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#2563EB"/>
+   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardConfirmed">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0284C7"/>
+   <Interior ss:Color="#F0F9FF" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BAE6FD"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardCheckedIn">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#16A34A"/>
+   <Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardAdvance">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#D97706"/>
+   <Interior ss:Color="#FFFBEB" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#FDE68A"/></Borders>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCurrency">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <NumberFormat ss:Format="&quot;₹&quot;#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCurrencyCredit">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#15803D"/>
+   <NumberFormat ss:Format="&quot;₹&quot;#,##0.00"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="TotalLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="TotalVal">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#15803D"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <NumberFormat ss:Format="&quot;₹&quot;#,##0.00"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Advance Bookings">
+  <Table ss:DefaultRowHeight="18">
+   <Column ss:Width="30"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="80"/>
+   <Column ss:Width="130"/>
+   <Column ss:Width="95"/>
+   <Column ss:Width="85"/>
+   <Column ss:Width="95"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="85"/>
+   <Column ss:Width="95"/>
+   <Column ss:Width="85"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="10" ss:StyleID="MetaLabel"><Data ss:Type="String">Property Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Advance Bookings &amp; Reservation Register</Data></Cell>
+    <Cell ss:Index="10" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardTotal"><Data ss:Type="String">TOTAL BOOKINGS: ${totalBookings}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardConfirmed"><Data ss:Type="String">CONFIRMED: ${confirmedCount}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardCheckedIn"><Data ss:Type="String">CHECKED-IN: ${checkedInCount}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardAdvance"><Data ss:Type="String">ADVANCE: ₹${totalAdvance.toFixed(2)}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Booking #</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Booked On</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Guest Name</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Mobile</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Room #</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Room Type</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Check-In</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Expected Check-Out</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Rate / Night</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Advance Paid</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Status</Data></Cell>
+   </Row>
+   ${xmlRows}
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="8" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTALS:</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalRate.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalAdvance.toFixed(2)}</Data></Cell>
+    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Advance_Bookings_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports advance bookings and reservations list to a true A4 Landscape vector PDF report.
+ */
+export const exportBookingsToPDF = (bookings, filterInfo = {}, propertyInfo = {}) => {
+  if (!bookings || bookings.length === 0) {
+    alert('No bookings available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalBookings = bookings.length;
+  const confirmedCount = bookings.filter((b) => b.status === 'CONFIRMED').length;
+  const checkedInCount = bookings.filter((b) => b.status === 'CHECKED_IN').length;
+  const totalAdvance = bookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
+  const totalRate = bookings.reduce((sum, b) => sum + parseFloat(b.room_rate || 0), 0);
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('ADVANCE BOOKINGS & RESERVATIONS AUDIT', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName} | Scope: ${filterInfo.status || 'All Statuses'}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Records: ${totalBookings}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Summary Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL RESERVATIONS', val: String(totalBookings), color: [37, 99, 235] },
+    { label: 'CONFIRMED PENDING', val: String(confirmedCount), color: [2, 132, 199] },
+    { label: 'CHECKED-IN STAYS', val: String(checkedInCount), color: [22, 163, 74] },
+    { label: 'TOTAL ADVANCE PAID', val: formatPdfCurrency(totalAdvance), color: [217, 119, 6] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    // Indicator bar
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    // Label
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    // Value
+    doc.setFontSize(9);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table Data
+  const tableHeaders = [
+    ['#', 'Booking #', 'Guest Name', 'Contact', 'Room', 'Check-In', 'Exp Check-Out', 'Rate / Night', 'Advance Paid', 'Status']
+  ];
+
+  const tableRows = bookings.map((b, idx) => {
+    const guestName = b.customer_detail?.full_name || 'Guest';
+    const mobile = b.customer_detail?.mobile || '—';
+    const room = b.room_detail?.room_number ? `Rm ${b.room_detail.room_number}` : '—';
+    const checkIn = b.check_in_date ? `${b.check_in_date}\n${b.check_in_time || '12:00'}` : '—';
+    const checkOut = b.expected_checkout_date ? `${b.expected_checkout_date}\n${b.expected_checkout_time || '11:00'}` : '—';
+    const rate = formatPdfCurrency(b.room_rate);
+    const advance = formatPdfCurrency(b.advance_amount);
+
+    return [
+      String(idx + 1),
+      b.booking_number || `BK-${b.id}`,
+      guestName,
+      mobile,
+      room,
+      checkIn,
+      checkOut,
+      rate,
+      advance,
+      b.status || 'CONFIRMED',
+    ];
+  });
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    foot: [
+      ['', '', '', '', '', '', 'TOTALS:', formatPdfCurrency(totalRate), formatPdfCurrency(totalAdvance), '']
+    ],
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7.5,
+      cellPadding: 2,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'center', cellWidth: 26, fontStyle: 'bold' },
+      2: { halign: 'left', cellWidth: 42 },
+      3: { halign: 'center', cellWidth: 26 },
+      4: { halign: 'center', cellWidth: 20 },
+      5: { halign: 'center', cellWidth: 28 },
+      6: { halign: 'center', cellWidth: 28 },
+      7: { halign: 'right', cellWidth: 26 },
+      8: { halign: 'right', cellWidth: 28, fontStyle: 'bold', textColor: [21, 128, 61] },
+      9: { halign: 'center', cellWidth: 25 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Advance Bookings Register • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Advance_Bookings_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Exports customer & guest directory to Excel (.xls) with native SpreadsheetML formatting.
+ */
+export const exportCustomersToExcel = (customers, filterInfo = {}, propertyInfo = {}) => {
+  if (!customers || customers.length === 0) {
+    alert('No customer records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'Lodge & Hotel Management';
+  const hotelCode = propertyInfo?.code || propertyInfo?.property_code || 'HOTEL-PMS';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalCount = customers.length;
+  const verifiedIdCount = customers.filter((c) => c.id_number && String(c.id_number).trim() !== '').length;
+  const totalStays = customers.reduce((sum, c) => sum + (parseInt(c.stay_count, 10) || 0), 0);
+  const withEmailCount = customers.filter((c) => c.email && String(c.email).trim() !== '').length;
+
+  const xmlRows = customers.map((c, idx) => {
+    const fullName = c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Guest';
+    const mobile = c.mobile || 'N/A';
+    const altMobile = c.alternate_mobile || '—';
+    const email = c.email || '—';
+    const gender = c.gender || '—';
+    const city = c.city || '—';
+    const state = c.state || '—';
+    const address = c.address || '—';
+    const idType = c.id_type || 'N/A';
+    const idNum = c.id_number || 'N/A';
+    const stays = parseInt(c.stay_count, 10) || 0;
+    const registeredDate = c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN') : '—';
+
+    return `
+      <Row ss:Height="20">
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${idx + 1}</Data></Cell>
+        <Cell ss:StyleID="CellTextBold"><Data ss:Type="String">${escapeXml(fullName)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(mobile)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(altMobile)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(email)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(gender)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(city)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(state)}</Data></Cell>
+        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(address)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(idType)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(idNum)}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${stays}</Data></Cell>
+        <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${escapeXml(registeredDate)}</Data></Cell>
+      </Row>
+    `;
+  }).join('');
+
+  const xmlContent = `<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Default" ss:Name="Normal">
+   <Alignment ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="TitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="14" ss:Bold="1" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="SubTitleStyle">
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Italic="1" ss:Color="#475569"/>
+  </Style>
+  <Style ss:ID="MetaLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8.5" ss:Bold="1" ss:Color="#64748B"/>
+  </Style>
+  <Style ss:ID="MetaValue">
+   <Alignment ss:Horizontal="Left" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="8.5" ss:Color="#0F172A"/>
+  </Style>
+  <Style ss:ID="KpiCardTotal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#2563EB"/>
+   <Interior ss:Color="#EFF6FF" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BFDBFE"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardId">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#16A34A"/>
+   <Interior ss:Color="#F0FDF4" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BBF7D0"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardStays">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0284C7"/>
+   <Interior ss:Color="#F0F9FF" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#BAE6FD"/></Borders>
+  </Style>
+  <Style ss:ID="KpiCardEmail">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#7C3AED"/>
+   <Interior ss:Color="#F5F3FF" ss:Pattern="Solid"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#DDD6FE"/></Borders>
+  </Style>
+  <Style ss:ID="ColHeader">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>
+   <Interior ss:Color="#0F172A" ss:Pattern="Solid"/>
+  </Style>
+  <Style ss:ID="CellText">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellTextBold">
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="CellCenter">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Color="#0F172A"/>
+   <Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#E2E8F0"/></Borders>
+  </Style>
+  <Style ss:ID="TotalLabel">
+   <Alignment ss:Horizontal="Right" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="9" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+   </Borders>
+  </Style>
+  <Style ss:ID="TotalVal">
+   <Alignment ss:Horizontal="Center" ss:Vertical="Center"/>
+   <Font ss:FontName="Segoe UI" ss:Size="10" ss:Bold="1" ss:Color="#0F172A"/>
+   <Interior ss:Color="#F1F5F9" ss:Pattern="Solid"/>
+   <Borders>
+    <Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+    <Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="2" ss:Color="#0F172A"/>
+   </Borders>
+  </Style>
+ </Styles>
+ <Worksheet ss:Name="Customer Directory">
+  <Table ss:DefaultRowHeight="18">
+   <Column ss:Width="30"/>
+   <Column ss:Width="160"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="100"/>
+   <Column ss:Width="140"/>
+   <Column ss:Width="65"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="110"/>
+   <Column ss:Width="180"/>
+   <Column ss:Width="80"/>
+   <Column ss:Width="120"/>
+   <Column ss:Width="75"/>
+   <Column ss:Width="90"/>
+   <Row ss:Height="24">
+    <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
+    <Cell ss:Index="11" ss:StyleID="MetaLabel"><Data ss:Type="String">Property Code:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(hotelCode)}</Data></Cell>
+   </Row>
+   <Row ss:Height="18">
+    <Cell ss:StyleID="SubTitleStyle"><Data ss:Type="String">Customer &amp; Guest Directory Register</Data></Cell>
+    <Cell ss:Index="11" ss:StyleID="MetaLabel"><Data ss:Type="String">Generated:</Data></Cell>
+    <Cell ss:StyleID="MetaValue"><Data ss:Type="String">${escapeXml(nowStr)}</Data></Cell>
+   </Row>
+   <Row ss:Height="10"/>
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardTotal"><Data ss:Type="String">TOTAL PROFILES: ${totalCount}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardId"><Data ss:Type="String">ID VERIFIED: ${verifiedIdCount}</Data></Cell>
+    <Cell ss:MergeAcross="2" ss:StyleID="KpiCardStays"><Data ss:Type="String">TOTAL STAYS: ${totalStays}</Data></Cell>
+    <Cell ss:MergeAcross="3" ss:StyleID="KpiCardEmail"><Data ss:Type="String">WITH EMAIL: ${withEmailCount}</Data></Cell>
+   </Row>
+   <Row ss:Height="12"/>
+   <Row ss:Height="22">
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">#</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Full Name</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Mobile</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Alt Mobile</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Email</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Gender</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">City</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">State</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Address</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">ID Type</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">ID Number</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Stays</Data></Cell>
+    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Registered On</Data></Cell>
+   </Row>
+   ${xmlRows}
+   <Row ss:Height="22">
+    <Cell ss:MergeAcross="10" ss:StyleID="TotalLabel"><Data ss:Type="String">TOTAL GUEST STAYS RECORDED:</Data></Cell>
+    <Cell ss:StyleID="TotalVal"><Data ss:Type="Number">${totalStays}</Data></Cell>
+    <Cell ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
+   </Row>
+  </Table>
+  <WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">
+   <PageSetup><Layout x:Orientation="Landscape"/></PageSetup>
+   <FitToPage/>
+   <Print><FitWidth>1</FitWidth><FitHeight>0</FitHeight><PaperSizeIndex>9</PaperSizeIndex></Print>
+  </WorksheetOptions>
+ </Worksheet>
+</Workbook>`;
+
+  const blob = new Blob([xmlContent], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `Customer_Directory_${safeDate}.xls`);
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+};
+
+/**
+ * Exports customer & guest directory to a true A4 Landscape vector PDF report.
+ */
+export const exportCustomersToPDF = (customers, filterInfo = {}, propertyInfo = {}) => {
+  if (!customers || customers.length === 0) {
+    alert('No customer records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalCount = customers.length;
+  const verifiedIdCount = customers.filter((c) => c.id_number && String(c.id_number).trim() !== '').length;
+  const totalStays = customers.reduce((sum, c) => sum + (parseInt(c.stay_count, 10) || 0), 0);
+  const withEmailCount = customers.filter((c) => c.email && String(c.email).trim() !== '').length;
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('CUSTOMER & GUEST DIRECTORY', 14, 14);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Property: ${hotelName}${filterInfo.search ? ` | Search Filter: "${filterInfo.search}"` : ''}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Profiles: ${totalCount}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Summary Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL GUEST PROFILES', val: String(totalCount), color: [37, 99, 235] },
+    { label: 'GOVT ID VERIFIED', val: String(verifiedIdCount), color: [22, 163, 74] },
+    { label: 'HISTORIC STAYS', val: String(totalStays), color: [2, 132, 199] },
+    { label: 'PROFILES WITH EMAIL', val: String(withEmailCount), color: [124, 58, 237] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    // Indicator bar
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    // Label
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    // Value
+    doc.setFontSize(9);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table Data
+  const tableHeaders = [
+    ['#', 'Full Name', 'Mobile Number', 'Email', 'City / Location', 'Statutory ID Proof', 'Stay Count', 'Registered']
+  ];
+
+  const tableRows = customers.map((c, idx) => {
+    const fullName = c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Guest';
+    const mobile = c.mobile || '—';
+    const email = c.email || '—';
+    const city = c.city ? `${c.city}${c.state ? `, ${c.state}` : ''}` : c.address || '—';
+    const idProof = c.id_number ? `${c.id_type || 'ID'}: ${c.id_number}` : 'Unverified';
+    const stays = `${c.stay_count || 0} Stay(s)`;
+    const regDate = c.created_at ? new Date(c.created_at).toLocaleDateString('en-IN') : '—';
+
+    return [
+      String(idx + 1),
+      fullName,
+      mobile,
+      email,
+      city,
+      idProof,
+      stays,
+      regDate,
+    ];
+  });
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    foot: [
+      ['', 'TOTAL PROFILES: ' + totalCount, '', '', '', '', totalStays + ' Total Stays', '']
+    ],
+    startY: 41,
+    margin: { left: 14, right: 14 },
+    theme: 'grid',
+    styles: {
+      font: 'helvetica',
+      fontSize: 7.5,
+      cellPadding: 2,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [15, 23, 42],
+      textColor: [255, 255, 255],
+      fontStyle: 'bold',
+      halign: 'center',
+    },
+    footStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'left', cellWidth: 48, fontStyle: 'bold' },
+      2: { halign: 'center', cellWidth: 30 },
+      3: { halign: 'left', cellWidth: 42 },
+      4: { halign: 'left', cellWidth: 50 },
+      5: { halign: 'center', cellWidth: 38 },
+      6: { halign: 'center', cellWidth: 24, fontStyle: 'bold', textColor: [2, 132, 199] },
+      7: { halign: 'center', cellWidth: 26 },
+    },
+    alternateRowStyles: {
+      fillColor: [248, 250, 252],
+    },
+  });
+
+  // Footers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • Guest & Customer Directory • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`Customer_Directory_${safeDate}.pdf`);
+  return doc;
+};
+
+

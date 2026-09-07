@@ -493,9 +493,9 @@ const PlatformProperties = ({ initialTab = null }) => {
 
   const loadAllPlatformData = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['platform-properties'] }),
-      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'] }),
-      queryClient.invalidateQueries({ queryKey: ['platform-health'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform-properties'], refetchType: 'none' }),
+      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'], refetchType: 'none' }),
+      queryClient.invalidateQueries({ queryKey: ['platform-health'], refetchType: 'none' }),
     ]);
   };
 
@@ -550,42 +550,15 @@ const PlatformProperties = ({ initialTab = null }) => {
     if (!selectedHotel) return;
     setSavingHotel(true);
     try {
-      await updatePlatformPropertyApi(selectedHotel.id, hotelFormData);
-      showSuccess(
-        `Configurations for "${hotelFormData.name || selectedHotel.name}" have been saved successfully! Room limits, expiration date (${hotelFormData.valid_until || 'Active'}), and operational mode are updated.`,
-        'Configuration Saved'
-      );
-      showToast(`Configurations for ${hotelFormData.name} saved successfully!`);
-      const res = await getPlatformPropertyDetailApi(selectedHotel.id);
+      const res = await updatePlatformPropertyApi(selectedHotel.id, hotelFormData);
+      showSuccess(`Hotel settings for "${hotelFormData.name}" updated successfully!`, 'Settings Saved');
+      showToast(`Hotel settings for "${hotelFormData.name}" updated successfully!`);
       if (res.property) {
         setSelectedHotel(res.property);
-        setHotelFormData(prev => ({
-          ...prev,
-          name: res.property.name,
-          code: res.property.code,
-          total_rooms: res.property.total_rooms,
-          overall_capacity: res.property.overall_capacity,
-          owner_name: res.property.owner_name,
-          owner_email: res.property.owner_email,
-          owner_phone: res.property.owner_phone,
-          address: res.property.address || '',
-          city: res.property.city || '',
-          state: res.property.state || '',
-          pincode: res.property.pincode || '',
-          gstin: res.property.gstin || '',
-          subdomain: res.property.subdomain || '',
-          valid_until: res.property.subscription?.valid_until || getDefaultExpiryDate(1),
-          plan_code: res.property.subscription?.plan_code || 'STARTER',
-          billing_cycle: res.property.subscription?.billing_cycle || 'ANNUAL',
-          billing_amount: res.property.subscription?.billing_amount || 9999.00,
-          payment_status: res.property.subscription?.payment_status || 'PAID',
-          is_active: res.property.is_active,
-          operation_mode: res.property.operation_mode || 'SHIFT_WISE'
-        }));
       }
       loadAllPlatformData();
     } catch (err) {
-      showError(err.response?.data?.error || err.response?.data?.message || 'Failed to save hotel configurations.', 'Save Failed');
+      showError(err.response?.data?.error || 'Failed to update hotel settings.', 'Update Failed');
     } finally {
       setSavingHotel(false);
     }
@@ -596,11 +569,11 @@ const PlatformProperties = ({ initialTab = null }) => {
     e.preventDefault();
     if (!selectedHotel) return;
     setAddingBranch(true);
+    setShowAddBranchModal(false);
     try {
       const res = await addHotelBranchApi(selectedHotel.id, branchFormData);
       showSuccess(`Branch "${branchFormData.name}" added successfully to ${selectedHotel.name}!`, 'Branch Created');
       showToast(`Branch "${branchFormData.name}" added successfully!`);
-      setShowAddBranchModal(false);
       setBranchFormData({
         name: '',
         code: '',
@@ -623,30 +596,47 @@ const PlatformProperties = ({ initialTab = null }) => {
   // Toggle Branch Status
   const handleToggleBranchStatus = async (branchId) => {
     if (!selectedHotel) return;
+    // Optimistic toggle
+    setSelectedHotel((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        branches: (prev.branches || []).map((b) => (b.id === branchId ? { ...b, is_active: !b.is_active } : b)),
+      };
+    });
     try {
       const res = await toggleHotelBranchStatusApi(selectedHotel.id, branchId);
       showSuccess(res.message || 'Branch status updated successfully.', 'Status Updated');
       showToast(res.message);
-      const updated = await getPlatformPropertyDetailApi(selectedHotel.id);
-      if (updated.property) setSelectedHotel(updated.property);
       loadAllPlatformData();
     } catch (err) {
       showError('Failed to toggle branch status.', 'Action Failed');
+      loadAllPlatformData();
     }
   };
 
   const handleToggleStatus = async (id, name) => {
+    // Optimistic toggle status in cache
+    queryClient.setQueryData(['platform-properties'], (old) => {
+      if (!old || !Array.isArray(old.properties)) return old;
+      return {
+        ...old,
+        properties: old.properties.map((p) => (p.id === id ? { ...p, is_active: !p.is_active } : p)),
+      };
+    });
+    if (selectedHotel && selectedHotel.id === id) {
+      setSelectedHotel((prev) => (prev ? { ...prev, is_active: !prev.is_active } : prev));
+      setHotelFormData((prev) => ({ ...prev, is_active: !prev.is_active }));
+    }
+
     try {
       const res = await togglePlatformPropertyStatusApi(id);
       showSuccess(`Hotel status updated: ${res.message}`, 'Status Updated');
       showToast(`Hotel status updated: ${res.message}`);
-      if (selectedHotel && selectedHotel.id === id) {
-        setSelectedHotel({ ...selectedHotel, is_active: res.is_active });
-        setHotelFormData({ ...hotelFormData, is_active: res.is_active });
-      }
       loadAllPlatformData();
     } catch (err) {
       showError('Failed to toggle status.', 'Action Failed');
+      loadAllPlatformData();
     }
   };
 

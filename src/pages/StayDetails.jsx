@@ -23,6 +23,7 @@ import PageLoader from '../components/PageLoader';
 import CameraCaptureModal from '../components/CameraCaptureModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
+import { compressImage } from '../utils/imageCompressor';
 import { getMediaUrl } from '../utils/mediaUtils';
 
 const StayDetails = () => {
@@ -291,13 +292,24 @@ const StayDetails = () => {
       formData.append('id_type', guestIdType);
       if (guestIdNumber) formData.append('id_number', guestIdNumber);
 
-      if (guestPhotoFile) formData.append('photo', guestPhotoFile);
-      if (guestDocFile) formData.append('id_document', guestDocFile);
-      if (guestDocBackFile) formData.append('id_document_back', guestDocBackFile);
+      if (guestPhotoFile) {
+        const compressed = await compressImage(guestPhotoFile);
+        formData.append('photo', compressed);
+      }
+      if (guestDocFile) {
+        const compressed = await compressImage(guestDocFile);
+        formData.append('id_document', compressed);
+      }
+      if (guestDocBackFile) {
+        const compressed = await compressImage(guestDocBackFile);
+        formData.append('id_document_back', compressed);
+      }
 
       await updateCustomerApi(stay.primary_customer, formData);
       setShowEditGuestModal(false);
+      showSuccess('Primary guest profile updated successfully.', 'Guest Updated');
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to update guest details and documents.');
     } finally {
@@ -460,15 +472,23 @@ const StayDetails = () => {
       confirmText: 'Remove Guest',
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        setConfirmModal({ show: false });
+        const prevStay = queryClient.getQueryData(['stay-details', id]);
+        queryClient.setQueryData(['stay-details', id], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            additional_guests: (old.additional_guests || []).filter((g) => g.id !== guestId),
+          };
+        });
+        showSuccess(`Guest '${guestName}' removed from stay roster.`, 'Guest Removed');
+
         try {
           await deleteStayGuestApi(guestId);
-          setConfirmModal({ show: false });
-          showSuccess(`Guest '${guestName}' removed from stay roster.`, 'Guest Removed');
-          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id], refetchType: 'none' });
         } catch (err) {
+          if (prevStay) queryClient.setQueryData(['stay-details', id], prevStay);
           showError('Error removing guest from roster.', 'Removal Failed');
-          setConfirmModal({ show: false });
         }
       },
     });
@@ -496,15 +516,23 @@ const StayDetails = () => {
       confirmText: 'Delete Charge',
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        setConfirmModal({ show: false });
+        const prevStay = queryClient.getQueryData(['stay-details', id]);
+        queryClient.setQueryData(['stay-details', id], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            extra_charges: (old.extra_charges || []).filter((c) => c.id !== chargeId),
+          };
+        });
+        showSuccess(`Extra charge '${chargeName || 'item'}' deleted from bill.`, 'Charge Deleted');
+
         try {
           await deleteExtraChargeApi(chargeId);
-          setConfirmModal({ show: false });
-          showSuccess(`Extra charge '${chargeName || 'item'}' deleted from bill.`, 'Charge Deleted');
           queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
+          if (prevStay) queryClient.setQueryData(['stay-details', id], prevStay);
           showError('Error deleting charge.', 'Deletion Failed');
-          setConfirmModal({ show: false });
         }
       },
     });
@@ -554,15 +582,23 @@ const StayDetails = () => {
       confirmText: 'Delete Payment',
       loading: false,
       onConfirm: async () => {
-        setConfirmModal((prev) => ({ ...prev, loading: true }));
+        setConfirmModal({ show: false });
+        const prevStay = queryClient.getQueryData(['stay-details', id]);
+        queryClient.setQueryData(['stay-details', id], (old) => {
+          if (!old) return old;
+          return {
+            ...old,
+            payments: (old.payments || []).filter((p) => p.id !== paymentId),
+          };
+        });
+        showSuccess(`Payment transaction #${paymentNumber} deleted.`, 'Payment Deleted');
+
         try {
           await deletePaymentApi(paymentId);
-          setConfirmModal({ show: false });
-          showSuccess(`Payment transaction #${paymentNumber} deleted.`, 'Payment Deleted');
           queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
+          if (prevStay) queryClient.setQueryData(['stay-details', id], prevStay);
           showError('Error deleting payment transaction.', 'Deletion Failed');
-          setConfirmModal({ show: false });
         }
       },
     });
