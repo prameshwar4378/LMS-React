@@ -110,12 +110,13 @@ const StayDetails = () => {
   } = useQuery({
     queryKey: ['stay-details', id],
     queryFn: () => getStayByIdApi(id),
-    staleTime: 2 * 60 * 1000,
+    staleTime: 0,
     gcTime: 5 * 60 * 1000,
     enabled: !!id,
   });
 
   const isCompleted = stay?.status === 'CHECKED_OUT' || stay?.status === 'COMPLETED';
+  const isCheckedOut = isCompleted || Boolean(stay?.actual_checkout_date) || Boolean(stay?.invoice_number) || Boolean(stay?.has_invoice);
   // Strict rule: if completed, frozen for everyone by default unless Admin explicitly unlocks override
   const canEdit = !isCompleted || (isAdmin && adminOverrideUnlocked);
 
@@ -720,9 +721,11 @@ const StayDetails = () => {
 
             {/* Top Action Suite */}
             <div className="d-flex gap-2 flex-wrap">
-              <button className="btn btn-outline-primary fw-semibold" onClick={() => setShowInvoiceModal(true)}>
-                <i className="bi bi-printer me-1"></i> Invoice
-              </button>
+              {isCheckedOut && (
+                <button className="btn btn-outline-primary fw-semibold d-flex align-items-center gap-1.5 shadow-2xs" onClick={() => setShowInvoiceModal(true)}>
+                  <i className="bi bi-printer me-1"></i> Invoice
+                </button>
+              )}
               {stay.status === 'CHECKED_IN' && (
                 <button type="button" className="btn btn-danger fw-bold shadow d-flex align-items-center gap-1.5" onClick={handleProceedToCheckout}>
                   <i className="bi bi-box-arrow-right"></i> Proceed to Checkout

@@ -372,6 +372,7 @@ const Checkout = () => {
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
       queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['stay-details'] });
       queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['customer-details'] });

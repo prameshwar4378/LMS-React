@@ -7,10 +7,12 @@ import { Printer, X, Receipt, CheckCircle, FileText } from 'lucide-react';
 const InvoicePreviewModal = ({ show, onClose, stayId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     if (show && stayId) {
       setLoading(true);
+      setErrorMsg('');
       getInvoiceByStayApi(stayId)
         .then((res) => {
           setData(res);
@@ -18,6 +20,8 @@ const InvoicePreviewModal = ({ show, onClose, stayId }) => {
         })
         .catch((err) => {
           console.error(err);
+          const detail = err.response?.data?.detail || err.response?.data?.message || 'Invoice is generated only after checkout is completed.';
+          setErrorMsg(detail);
           setLoading(false);
         });
     }
@@ -98,6 +102,12 @@ const InvoicePreviewModal = ({ show, onClose, stayId }) => {
               <div className="text-center py-5">
                 <div className="spinner-border text-primary" role="status"></div>
                 <div className="mt-2 text-muted small">Generating A4 Tax Invoice...</div>
+              </div>
+            ) : errorMsg ? (
+              <div className="alert alert-warning text-center py-4 my-2 rounded-3 border border-warning shadow-xs">
+                <i className="bi bi-exclamation-triangle-fill fs-3 d-block mb-2 text-warning"></i>
+                <h6 className="fw-bold text-dark mb-1">{errorMsg}</h6>
+                <p className="text-secondary small mb-0">Official tax invoices are finalized upon guest checkout. Please complete checkout first.</p>
               </div>
             ) : !data ? (
               <div className="alert alert-danger">Unable to load invoice data.</div>
