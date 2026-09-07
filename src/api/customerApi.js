@@ -1,9 +1,11 @@
 import api from './axios';
 
 export const getCustomersApi = async (search = '') => {
-  const url = search ? `/customers/?search=${encodeURIComponent(search)}` : '/customers/';
+  // Guard against TanStack Query context object or non-string search parameter
+  const term = typeof search === 'string' ? search.trim() : '';
+  const url = term ? `/customers/?search=${encodeURIComponent(term)}` : '/customers/';
   const res = await api.get(url);
-  return res.data;
+  return Array.isArray(res.data) ? res.data : (res.data?.results || []);
 };
 
 export const getCustomerByIdApi = async (id) => {
@@ -16,9 +18,11 @@ export const getCustomerHistoryApi = async (id) => {
   return res.data;
 };
 
-export const searchCustomersApi = async (query) => {
-  const res = await api.get(`/customers/search/?q=${encodeURIComponent(query)}`);
-  return res.data;
+export const searchCustomersApi = async (query = '') => {
+  const term = typeof query === 'string' ? query.trim() : '';
+  if (!term) return [];
+  const res = await api.get(`/customers/search/?q=${encodeURIComponent(term)}`);
+  return Array.isArray(res.data) ? res.data : (res.data?.results || []);
 };
 
 export const createCustomerApi = async (formData) => {

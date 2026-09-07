@@ -1,21 +1,42 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { formatDate } from '../utils/dateUtils';
+import { searchCustomersApi } from '../api/customerApi';
 
 const SearchableCustomerSelect = ({
-  customers,
+  customers = [],
   selectedCustomerId,
   onSelectCustomer,
-  placeholder = "Search customer by name, mobile, or ID..."
+  placeholder = "Search customer by name or mobile number..."
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const containerRef = useRef(null);
+  const [remoteResults, setRemoteResults] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [cachedSelectedCust, setCachedSelectedCust] = useState(null);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
 
-  // Find currently selected customer object
-  const selectedCust = customers.find(
-    (c) => String(c.id) === String(selectedCustomerId)
-  );
+  const containerRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Sync cached customer when selectedCustomerId or customer lists change
+  useEffect(() => {
+    if (!selectedCustomerId) {
+      setCachedSelectedCust(null);
+      return;
+    }
+    const found =
+      (customers || []).find((c) => String(c.id) === String(selectedCustomerId)) ||
+      remoteResults.find((c) => String(c.id) === String(selectedCustomerId));
+
+    if (found) {
+      setCachedSelectedCust(found);
+    }
+  }, [selectedCustomerId, customers, remoteResults]);
+
+  const selectedCust =
+    cachedSelectedCust ||
+    (customers || []).find((c) => String(c.id) === String(selectedCustomerId));
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -28,26 +49,106 @@ const SearchableCustomerSelect = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Filter customers by name, mobile, email, or ID number
-  const filteredCustomers = customers.filter((c) => {
-    if (!searchQuery.trim()) return true;
-    const q = searchQuery.toLowerCase();
-    const fullName = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+  // Debounced live server search
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setRemoteResults([]);
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await searchCustomersApi(trimmed);
+        setRemoteResults(Array.isArray(res) ? res : []);
+      } catch (err) {
+        console.error('Failed to search customers remotely:', err);
+        setRemoteResults([]);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 200);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Combine and deduplicate local matches + remote server search results
+  const queryLower = searchQuery.toLowerCase().trim();
+  const queryDigits = searchQuery.replace(/\D/g, '');
+
+  const localMatches = (customers || []).filter((c) => {
+    if (!queryLower) return true;
+    const first = (c.first_name || '').toLowerCase();
+    const middle = (c.middle_name || '').toLowerCase();
+    const last = (c.last_name || '').toLowerCase();
+    const full = (c.full_name || `${first} ${middle} ${last}`).toLowerCase();
     const mobile = (c.mobile || '').toLowerCase();
+    const mobileDigits = (c.mobile || '').replace(/\D/g, '');
     const idNum = (c.id_number || '').toLowerCase();
     const email = (c.email || '').toLowerCase();
-    return fullName.includes(q) || mobile.includes(q) || idNum.includes(q) || email.includes(q);
+
+    const nameMatch = first.includes(queryLower) || middle.includes(queryLower) || last.includes(queryLower) || full.includes(queryLower);
+    const mobileMatch = mobile.includes(queryLower) || (queryDigits && mobileDigits.includes(queryDigits));
+    const idMatch = idNum.includes(queryLower);
+    const emailMatch = email.includes(queryLower);
+
+    return nameMatch || mobileMatch || idMatch || emailMatch;
   });
 
+  const customerMap = new Map();
+  // Add local matches first
+  localMatches.forEach((c) => customerMap.set(String(c.id), c));
+  // Merge remote results
+  remoteResults.forEach((c) => {
+    if (!customerMap.has(String(c.id))) {
+      customerMap.set(String(c.id), c);
+    }
+  });
+
+  const displayCustomers = Array.from(customerMap.values());
+
   const handleSelect = (cust) => {
-    onSelectCustomer(cust.id);
+    setCachedSelectedCust(cust);
+    onSelectCustomer(cust.id, cust);
     setIsOpen(false);
     setSearchQuery('');
+    setHighlightedIndex(-1);
   };
 
   const handleClear = () => {
+    setCachedSelectedCust(null);
     onSelectCustomer('');
     setSearchQuery('');
+    setHighlightedIndex(-1);
+    setTimeout(() => {
+      if (inputRef.current) inputRef.current.focus();
+    }, 50);
+  };
+
+  const handleKeyDown = (e) => {
+    if (!isOpen || displayCustomers.length === 0) {
+      if (e.key === 'ArrowDown') {
+        setIsOpen(true);
+      }
+      return;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev < displayCustomers.length - 1 ? prev + 1 : 0));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : displayCustomers.length - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (highlightedIndex >= 0 && highlightedIndex < displayCustomers.length) {
+        handleSelect(displayCustomers[highlightedIndex]);
+      }
+    } else if (e.key === 'Escape') {
+      setIsOpen(false);
+    }
   };
 
   return (
@@ -61,112 +162,208 @@ const SearchableCustomerSelect = ({
                 src={selectedCust.photo}
                 alt={selectedCust.full_name}
                 className="rounded-circle border shadow-sm flex-shrink-0"
-                style={{ width: '42px', height: '42px', objectFit: 'cover' }}
+                style={{ width: '46px', height: '46px', objectFit: 'cover' }}
               />
             ) : (
               <div
-                className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
-                style={{ width: '42px', height: '42px' }}
+                className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 shadow-xs"
+                style={{ width: '46px', height: '46px', fontWeight: 'bold', fontSize: '1.1rem' }}
               >
-                <i className="bi bi-person-fill fs-5"></i>
+                {(selectedCust.first_name || 'G')[0].toUpperCase()}
               </div>
             )}
             <div>
-              <div className="fw-bold text-dark fs-6">
-                {selectedCust.full_name || `${selectedCust.first_name} ${selectedCust.last_name || ''}`}
+              <div className="d-flex align-items-center gap-2">
+                <span className="fw-bold text-dark fs-6">
+                  {selectedCust.full_name || `${selectedCust.first_name || ''} ${selectedCust.last_name || ''}`.trim() || 'Customer Profile'}
+                </span>
+                <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5" style={{ fontSize: '0.7rem' }}>
+                  ✓ Selected
+                </span>
               </div>
-              <div className="small text-muted">
-                <i className="bi bi-telephone text-success me-1"></i>{selectedCust.mobile} |{' '}
-                <i className="bi bi-card-heading text-warning me-1"></i>{selectedCust.id_type || 'ID'}: {selectedCust.id_number || 'N/A'}
+              <div className="small text-muted mt-0.5 d-flex flex-wrap align-items-center gap-2">
+                <span className="text-dark fw-semibold">
+                  <i className="bi bi-telephone-fill text-success me-1"></i>
+                  {selectedCust.mobile || 'No Mobile'}
+                </span>
+                {selectedCust.id_number && (
+                  <span className="text-secondary">
+                    | <i className="bi bi-card-heading text-warning me-1"></i>
+                    {selectedCust.id_type || 'ID'}: {selectedCust.id_number}
+                  </span>
+                )}
+                {selectedCust.email && (
+                  <span className="text-muted d-none d-md-inline">
+                    | <i className="bi bi-envelope text-info me-1"></i>
+                    {selectedCust.email}
+                  </span>
+                )}
               </div>
             </div>
           </div>
           <div className="d-flex gap-2">
             <button
               type="button"
-              className="btn btn-sm btn-primary fw-semibold shadow-sm"
+              className="btn btn-sm btn-outline-primary fw-semibold shadow-xs d-flex align-items-center gap-1"
               onClick={() => setShowDetailsModal(true)}
             >
-              <i className="bi bi-eye-fill me-1"></i> View Details
+              <i className="bi bi-person-lines-fill"></i> View Details
             </button>
             <button
               type="button"
-              className="btn btn-sm btn-outline-danger fw-semibold"
+              className="btn btn-sm btn-outline-danger fw-semibold d-flex align-items-center gap-1"
               onClick={handleClear}
               title="Change Customer"
             >
-              <i className="bi bi-arrow-repeat me-1"></i> Change
+              <i className="bi bi-arrow-repeat"></i> Change
             </button>
           </div>
         </div>
       ) : (
         /* Searchable Input Control */
         <div>
-          <div className="input-group">
-            <span className="input-group-text bg-white border-end-0">
-              <i className="bi bi-search text-primary"></i>
+          <div className="input-group input-group-lg border rounded-3 overflow-hidden bg-white">
+            <span className="input-group-text bg-white border-0 text-primary ps-3">
+              {isSearching ? (
+                <span className="spinner-border spinner-border-sm text-primary" role="status"></span>
+              ) : (
+                <i className="bi bi-search fs-6"></i>
+              )}
             </span>
             <input
+              ref={inputRef}
               type="text"
-              className="form-control border-start-0 ps-0"
+              className="form-control border-0 bg-white shadow-none ps-2 py-2.5"
               placeholder={placeholder}
               value={searchQuery}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setIsOpen(true);
+                setHighlightedIndex(0);
               }}
-              onFocus={() => setIsOpen(true)}
+              onFocus={() => {
+                setIsOpen(true);
+              }}
+              onKeyDown={handleKeyDown}
             />
             {searchQuery && (
-              <button className="btn btn-outline-secondary" type="button" onClick={() => setSearchQuery('')}>
-                <i className="bi bi-x-lg"></i>
+              <button
+                className="btn btn-link text-secondary text-decoration-none pe-3"
+                type="button"
+                onClick={() => {
+                  setSearchQuery('');
+                  setHighlightedIndex(-1);
+                }}
+                title="Clear search"
+              >
+                <i className="bi bi-x-circle-fill"></i>
               </button>
             )}
           </div>
 
-          {/* Floating Dropdown List */}
+          {/* Floating Suggestion Dropdown List */}
           {isOpen && (
             <div
-              className="position-absolute w-100 bg-white border rounded-3 shadow-lg mt-1 overflow-auto"
-              style={{ maxHeight: '280px', top: '100%', left: 0, zIndex: 9999, boxShadow: '0 10px 30px rgba(0,0,0,0.2)' }}
+              className="position-absolute w-100 bg-white border rounded-3 shadow-lg mt-1 overflow-hidden"
+              style={{ maxHeight: '340px', top: '100%', left: 0, zIndex: 9999, boxShadow: '0 12px 35px rgba(0,0,0,0.18)' }}
             >
-              <div className="p-2 bg-light border-bottom text-muted small fw-semibold d-flex justify-content-between">
-                <span>Matching Customers ({filteredCustomers.length})</span>
-                {searchQuery && <span>Search: "{searchQuery}"</span>}
+              {/* Header Bar with Live Result Count */}
+              <div className="p-2.5 bg-light border-bottom text-muted small fw-semibold d-flex justify-content-between align-items-center">
+                <span className="d-flex align-items-center gap-1.5 text-dark">
+                  <i className="bi bi-people-fill text-primary"></i>
+                  {searchQuery.trim() ? (
+                    <>Matching Customers ({displayCustomers.length})</>
+                  ) : (
+                    <>Recent Directory Customers ({displayCustomers.slice(0, 8).length})</>
+                  )}
+                </span>
+                {isSearching ? (
+                  <span className="text-primary extra-small fw-normal d-flex align-items-center gap-1">
+                    <span className="spinner-border spinner-border-sm" style={{ width: '12px', height: '12px' }}></span>
+                    Searching database...
+                  </span>
+                ) : searchQuery.trim() ? (
+                  <span className="text-muted extra-small">Search: "{searchQuery}"</span>
+                ) : (
+                  <span className="text-muted extra-small">Type name or mobile to filter</span>
+                )}
               </div>
 
-              {filteredCustomers.length === 0 ? (
-                <div className="p-3 text-center text-muted">
-                  <i className="bi bi-person-x fs-3 d-block mb-1 text-secondary"></i>
-                  No customer found matching "{searchQuery}".
+              {displayCustomers.length === 0 ? (
+                <div className="p-4 text-center text-muted">
+                  <i className="bi bi-person-x fs-2 d-block mb-2 text-secondary"></i>
+                  <div className="fw-semibold text-dark">No customer found matching "{searchQuery}"</div>
+                  <div className="extra-small text-muted mt-1">
+                    No records found by name or mobile number. Switch to "+ Register & Create New Customer Profile" to add this guest.
+                  </div>
                 </div>
               ) : (
-                <div className="list-group list-group-flush">
-                  {filteredCustomers.map((c) => (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="list-group-item list-group-item-action p-2.5 d-flex align-items-center justify-content-between"
-                      onClick={() => handleSelect(c)}
-                    >
-                      <div className="d-flex align-items-center gap-2">
-                        {c.photo ? (
-                          <img src={c.photo} alt={c.full_name} className="rounded-circle border" style={{ width: '32px', height: '32px', objectFit: 'cover' }} />
-                        ) : (
-                          <i className="bi bi-person-circle text-primary fs-5"></i>
-                        )}
-                        <div>
-                          <div className="fw-bold text-dark small">
-                            {c.full_name || `${c.first_name} ${c.last_name || ''}`}
-                          </div>
-                          <div className="text-muted" style={{ fontSize: '0.75rem' }}>
-                            📞 {c.mobile} {c.id_number ? `| 🪪 ${c.id_type || 'ID'}: ${c.id_number}` : ''}
+                <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: '285px' }}>
+                  {(searchQuery.trim() ? displayCustomers : displayCustomers.slice(0, 8)).map((c, index) => {
+                    const isHighlighted = index === highlightedIndex;
+                    const cFullName = c.full_name || `${c.first_name || ''} ${c.last_name || ''}`.trim() || 'Guest';
+
+                    return (
+                      <button
+                        key={c.id}
+                        type="button"
+                        className={`list-group-item list-group-item-action p-2.5 d-flex align-items-center justify-content-between border-bottom ${
+                          isHighlighted ? 'bg-primary-subtle' : ''
+                        }`}
+                        style={{ cursor: 'pointer', transition: 'background-color 0.15s ease' }}
+                        onClick={() => handleSelect(c)}
+                        onMouseEnter={() => setHighlightedIndex(index)}
+                      >
+                        <div className="d-flex align-items-center gap-3">
+                          {c.photo ? (
+                            <img
+                              src={c.photo}
+                              alt={cFullName}
+                              className="rounded-circle border flex-shrink-0"
+                              style={{ width: '38px', height: '38px', objectFit: 'cover' }}
+                            />
+                          ) : (
+                            <div
+                              className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center flex-shrink-0 fw-bold"
+                              style={{ width: '38px', height: '38px', fontSize: '0.95rem' }}
+                            >
+                              {(c.first_name || 'G')[0].toUpperCase()}
+                            </div>
+                          )}
+                          <div className="text-start">
+                            <div className="fw-bold text-dark small d-flex align-items-center gap-1.5">
+                              <span>{cFullName}</span>
+                              <span className="badge bg-light text-secondary border extra-small py-0 px-1.5" style={{ fontSize: '0.65rem' }}>
+                                #{c.id}
+                              </span>
+                            </div>
+                            <div className="d-flex flex-wrap align-items-center gap-2 mt-0.5" style={{ fontSize: '0.78rem' }}>
+                              <span className="text-success fw-bold">
+                                <i className="bi bi-telephone-fill me-1"></i>{c.mobile || 'No mobile'}
+                              </span>
+                              {c.id_number && (
+                                <span className="text-muted">
+                                  | <i className="bi bi-card-text text-warning me-1"></i>
+                                  {c.id_type || 'ID'}: {c.id_number}
+                                </span>
+                              )}
+                              {c.city && (
+                                <span className="text-muted d-none d-sm-inline">
+                                  | {c.city}
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <span className="badge bg-light text-primary border">Select</span>
-                    </button>
-                  ))}
+
+                        <div className="d-flex align-items-center gap-2">
+                          <span className="badge bg-primary text-white px-2.5 py-1.5 rounded-pill shadow-xs">
+                            Select Guest <i className="bi bi-chevron-right ms-1"></i>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

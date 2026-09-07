@@ -147,6 +147,10 @@ const CheckIn = () => {
   // Customer Live Search (Walk-In)
   const [custSearchTerm, setCustSearchTerm] = useState('');
   const [showCustDropdown, setShowCustDropdown] = useState(false);
+  const [checkInNameSuggestions, setCheckInNameSuggestions] = useState([]);
+  const [showCheckInNameSuggestions, setShowCheckInNameSuggestions] = useState(false);
+  const [checkInMobileSuggestions, setCheckInMobileSuggestions] = useState([]);
+  const [showCheckInMobileSuggestions, setShowCheckInMobileSuggestions] = useState(false);
 
   // --- TanStack Query Data Fetching ---
 
@@ -167,7 +171,7 @@ const CheckIn = () => {
   // Query 2: Customer Directory
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: getCustomersApi,
+    queryFn: () => getCustomersApi(),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
@@ -328,6 +332,36 @@ const CheckIn = () => {
     gcTime: 5 * 60 * 1000,
   });
 
+  const combinedCustResults = React.useMemo(() => {
+    const term = custSearchTerm.trim().toLowerCase();
+    if (!term) return [];
+    const termDigits = custSearchTerm.replace(/\D/g, '');
+
+    const localMatches = (customers || []).filter((c) => {
+      const first = (c.first_name || '').toLowerCase();
+      const last = (c.last_name || '').toLowerCase();
+      const full = (c.full_name || `${first} ${last}`).toLowerCase();
+      const mobile = (c.mobile || '').toLowerCase();
+      const mobileDigits = (c.mobile || '').replace(/\D/g, '');
+      const idNum = (c.id_number || '').toLowerCase();
+      return (
+        full.includes(term) ||
+        first.includes(term) ||
+        last.includes(term) ||
+        mobile.includes(term) ||
+        (termDigits && mobileDigits.includes(termDigits)) ||
+        idNum.includes(term)
+      );
+    });
+
+    const map = new Map();
+    localMatches.forEach((c) => map.set(String(c.id), c));
+    (custSearchResults || []).forEach((c) => {
+      if (!map.has(String(c.id))) map.set(String(c.id), c);
+    });
+    return Array.from(map.values());
+  }, [custSearchTerm, customers, custSearchResults]);
+
   const loading = Boolean(bookingIdParam && bookingLoading);
 
   const extractErrorMessage = (err, defaultMsg = 'Error processing check-in.') => {
@@ -471,7 +505,7 @@ const CheckIn = () => {
   // Walk-In Customer Search Handler
   const handleCustSearch = (term) => {
     setCustSearchTerm(term);
-    if (term.trim().length > 1) {
+    if (term.trim().length > 0) {
       setShowCustDropdown(true);
     } else {
       setShowCustDropdown(false);
@@ -496,7 +530,57 @@ const CheckIn = () => {
     setDocBackFile(null);
     setPhotoFile(null);
     setShowCustDropdown(false);
+    setShowCheckInNameSuggestions(false);
+    setShowCheckInMobileSuggestions(false);
     setCustSearchTerm('');
+  };
+
+  const handleWalkInFirstNameChange = async (val) => {
+    setFirstName(val);
+    const q = val.toLowerCase().trim();
+    if (q.length >= 2) {
+      let matches = (customers || []).filter((c) => {
+        const full = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+        return (c.first_name || '').toLowerCase().includes(q) || full.includes(q);
+      });
+      if (matches.length === 0) {
+        try {
+          const res = await searchCustomersApi(q);
+          matches = Array.isArray(res) ? res : [];
+        } catch (e) {
+          // ignore
+        }
+      }
+      setCheckInNameSuggestions(matches.slice(0, 5));
+      setShowCheckInNameSuggestions(matches.length > 0);
+    } else {
+      setCheckInNameSuggestions([]);
+      setShowCheckInNameSuggestions(false);
+    }
+  };
+
+  const handleWalkInMobileChange = async (val) => {
+    const clean = val.replace(/\D/g, '').slice(0, 10);
+    setMobile(clean);
+    if (clean.length >= 3) {
+      let matches = (customers || []).filter((c) => {
+        const mobDigits = (c.mobile || '').replace(/\D/g, '');
+        return mobDigits.includes(clean);
+      });
+      if (matches.length === 0) {
+        try {
+          const res = await searchCustomersApi(clean);
+          matches = Array.isArray(res) ? res : [];
+        } catch (e) {
+          // ignore
+        }
+      }
+      setCheckInMobileSuggestions(matches.slice(0, 5));
+      setShowCheckInMobileSuggestions(matches.length > 0);
+    } else {
+      setCheckInMobileSuggestions([]);
+      setShowCheckInMobileSuggestions(false);
+    }
   };
 
   // Walk-In Step Wizard Validation & Navigation
@@ -1661,7 +1745,7 @@ const CheckIn = () => {
                         placeholder="Search guest by name, mobile, or Aadhaar ID..."
                         value={custSearchTerm}
                         onChange={(e) => handleCustSearch(e.target.value)}
-                        onFocus={() => custSearchTerm.length > 1 && setShowCustDropdown(true)}
+                        onFocus={() => (custSearchTerm.length > 0 || customers.length > 0) && setShowCustDropdown(true)}
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') {
                             setShowCustDropdown(false);
@@ -1686,10 +1770,10 @@ const CheckIn = () => {
 
                     {showCustDropdown && (
                       <div className="position-absolute start-0 end-0 top-100 mt-1 bg-white border rounded-3 shadow-lg z-3 overflow-hidden" style={{ maxHeight: '250px', overflowY: 'auto' }}>
-                        {custSearchResults.length === 0 ? (
+                        {combinedCustResults.length === 0 ? (
                           <div className="p-3 text-muted small text-center">No existing customer records found</div>
                         ) : (
-                          custSearchResults.map((c) => (
+                          combinedCustResults.map((c) => (
                             <div
                               key={c.id}
                               className="p-3 border-bottom hover-bg-light cursor-pointer d-flex justify-content-between align-items-center"
@@ -1697,8 +1781,8 @@ const CheckIn = () => {
                               onMouseDown={() => handleSelectCustomer(c)}
                             >
                               <div>
-                                <div className="fw-bold text-dark small">{c.full_name}</div>
-                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>📞 {c.mobile} | ID: {c.id_number || 'N/A'}</div>
+                                <div className="fw-bold text-dark small">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</div>
+                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>📞 <strong className="text-success">{c.mobile}</strong> | ID: {c.id_number || 'N/A'}</div>
                               </div>
                               <button type="button" className="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill">Use Customer</button>
                             </div>
@@ -1710,17 +1794,82 @@ const CheckIn = () => {
 
                   {/* Primary Guest Fields Grid */}
                   <div className="row g-3 mb-4">
-                    <div className="col-md-6">
+                    <div className="col-md-6 position-relative">
                       <label className="form-label small fw-semibold">First Name *</label>
-                      <input type="text" className="form-control" required value={firstName} onChange={(e) => setFirstName(e.target.value)} placeholder="Guest First Name" />
+                      <input
+                        type="text"
+                        className="form-control"
+                        required
+                        value={firstName}
+                        onChange={(e) => handleWalkInFirstNameChange(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowCheckInNameSuggestions(false), 200)}
+                        onFocus={() => checkInNameSuggestions.length > 0 && setShowCheckInNameSuggestions(true)}
+                        placeholder="Guest First Name"
+                      />
+                      {showCheckInNameSuggestions && checkInNameSuggestions.length > 0 && (
+                        <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-2 z-3 mt-1" style={{ top: '100%', maxHeight: '220px', overflowY: 'auto' }}>
+                          <div className="extra-small text-muted fw-bold mb-1.5 px-2">
+                            <i className="bi bi-person-check text-primary me-1"></i> Registered Guests Matching Name:
+                          </div>
+                          {checkInNameSuggestions.map((c) => (
+                            <div
+                              key={c.id}
+                              className="p-2 border-bottom hover-bg-light cursor-pointer rounded-2 d-flex justify-content-between align-items-center"
+                              style={{ cursor: 'pointer' }}
+                              onMouseDown={() => handleSelectCustomer(c)}
+                            >
+                              <div>
+                                <strong className="text-dark small d-block">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</strong>
+                                <span className="text-success extra-small">📞 {c.mobile}</span>
+                              </div>
+                              <span className="badge bg-primary text-white rounded-pill px-2 py-1" style={{ fontSize: '0.7rem' }}>
+                                Use Profile
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">Last Name</label>
                       <input type="text" className="form-control" value={lastName} onChange={(e) => setLastName(e.target.value)} placeholder="Guest Last Name" />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-md-6 position-relative">
                       <label className="form-label small fw-semibold">Mobile Number *</label>
-                      <input type="text" className="form-control" required value={mobile} onChange={(e) => setMobile(e.target.value)} placeholder="10-digit Mobile Number" />
+                      <input
+                        type="text"
+                        className="form-control"
+                        required
+                        value={mobile}
+                        onChange={(e) => handleWalkInMobileChange(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowCheckInMobileSuggestions(false), 200)}
+                        onFocus={() => checkInMobileSuggestions.length > 0 && setShowCheckInMobileSuggestions(true)}
+                        placeholder="10-digit Mobile Number"
+                        maxLength="10"
+                      />
+                      {showCheckInMobileSuggestions && checkInMobileSuggestions.length > 0 && (
+                        <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-2 z-3 mt-1" style={{ top: '100%', maxHeight: '220px', overflowY: 'auto' }}>
+                          <div className="extra-small text-muted fw-bold mb-1.5 px-2">
+                            <i className="bi bi-telephone-check text-success me-1"></i> Registered Guests Matching Mobile:
+                          </div>
+                          {checkInMobileSuggestions.map((c) => (
+                            <div
+                              key={c.id}
+                              className="p-2 border-bottom hover-bg-light cursor-pointer rounded-2 d-flex justify-content-between align-items-center"
+                              style={{ cursor: 'pointer' }}
+                              onMouseDown={() => handleSelectCustomer(c)}
+                            >
+                              <div>
+                                <strong className="text-dark small d-block">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</strong>
+                                <span className="text-success extra-small">📞 {c.mobile}</span>
+                              </div>
+                              <span className="badge bg-primary text-white rounded-pill px-2 py-1" style={{ fontSize: '0.7rem' }}>
+                                Use Profile
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div className="col-md-6">
                       <label className="form-label small fw-semibold">Email Address</label>

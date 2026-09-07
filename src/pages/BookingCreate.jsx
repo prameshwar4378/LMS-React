@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { checkAvailabilityApi, getRoomTypesApi } from '../api/roomApi';
-import { getCustomersApi, createCustomerApi } from '../api/customerApi';
+import { getCustomersApi, createCustomerApi, searchCustomersApi } from '../api/customerApi';
 import { createBookingApi } from '../api/bookingApi';
 import { getTodayDateString, getTomorrowDateString, formatDate } from '../utils/dateUtils';
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
@@ -70,7 +70,7 @@ const BookingCreate = () => {
   // Customer Selection / Creation
   const { data: customers = [] } = useQuery({
     queryKey: ['customers'],
-    queryFn: getCustomersApi,
+    queryFn: () => getCustomersApi(),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
@@ -85,6 +85,74 @@ const BookingCreate = () => {
   const [custFirstNameError, setCustFirstNameError] = useState('');
   const [custMobileError, setCustMobileError] = useState('');
   const [custEmailError, setCustEmailError] = useState('');
+
+  // Live customer suggestion states for guest name & mobile
+  const [nameSuggestions, setNameSuggestions] = useState([]);
+  const [showNameSuggestions, setShowNameSuggestions] = useState(false);
+  const [mobileSuggestions, setMobileSuggestions] = useState([]);
+  const [showMobileSuggestions, setShowMobileSuggestions] = useState(false);
+
+  const handleFirstNameChange = async (val) => {
+    setCustFirstName(val);
+    if (val.trim()) setCustFirstNameError('');
+    const q = val.toLowerCase().trim();
+    if (q.length >= 2) {
+      let matches = (customers || []).filter((c) => {
+        const full = `${c.first_name || ''} ${c.last_name || ''}`.toLowerCase();
+        return (c.first_name || '').toLowerCase().includes(q) || full.includes(q);
+      });
+      if (matches.length === 0) {
+        try {
+          const res = await searchCustomersApi(q);
+          matches = Array.isArray(res) ? res : [];
+        } catch (e) {
+          // ignore
+        }
+      }
+      setNameSuggestions(matches.slice(0, 5));
+      setShowNameSuggestions(matches.length > 0);
+    } else {
+      setNameSuggestions([]);
+      setShowNameSuggestions(false);
+    }
+  };
+
+  const handleMobileChange = async (val) => {
+    const clean = val.replace(/\D/g, '').slice(0, 10);
+    setCustMobile(clean);
+    if (clean.length === 10) setCustMobileError('');
+    if (clean.length >= 3) {
+      let matches = (customers || []).filter((c) => {
+        const mobDigits = (c.mobile || '').replace(/\D/g, '');
+        return mobDigits.includes(clean);
+      });
+      if (matches.length === 0) {
+        try {
+          const res = await searchCustomersApi(clean);
+          matches = Array.isArray(res) ? res : [];
+        } catch (e) {
+          // ignore
+        }
+      }
+      setMobileSuggestions(matches.slice(0, 5));
+      setShowMobileSuggestions(matches.length > 0);
+    } else {
+      setMobileSuggestions([]);
+      setShowMobileSuggestions(false);
+    }
+  };
+
+  const handleSelectExistingCustomer = (c) => {
+    setSelectedCustomerId(c.id);
+    setIsNewCustomer(false);
+    setShowNameSuggestions(false);
+    setShowMobileSuggestions(false);
+    setError('');
+    setCustFirstNameError('');
+    setCustMobileError('');
+    setCustEmailError('');
+    showSuccess(`Selected registered guest: ${c.full_name || c.first_name}`, 'Guest Selected');
+  };
 
   // Booking Details
   const [adults, setAdults] = useState(2);
@@ -673,18 +741,40 @@ const BookingCreate = () => {
                   </div>
                 ) : (
                   <div className="row g-3 mb-4">
-                    <div className="col-md-6">
+                    <div className="col-md-6 position-relative">
                       <label className="form-label small fw-semibold">First Name *</label>
                       <input
                         type="text"
                         className={`form-control ${custFirstNameError ? 'is-invalid border-danger' : ''}`}
                         value={custFirstName}
-                        onChange={(e) => {
-                          setCustFirstName(e.target.value);
-                          if (e.target.value.trim()) setCustFirstNameError('');
-                        }}
+                        onChange={(e) => handleFirstNameChange(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowNameSuggestions(false), 200)}
+                        onFocus={() => nameSuggestions.length > 0 && setShowNameSuggestions(true)}
                         placeholder="Guest First Name"
                       />
+                      {showNameSuggestions && nameSuggestions.length > 0 && (
+                        <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-2 z-3 mt-1" style={{ top: '100%', maxHeight: '220px', overflowY: 'auto' }}>
+                          <div className="extra-small text-muted fw-bold mb-1.5 px-2">
+                            <i className="bi bi-person-check text-primary me-1"></i> Registered Guests Matching Name:
+                          </div>
+                          {nameSuggestions.map((c) => (
+                            <div
+                              key={c.id}
+                              className="p-2 border-bottom hover-bg-light cursor-pointer rounded-2 d-flex justify-content-between align-items-center"
+                              style={{ cursor: 'pointer' }}
+                              onMouseDown={() => handleSelectExistingCustomer(c)}
+                            >
+                              <div>
+                                <strong className="text-dark small d-block">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</strong>
+                                <span className="text-success extra-small">📞 {c.mobile}</span>
+                              </div>
+                              <span className="badge bg-primary text-white rounded-pill px-2 py-1" style={{ fontSize: '0.7rem' }}>
+                                Use Profile
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {custFirstNameError && (
                         <div className="invalid-feedback d-block fw-semibold extra-small text-danger mt-1">
                           <i className="bi bi-exclamation-circle me-1"></i>{custFirstNameError}
@@ -695,20 +785,41 @@ const BookingCreate = () => {
                       <label className="form-label small fw-semibold">Last Name</label>
                       <input type="text" className="form-control" value={custLastName} onChange={(e) => setCustLastName(e.target.value)} placeholder="Guest Last Name" />
                     </div>
-                    <div className="col-md-6">
+                    <div className="col-md-6 position-relative">
                       <label className="form-label small fw-semibold">Mobile Number *</label>
                       <input
                         type="text"
                         className={`form-control ${custMobileError ? 'is-invalid border-danger' : ''}`}
                         value={custMobile}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 10);
-                          setCustMobile(val);
-                          if (val.length === 10) setCustMobileError('');
-                        }}
+                        onChange={(e) => handleMobileChange(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowMobileSuggestions(false), 200)}
+                        onFocus={() => mobileSuggestions.length > 0 && setShowMobileSuggestions(true)}
                         placeholder="10-digit Mobile Number"
                         maxLength="10"
                       />
+                      {showMobileSuggestions && mobileSuggestions.length > 0 && (
+                        <div className="position-absolute start-0 end-0 bg-white border rounded-3 shadow-lg p-2 z-3 mt-1" style={{ top: '100%', maxHeight: '220px', overflowY: 'auto' }}>
+                          <div className="extra-small text-muted fw-bold mb-1.5 px-2">
+                            <i className="bi bi-telephone-check text-success me-1"></i> Registered Guests Matching Mobile:
+                          </div>
+                          {mobileSuggestions.map((c) => (
+                            <div
+                              key={c.id}
+                              className="p-2 border-bottom hover-bg-light cursor-pointer rounded-2 d-flex justify-content-between align-items-center"
+                              style={{ cursor: 'pointer' }}
+                              onMouseDown={() => handleSelectExistingCustomer(c)}
+                            >
+                              <div>
+                                <strong className="text-dark small d-block">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</strong>
+                                <span className="text-success extra-small">📞 {c.mobile}</span>
+                              </div>
+                              <span className="badge bg-primary text-white rounded-pill px-2 py-1" style={{ fontSize: '0.7rem' }}>
+                                Use Profile
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {custMobileError && (
                         <div className="invalid-feedback d-block fw-semibold extra-small text-danger mt-1">
                           <i className="bi bi-exclamation-circle me-1"></i>{custMobileError}
