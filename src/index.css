@@ -229,7 +229,7 @@ html, body {
   z-index: 1025;
   overflow-y: auto !important;
   overflow-x: hidden !important;
-  scroll-behavior: smooth;
+  scroll-behavior: auto;
   transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

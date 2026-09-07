@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { LoadingProvider } from './context/LoadingContext';
 import { NotificationProvider } from './context/NotificationContext';
 import AppRoutes from './routes/AppRoutes';
+import ScrollToTop from './components/ScrollToTop';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -62,6 +63,7 @@ function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <HashRouter>
+          <ScrollToTop />
           <AuthProvider>
             <LoadingProvider>
               <NotificationProvider>
