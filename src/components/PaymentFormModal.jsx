@@ -11,6 +11,7 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
   // Date & Time States
   const [paymentDate, setPaymentDate] = useState('');
   const [paymentTime, setPaymentTime] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   const setToLiveDateTime = () => {
     const now = new Date();
@@ -32,13 +33,13 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
       setNotes(initialData.notes || '');
 
       if (initialData.payment_date) {
-        const d = new Date(initialData.payment_date);
-        if (!isNaN(d.getTime())) {
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          const hours = String(d.getHours()).padStart(2, '0');
-          const mins = String(d.getMinutes()).padStart(2, '0');
+        const dt = new Date(initialData.payment_date);
+        if (!isNaN(dt.getTime())) {
+          const year = dt.getFullYear();
+          const month = String(dt.getMonth() + 1).padStart(2, '0');
+          const day = String(dt.getDate()).padStart(2, '0');
+          const hours = String(dt.getHours()).padStart(2, '0');
+          const mins = String(dt.getMinutes()).padStart(2, '0');
           setPaymentDate(`${year}-${month}-${day}`);
           setPaymentTime(`${hours}:${mins}`);
         } else {
@@ -58,7 +59,7 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
 
   if (!show) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!amount || parseFloat(amount) <= 0) return;
 
@@ -76,7 +77,14 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
       payload.payment_date = `${paymentDate}T${timeStr}:00`;
     }
 
-    onSubmit(payload);
+    setSubmitting(true);
+    try {
+      await onSubmit(payload);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const isEdit = Boolean(initialData);
@@ -223,8 +231,21 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
               <button type="button" className="btn btn-light border fw-semibold px-4" onClick={onClose}>
                 Cancel
               </button>
-              <button type="submit" className="btn btn-success fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5">
-                <i className="bi bi-check-circle me-1"></i> {isEdit ? 'Save Payment Changes' : 'Submit Payment'}
+              <button
+                type="submit"
+                className="btn btn-success fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5"
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                    {isEdit ? 'Saving Changes...' : 'Recording Payment...'}
+                  </>
+                ) : (
+                  <>
+                    <i className="bi bi-check-circle me-1"></i> {isEdit ? 'Save Payment Changes' : 'Submit Payment'}
+                  </>
+                )}
               </button>
             </div>
           </form>

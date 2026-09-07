@@ -22,6 +22,7 @@ const RoomTypes = () => {
 
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -53,6 +54,7 @@ const RoomTypes = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setSubmitting(true);
     const payload = {
       name,
       description,
@@ -82,6 +84,8 @@ const RoomTypes = () => {
       queryClient.invalidateQueries({ queryKey: ['roomTypes'], refetchType: 'none' });
     } catch (err) {
       showError(err.response?.data?.detail || 'Error saving room type.', 'Save Failed');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -251,8 +255,21 @@ const RoomTypes = () => {
                   <button type="button" className="btn btn-light border fw-semibold px-4 py-2 rounded-3" onClick={() => setShowModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2">
-                    <i className="bi bi-check-circle-fill"></i> Save Room Type
+                  <button
+                    type="submit"
+                    className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2"
+                    disabled={submitting}
+                  >
+                    {submitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Saving Category...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-check-circle-fill"></i> Save Room Type
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

@@ -74,6 +74,7 @@ const CurrentStays = () => {
   // Extend Stay modal
   const [showExtendModal, setShowExtendModal] = useState(false);
   const [newExtendCheckout, setNewExtendCheckout] = useState('');
+  const [extending, setExtending] = useState(false);
 
   const {
     data: stays = [],
@@ -427,10 +428,10 @@ const CurrentStays = () => {
   };
 
   const handleAddChargeSubmit = async (data) => {
-    setShowChargeModal(false);
     try {
       await createExtraChargeApi(data);
       showSuccess('Extra charge added to bill.', 'Charge Added');
+      setShowChargeModal(false);
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       showError('Error adding charge.', 'Failed');
@@ -438,10 +439,10 @@ const CurrentStays = () => {
   };
 
   const handleAddPaymentSubmit = async (data) => {
-    setShowPaymentModal(false);
     try {
       await createPaymentApi(data);
       showSuccess('Payment recorded successfully.', 'Payment Recorded');
+      setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       showError('Error adding payment.', 'Failed');
@@ -450,13 +451,16 @@ const CurrentStays = () => {
 
   const handleExtendSubmit = async (e) => {
     e.preventDefault();
-    setShowExtendModal(false);
+    setExtending(true);
     try {
       await extendStayApi(activeStayId, newExtendCheckout);
       showSuccess('Stay extended successfully.', 'Stay Extended');
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      setShowExtendModal(false);
     } catch (err) {
       showError(err.response?.data?.error || 'Error extending stay.', 'Failed');
+    } finally {
+      setExtending(false);
     }
   };
 
@@ -1233,8 +1237,21 @@ const CurrentStays = () => {
                 </div>
                 <div className="modal-footer bg-light border-top">
                   <button type="button" className="btn btn-light border" onClick={() => setShowExtendModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary fw-bold px-4 shadow-sm">
-                    <CheckCircle2 size={18} className="me-1" /> Confirm Stay Extension
+                  <button
+                    type="submit"
+                    className="btn btn-primary fw-bold px-4 shadow-sm d-flex align-items-center gap-2"
+                    disabled={extending}
+                  >
+                    {extending ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Extending Stay...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 size={18} className="me-1" /> Confirm Stay Extension
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

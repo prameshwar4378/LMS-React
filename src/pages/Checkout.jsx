@@ -326,10 +326,10 @@ const Checkout = () => {
 
   // Handle Add Received Payment
   const handleRecordPayment = async (payData) => {
-    setShowPaymentModal(false);
     try {
       await createPaymentApi(payData);
       showSuccess('Payment transaction recorded successfully!', 'Payment Received');
+      setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
       queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
       queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });

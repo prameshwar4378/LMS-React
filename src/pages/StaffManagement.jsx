@@ -1135,11 +1135,18 @@ const StaffManagement = () => {
                   </button>
                   <button
                     type="submit"
-                    className="btn btn-primary fw-bold px-4 text-white"
+                    className="btn btn-primary fw-bold px-4 text-white d-flex align-items-center gap-2"
                     disabled={submitting}
                     style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)' }}
                   >
-                    {submitting ? 'Creating Account...' : 'Create Staff Member'}
+                    {submitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Creating Account...
+                      </>
+                    ) : (
+                      'Create Staff Member'
+                    )}
                   </button>
                 </div>
               </form>
@@ -1185,10 +1192,17 @@ const StaffManagement = () => {
                   </button>
                   <button
                     type="submit"
-                    className="btn btn-primary fw-bold px-4 text-white"
+                    className="btn btn-primary fw-bold px-4 text-white d-flex align-items-center gap-2"
                     disabled={resetting}
                   >
-                    {resetting ? 'Resetting...' : 'Confirm Password Reset'}
+                    {resetting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        Resetting...
+                      </>
+                    ) : (
+                      'Confirm Password Reset'
+                    )}
                   </button>
                 </div>
               </form>

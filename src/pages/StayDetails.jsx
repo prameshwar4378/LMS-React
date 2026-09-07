@@ -1643,7 +1643,16 @@ const StayDetails = () => {
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : <><i className="bi bi-check-circle-fill"></i> Save & Update Bill</>}
+                    {actionLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-check-circle-fill"></i> Save &amp; Update Bill
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
@@ -1721,7 +1730,16 @@ const StayDetails = () => {
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : <><i className="bi bi-calendar-check-fill"></i> Save Schedule</>}
+                    {actionLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-calendar-check-fill"></i> Save Schedule
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
@@ -2052,7 +2070,16 @@ const StayDetails = () => {
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
-                    {actionLoading ? 'Saving...' : <><i className="bi bi-person-check-fill"></i> Save Profile & Documents</>}
+                    {actionLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        Saving...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-person-check-fill"></i> Save Profile &amp; Documents
+                      </>
+                    )}
                   </button>
                 </div>
               </form>
@@ -2123,7 +2150,16 @@ const StayDetails = () => {
                     Cancel
                   </button>
                   <button type="submit" className="btn btn-primary fw-bold px-4 py-2 rounded-3 shadow-sm d-flex align-items-center gap-2" disabled={actionLoading}>
-                    {actionLoading ? 'Uploading...' : <><i className="bi bi-cloud-upload-fill"></i> Upload Document</>}
+                    {actionLoading ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <i className="bi bi-cloud-upload-fill"></i> Upload Document
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

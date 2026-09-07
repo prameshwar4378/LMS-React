@@ -31,6 +31,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
   // Date & Time States
   const [chargeDate, setChargeDate] = useState('');
   const [chargeTime, setChargeTime] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
   // Searchable Category Dropdown State
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -189,7 +190,7 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
     }
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!description.trim()) return;
 
@@ -206,7 +207,14 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
       payload.charge_date = `${chargeDate}T${timeStr}:00`;
     }
 
-    onSubmit(payload);
+    setSubmitting(true);
+    try {
+      await onSubmit(payload);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!show) return null;
@@ -459,8 +467,21 @@ const ChargeFormModal = ({ show, onClose, onSubmit, stayId }) => {
                 <button type="button" className="btn btn-light border fw-semibold px-4" onClick={onClose}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-warning fw-bold px-4 shadow-sm">
-                  <i className="bi bi-plus-lg me-1"></i> Add Charge to Bill
+                <button
+                  type="submit"
+                  className="btn btn-warning fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5"
+                  disabled={submitting}
+                >
+                  {submitting ? (
+                    <>
+                      <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
+                      Adding Charge...
+                    </>
+                  ) : (
+                    <>
+                      <i className="bi bi-plus-lg me-1"></i> Add Charge to Bill
+                    </>
+                  )}
                 </button>
               </div>
             </form>

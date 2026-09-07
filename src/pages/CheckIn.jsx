@@ -84,6 +84,8 @@ const CheckIn = () => {
   const [showAdvanceDropdown, setShowAdvanceDropdown] = useState(false);
   const [reallocatedRoomId, setReallocatedRoomId] = useState('');
   const [showAdvanceConfirmModal, setShowAdvanceConfirmModal] = useState(false);
+  const [advanceSubmitting, setAdvanceSubmitting] = useState(false);
+  const [walkInSubmitting, setWalkInSubmitting] = useState(false);
 
   // Search Container Refs for Auto-Dismiss on Click Outside
   const advanceSearchRef = useRef(null);
@@ -653,7 +655,7 @@ const CheckIn = () => {
       return;
     }
     setError('');
-    setShowAdvanceConfirmModal(false);
+    setAdvanceSubmitting(true);
 
     try {
       const payload = {
@@ -684,12 +686,15 @@ const CheckIn = () => {
       queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
       showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
+      setShowAdvanceConfirmModal(false);
       navigate(`/stays/${stayId}`);
     } catch (err) {
       console.error(err);
       const errMsg = extractErrorMessage(err, 'Error processing advance booking check-in.');
       setError(errMsg);
       showError(errMsg, 'Check-In Failed');
+    } finally {
+      setAdvanceSubmitting(false);
     }
   };
 
@@ -723,6 +728,7 @@ const CheckIn = () => {
     }
 
     try {
+      setWalkInSubmitting(true);
       const formData = new FormData();
       formData.append('room', selectedRoomId);
       if (!isNewCust && selectedCustomerId) formData.append('customer', selectedCustomerId);
@@ -786,6 +792,8 @@ const CheckIn = () => {
       const errMsg = extractErrorMessage(err, 'Error processing walk-in check-in.');
       setError(errMsg);
       showError(errMsg, 'Check-In Failed');
+    } finally {
+      setWalkInSubmitting(false);
     }
   };
 
@@ -2392,10 +2400,19 @@ const CheckIn = () => {
                     <button
                       type="submit"
                       className="btn btn-success btn-lg fw-bold px-4 py-3 shadow-sm d-flex align-items-center gap-2"
-                      disabled={!verifiedConsent}
+                      disabled={!verifiedConsent || walkInSubmitting}
                       title={!verifiedConsent ? 'Please check and accept the verification terms above' : 'Complete Check-In & Issue Key'}
                     >
-                      <UserCheck size={20} /> Complete Check-In & Issue Key
+                      {walkInSubmitting ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                          Processing Check-In...
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck size={20} /> Complete Check-In & Issue Key
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -2493,10 +2510,19 @@ const CheckIn = () => {
                     <button
                       type="submit"
                       className="btn btn-success btn-lg w-100 mt-4 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 py-3"
-                      disabled={!verifiedConsent}
+                      disabled={!verifiedConsent || walkInSubmitting}
                       title={!verifiedConsent ? 'Please check and accept the verification terms on Step 5' : 'Complete Check-In'}
                     >
-                      <UserCheck size={20} /> Complete Check-In
+                      {walkInSubmitting ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                          Processing Check-In...
+                        </>
+                      ) : (
+                        <>
+                          <UserCheck size={20} /> <span className="d-none d-sm-inline">Complete Check-In</span><span className="d-inline d-sm-none">Check-In</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -2530,10 +2556,19 @@ const CheckIn = () => {
                   <button
                     type="submit"
                     className="btn btn-success btn-lg fw-bold px-4 shadow-sm d-flex align-items-center gap-2"
-                    disabled={!verifiedConsent}
+                    disabled={!verifiedConsent || walkInSubmitting}
                     title={!verifiedConsent ? 'Please check and accept the verification terms on Step 5' : 'Complete Check-In'}
                   >
-                    <UserCheck size={20} /> Complete Check-In
+                    {walkInSubmitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Processing Check-In...
+                      </>
+                    ) : (
+                      <>
+                        <UserCheck size={20} /> Complete Check-In
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -2691,8 +2726,18 @@ const CheckIn = () => {
                     type="button"
                     className="btn btn-success fw-bold px-4 py-2 shadow-sm d-flex align-items-center gap-2"
                     onClick={executeAdvanceCheckIn}
+                    disabled={advanceSubmitting}
                   >
-                    <KeyRound size={18} /> Confirm Check-In & Issue Key
+                    {advanceSubmitting ? (
+                      <>
+                        <span className="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        Confirming Check-In...
+                      </>
+                    ) : (
+                      <>
+                        <KeyRound size={18} /> Confirm Check-In & Issue Key
+                      </>
+                    )}
                   </button>
                 </div>
               </div>

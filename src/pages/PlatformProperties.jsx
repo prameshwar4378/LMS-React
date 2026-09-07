@@ -4640,8 +4640,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       disabled={addingBranch}
                       style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', fontSize: '0.875rem' }}
                     >
-                      <GitBranch size={16} />
-                      {addingBranch ? 'Creating Branch...' : 'Create & Link Branch'}
+                      {addingBranch ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Creating Branch...
+                        </>
+                      ) : (
+                        <>
+                          <GitBranch size={16} /> Create &amp; Link Branch
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -4848,8 +4856,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       disabled={addingStaff}
                       style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', fontSize: '0.875rem' }}
                     >
-                      <UserPlus size={16} />
-                      {addingStaff ? 'Creating User...' : 'Create Staff Member'}
+                      {addingStaff ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Creating User...
+                        </>
+                      ) : (
+                        <>
+                          <UserPlus size={16} /> Create Staff Member
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -4941,8 +4957,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       disabled={resettingStaff}
                       style={{ fontSize: '0.875rem' }}
                     >
-                      <Key size={16} />
-                      {resettingStaff ? 'Resetting...' : 'Confirm Password Reset'}
+                      {resettingStaff ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Resetting...
+                        </>
+                      ) : (
+                        <>
+                          <Key size={16} /> Confirm Password Reset
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -5133,8 +5157,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       disabled={submitting}
                       style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', fontSize: '0.875rem' }}
                     >
-                      <Building2 size={16} />
-                      {submitting ? 'Creating Instance...' : 'Onboard Hotel'}
+                      {submitting ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Creating Instance...
+                        </>
+                      ) : (
+                        <>
+                          <Building2 size={16} /> Onboard Hotel
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -5453,8 +5485,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       className="btn btn-primary fw-bold px-4 py-2 rounded-3 text-white shadow-sm d-flex align-items-center gap-2"
                       style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', fontSize: '0.875rem' }}
                     >
-                      <Save size={16} />
-                      {savingPlan ? 'Saving Plan...' : (editingPlan ? 'Save Changes' : 'Create Plan')}
+                      {savingPlan ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Saving Plan...
+                        </>
+                      ) : (
+                        <>
+                          <Save size={16} /> {editingPlan ? 'Save Changes' : 'Create Plan'}
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -5702,8 +5742,16 @@ const PlatformProperties = ({ initialTab = null }) => {
                       className="btn btn-primary fw-bold px-4 py-2 rounded-3 text-white shadow-sm d-flex align-items-center gap-2"
                       style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', fontSize: '0.875rem' }}
                     >
-                      <Sparkles size={16} className="text-warning" />
-                      {savingCustomSub ? 'Applying Custom Terms...' : 'Apply Custom Terms to Hotel'}
+                      {savingCustomSub ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          Applying Custom Terms...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={16} className="text-warning" /> Apply Custom Terms to Hotel
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -5920,10 +5968,17 @@ const PlatformProperties = ({ initialTab = null }) => {
                         fontSize: '0.875rem'
                       }}
                     >
-                      {editingPaymentId ? <Save size={16} /> : <CheckCircle2 size={16} />}
-                      {recordingPayment
-                        ? (editingPaymentId ? 'Updating Entry...' : 'Recording Settlement...')
-                        : (editingPaymentId ? 'Update Payment Entry' : 'Confirm & Record Payment')}
+                      {recordingPayment ? (
+                        <>
+                          <span className="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          {editingPaymentId ? 'Updating Entry...' : 'Recording Settlement...'}
+                        </>
+                      ) : (
+                        <>
+                          {editingPaymentId ? <Save size={16} /> : <CheckCircle2 size={16} />}
+                          {editingPaymentId ? 'Update Payment Entry' : 'Confirm & Record Payment'}
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
