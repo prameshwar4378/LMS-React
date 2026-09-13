@@ -37,18 +37,6 @@ const DeveloperSidebar = ({ activeTab, onSelectTab }) => {
       gradient: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 100%)'
     },
     {
-      id: 'inquiries',
-      label: 'Website Inquiries',
-      desc: 'Demo Leads & Requests',
-      icon: Mail,
-      badge: 'Leads',
-      color: '#F59E0B',
-      bg: 'rgba(245, 158, 11, 0.14)',
-      border: 'rgba(245, 158, 11, 0.35)',
-      glow: '0 6px 20px rgba(245, 158, 11, 0.45)',
-      gradient: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)'
-    },
-    {
       id: 'properties',
       label: 'Hotels Directory',
       desc: 'Properties & Limits',
@@ -83,6 +71,18 @@ const DeveloperSidebar = ({ activeTab, onSelectTab }) => {
       border: 'rgba(251, 113, 133, 0.35)',
       glow: '0 6px 20px rgba(251, 113, 133, 0.45)',
       gradient: 'linear-gradient(135deg, #E11D48 0%, #FB7185 100%)'
+    },
+    {
+      id: 'inquiries',
+      label: 'Website Inquiries',
+      desc: 'Demo Leads & Enquiries',
+      icon: Mail,
+      badge: 'Leads',
+      color: '#F59E0B',
+      bg: 'rgba(245, 158, 11, 0.14)',
+      border: 'rgba(245, 158, 11, 0.35)',
+      glow: '0 6px 20px rgba(245, 158, 11, 0.45)',
+      gradient: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)'
     },
   ];
 

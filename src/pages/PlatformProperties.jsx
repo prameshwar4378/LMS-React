@@ -246,7 +246,7 @@ const PlatformProperties = ({ initialTab = null }) => {
   const navigate = useNavigate();
 
   const queryTab = searchParams.get('tab');
-  const validTabs = ['overview', 'inquiries', 'properties', 'subscriptions', 'health'];
+  const validTabs = ['overview', 'properties', 'subscriptions', 'health', 'inquiries'];
   const resolvedInitialTab = (initialTab && validTabs.includes(initialTab))
     ? initialTab
     : (routeTab && validTabs.includes(routeTab))
@@ -1307,18 +1307,6 @@ const PlatformProperties = ({ initialTab = null }) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleSelectTab('inquiries')}
-                  className={`btn btn-sm rounded-3 px-3.5 py-2 fw-bold transition-all text-nowrap d-flex align-items-center gap-2 ${activeTab === 'inquiries' ? 'btn-primary text-white shadow-2xs' : 'btn-white border text-secondary hover-bg-light'}`}
-                  style={{ fontSize: '0.85rem' }}
-                >
-                  <Mail size={15} />
-                  <span>Website Inquiries</span>
-                  <span className={`badge rounded-pill extra-small px-2 py-0.5 ${activeTab === 'inquiries' ? 'bg-white text-primary' : (inquiryMetrics?.pending > 0 ? 'bg-warning text-dark fw-bold' : 'bg-secondary-subtle text-secondary')}`}>
-                    {inquiryMetrics?.pending > 0 ? `${inquiryMetrics.pending} New` : (inquiryMetrics?.total || 0)}
-                  </span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleSelectTab('properties')}
                   className={`btn btn-sm rounded-3 px-3.5 py-2 fw-bold transition-all text-nowrap d-flex align-items-center gap-2 ${activeTab === 'properties' ? 'btn-primary text-white shadow-2xs' : 'btn-white border text-secondary hover-bg-light'}`}
                   style={{ fontSize: '0.85rem' }}
@@ -1351,6 +1339,18 @@ const PlatformProperties = ({ initialTab = null }) => {
                   <span>System Health &amp; Diagnostics</span>
                   <span className={`badge rounded-pill extra-small px-2 py-0.5 ${activeTab === 'health' ? 'bg-white text-success' : 'bg-success-subtle text-success'}`}>
                     ● Live
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSelectTab('inquiries')}
+                  className={`btn btn-sm rounded-3 px-3.5 py-2 fw-bold transition-all text-nowrap d-flex align-items-center gap-2 ${activeTab === 'inquiries' ? 'btn-primary text-white shadow-2xs' : 'btn-white border text-secondary hover-bg-light'}`}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  <Mail size={15} />
+                  <span>Website Inquiries</span>
+                  <span className={`badge rounded-pill extra-small px-2 py-0.5 ${activeTab === 'inquiries' ? 'bg-white text-primary' : (inquiryMetrics?.pending > 0 ? 'bg-warning text-dark fw-bold' : 'bg-secondary-subtle text-secondary')}`}>
+                    {inquiryMetrics?.pending > 0 ? `${inquiryMetrics.pending} New` : (inquiryMetrics?.total || 0)}
                   </span>
                 </button>
               </div>
