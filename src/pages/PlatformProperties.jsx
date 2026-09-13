@@ -493,9 +493,9 @@ const PlatformProperties = ({ initialTab = null }) => {
 
   const loadAllPlatformData = async () => {
     await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['platform-properties'], refetchType: 'none' }),
-      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'], refetchType: 'none' }),
-      queryClient.invalidateQueries({ queryKey: ['platform-health'], refetchType: 'none' }),
+      queryClient.invalidateQueries({ queryKey: ['platform-properties'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform-subscriptions'] }),
+      queryClient.invalidateQueries({ queryKey: ['platform-health'] }),
     ]);
   };
 

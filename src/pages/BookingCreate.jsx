@@ -9,6 +9,7 @@ import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import { formatCurrency } from '../utils/formatCurrency';
 import { getSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
+import { extractErrorMessage } from '../utils/errorUtils';
 import {
   Calendar,
   Clock,
@@ -31,8 +32,11 @@ import {
   Building2,
   AlertTriangle,
   UserPlus,
-  FileText
+  FileText,
+  Tag,
+  Percent
 } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 
 const BookingCreate = () => {
   const navigate = useNavigate();
@@ -162,10 +166,18 @@ const BookingCreate = () => {
     showSuccess(`Selected registered guest: ${c.full_name || c.first_name}`, 'Guest Selected');
   };
 
+  const { user, hasPermission, getPermissionLimit } = useAuth();
+  const canGiveDiscount = hasPermission ? hasPermission('billing', 'can_give_discount') : true;
+  const maxDiscountPercent = getPermissionLimit ? getPermissionLimit('billing', 'max_discount_percent', 10) : 10;
+
   // Booking Details
   const [adults, setAdults] = useState(2);
   const [children, setChildren] = useState(0);
+  const [discountType, setDiscountType] = useState('FIXED');
+  const [discountValue, setDiscountValue] = useState('');
   const [advanceAmount, setAdvanceAmount] = useState(0);
+  const [paymentMethod, setPaymentMethod] = useState('CASH');
+  const [transactionReference, setTransactionReference] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -279,15 +291,26 @@ const BookingCreate = () => {
   const selectedRoomsObjs = availableRooms.filter((r) => selectedRoomIds.includes(r.id));
 
   const totalNightlyRateSum = selectedRoomsObjs.reduce((sum, r) => {
-    const rate = parseFloat(roomRatesMap[r.id] || r.base_price || 0);
+    const rate = parseFloat(roomRatesMap[r.id] !== undefined ? roomRatesMap[r.id] : (r.base_price || 0));
     return sum + rate;
   }, 0);
 
   const totalRoomCharge = nights * totalNightlyRateSum;
+  const numericDiscountVal = Math.max(0, parseFloat(discountValue || 0));
+  let calculatedDiscount = 0;
+  if (numericDiscountVal > 0) {
+    if (discountType === 'PERCENTAGE') {
+      calculatedDiscount = (totalRoomCharge * numericDiscountVal) / 100;
+    } else {
+      calculatedDiscount = Math.min(totalRoomCharge, numericDiscountVal);
+    }
+  }
+
+  const discountedRoomCharge = Math.max(0, totalRoomCharge - calculatedDiscount);
   const taxEnabled = Boolean(settings?.tax_enabled);
   const taxPct = taxEnabled ? parseFloat(settings?.tax_percentage || 0) : 0;
-  const estimatedGst = taxEnabled && taxPct > 0 ? Math.round((totalRoomCharge * taxPct) / 100) : 0;
-  const grandTotalEstimate = totalRoomCharge + estimatedGst;
+  const estimatedGst = taxEnabled && taxPct > 0 ? Math.round((discountedRoomCharge * taxPct) / 100) : 0;
+  const grandTotalEstimate = discountedRoomCharge + estimatedGst;
   const numericAdvance = parseFloat(advanceAmount || 0);
   const remainingBalance = Math.max(0, grandTotalEstimate - numericAdvance);
 
@@ -353,49 +376,6 @@ const BookingCreate = () => {
     setCurrentStep((prev) => Math.max(1, prev - 1));
   };
 
-  const extractErrorMessage = (err, defaultMsg = 'Error creating booking.') => {
-    if (!err) return defaultMsg;
-    if (typeof err === 'string') return err;
-    if (err.response && err.response.data) {
-      const d = err.response.data;
-      if (typeof d === 'string') return d;
-      let summaryMsg = d.message || d.error || d.detail || '';
-      const formatFieldKey = (k) => {
-        const labels = {
-          check_in_date: 'Check-In Date',
-          check_in_time: 'Check-In Time',
-          expected_checkout_date: 'Check-Out Date',
-          expected_checkout_time: 'Check-Out Time',
-          room: 'Room Allocation',
-          customer: 'Guest Profile',
-          room_rate: 'Room Rate',
-          advance_amount: 'Advance Payment',
-          adults: 'Adults Count',
-          children: 'Children Count',
-        };
-        return labels[k] || k.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-      };
-
-      const errSource = d.errors && typeof d.errors === 'object' ? d.errors : d;
-      if (typeof errSource === 'object') {
-        const keys = Object.keys(errSource).filter((k) => k !== 'success' && k !== 'message' && k !== 'error' && k !== 'detail');
-        if (keys.length > 0) {
-          const detailList = keys
-            .map((k) => {
-              const v = errSource[k];
-              const vStr = Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
-              return `${formatFieldKey(k)}: ${vStr}`;
-            })
-            .join(' | ');
-          return `${summaryMsg ? summaryMsg + ' — ' : ''}${detailList}`;
-        }
-      }
-      if (summaryMsg) return summaryMsg;
-    }
-    if (err.message) return err.message;
-    return defaultMsg;
-  };
-
   const handleSubmit = async (e) => {
     if (e) e.preventDefault();
     setError('');
@@ -429,7 +409,10 @@ const BookingCreate = () => {
           if (!Array.isArray(old)) return [newCust];
           return [newCust, ...old];
         });
-        queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+        queryClient.invalidateQueries({ queryKey: ['customers'] });
+        queryClient.invalidateQueries({ queryKey: ['bookings'] });
+        queryClient.invalidateQueries({ queryKey: ['rooms'] });
+        queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
       } catch (err) {
         const errMsg = extractErrorMessage(err, 'Failed to create customer profile.');
         setError(errMsg);
@@ -467,6 +450,15 @@ const BookingCreate = () => {
           ? `[Multi-Room Group Booking (${selectedRoomIds.length} Rooms)] ${notes || ''}`
           : notes;
 
+        let discountValForRoom = 0.0;
+        if (numericDiscountVal > 0) {
+          if (discountType === 'PERCENTAGE') {
+            discountValForRoom = numericDiscountVal;
+          } else {
+            discountValForRoom = parseFloat((numericDiscountVal / selectedRoomIds.length).toFixed(2));
+          }
+        }
+
         await createBookingApi({
           customer: customerIdToUse,
           room: rId,
@@ -477,17 +469,23 @@ const BookingCreate = () => {
           adults: parseInt(adults),
           children: parseInt(children),
           room_rate: rateToUse,
-          discount_type: 'FIXED',
-          discount_value: 0.00,
+          discount_type: numericDiscountVal > 0 ? discountType : 'FIXED',
+          discount_value: discountValForRoom,
           advance_amount: parseFloat(advancePerRoom),
+          payment_method: numericAdvance > 0 ? paymentMethod : 'CASH',
+          transaction_reference: numericAdvance > 0 ? transactionReference : '',
           notes: groupNote,
           status: 'CONFIRMED'
         });
       }
 
-      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['booking-create-data'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['booking-create-data'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
       showSuccess('Advance reservation created successfully!', 'Reservation Created');
       navigate('/bookings');
     } catch (err) {
@@ -728,23 +726,103 @@ const BookingCreate = () => {
                   </div>
                 )}
 
-                <div className="form-check form-switch mb-3 p-2.5 bg-light rounded-3 border d-flex align-items-center gap-2">
-                  <input
-                    className="form-check-input ms-0"
-                    type="checkbox"
-                    id="newCustSwitchWizard"
-                    checked={isNewCustomer}
-                    onChange={(e) => {
-                      setIsNewCustomer(e.target.checked);
-                      setError('');
-                      setCustFirstNameError('');
-                      setCustMobileError('');
-                      setCustEmailError('');
-                    }}
-                  />
-                  <label className="form-check-label fw-bold text-dark cursor-pointer m-0 small" htmlFor="newCustSwitchWizard">
-                    + Register & Create New Customer Profile
-                  </label>
+                {/* Guest Selection / Registration Mode Header - High Contrast Dark Banner with Highlight Button */}
+                <div
+                  className="p-3 mb-4 rounded-3 shadow-sm d-flex align-items-center justify-content-between flex-wrap gap-3"
+                  style={{
+                    background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
+                    border: '1px solid #334155'
+                  }}
+                >
+                  <div className="d-flex align-items-center gap-3">
+                    <div
+                      className="rounded-3 d-flex align-items-center justify-content-center shadow-sm flex-shrink-0"
+                      style={{
+                        width: '44px',
+                        height: '44px',
+                        background: isNewCustomer ? 'rgba(245, 158, 11, 0.18)' : 'rgba(59, 130, 246, 0.18)',
+                        border: isNewCustomer ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid rgba(59, 130, 246, 0.4)',
+                        color: isNewCustomer ? '#f59e0b' : '#60a5fa'
+                      }}
+                    >
+                      {isNewCustomer ? <UserPlus size={22} strokeWidth={2.2} /> : <UserCheck size={22} strokeWidth={2.2} />}
+                    </div>
+                    <div>
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
+                        <span className="text-white fw-bold" style={{ fontSize: '0.92rem', letterSpacing: '-0.01em' }}>
+                          {isNewCustomer ? 'New Customer Registration Mode' : 'Registered Customer Directory'}
+                        </span>
+                        <span
+                          className={`badge extra-small ${
+                            isNewCustomer
+                              ? 'bg-warning text-dark fw-bold'
+                              : 'bg-primary-subtle text-info border border-info-subtle'
+                          } rounded-pill px-2.5 py-0.5`}
+                        >
+                          {isNewCustomer ? 'Creating New Profile' : 'Directory Mode'}
+                        </span>
+                      </div>
+                      <div className="extra-small mt-0.5" style={{ color: '#94a3b8' }}>
+                        {isNewCustomer
+                          ? 'Fill in the guest details below to create and link a new guest profile.'
+                          : 'Search existing registered guests or click the highlight button to register a new guest.'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="d-flex align-items-center gap-2 flex-wrap">
+                    {!isNewCustomer ? (
+                      <button
+                        type="button"
+                        id="btnRegisterNewCustomer"
+                        className="btn btn-highlight-amber px-3.5 py-2 rounded-3 d-inline-flex align-items-center gap-2"
+                        onClick={() => {
+                          setIsNewCustomer(true);
+                          setError('');
+                          setCustFirstNameError('');
+                          setCustMobileError('');
+                          setCustEmailError('');
+                        }}
+                      >
+                        <UserPlus size={18} strokeWidth={2.5} />
+                        <span>+ Register &amp; Create New Customer Profile</span>
+                      </button>
+                    ) : (
+                      <div className="d-flex align-items-center gap-2">
+                        <span
+                          className="badge px-3 py-2 rounded-3 d-inline-flex align-items-center gap-1.5 extra-small fw-bold"
+                          style={{
+                            backgroundColor: 'rgba(245, 158, 11, 0.2)',
+                            color: '#fbbf24',
+                            border: '1px solid rgba(245, 158, 11, 0.4)'
+                          }}
+                        >
+                          <Check size={14} strokeWidth={3} /> Creating New Profile
+                        </span>
+                        <button
+                          type="button"
+                          id="btnSearchExistingCustomer"
+                          className="btn btn-sm btn-outline-light fw-semibold px-3 py-2 rounded-3 d-inline-flex align-items-center gap-1.5"
+                          style={{
+                            borderColor: '#475569',
+                            backgroundColor: 'rgba(255, 255, 255, 0.08)',
+                            color: '#f1f5f9',
+                            fontSize: '0.8rem'
+                          }}
+                          onClick={() => {
+                            setIsNewCustomer(false);
+                            setError('');
+                            setCustFirstNameError('');
+                            setCustMobileError('');
+                            setCustEmailError('');
+                          }}
+                        >
+                          <Search size={14} />
+                          <span>← Search Existing Directory</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 {!isNewCustomer ? (
@@ -755,6 +833,10 @@ const BookingCreate = () => {
                       selectedCustomerId={selectedCustomerId}
                       onSelectCustomer={(id) => {
                         setSelectedCustomerId(id);
+                        setError('');
+                      }}
+                      onRegisterNewClick={() => {
+                        setIsNewCustomer(true);
                         setError('');
                       }}
                       placeholder="Search customer by name, mobile, or Aadhaar ID..."
@@ -995,7 +1077,85 @@ const BookingCreate = () => {
                               </td>
                             </tr>
                           ))}
+
+                          {/* Last Row: Discount */}
+                          <tr className="border-top" style={{ backgroundColor: '#FFF5F5' }}>
+                            <td className="fw-bold text-danger">
+                              <div className="d-flex align-items-center gap-1.5">
+                                <Tag size={15} className="text-danger" />
+                                <span>Discount</span>
+                              </div>
+                            </td>
+                            <td>
+                              <select
+                                className="form-select form-select-sm fw-semibold border-danger-subtle"
+                                style={{ maxWidth: '170px' }}
+                                value={discountType}
+                                disabled={!canGiveDiscount}
+                                onChange={(e) => {
+                                  const newType = e.target.value;
+                                  setDiscountType(newType);
+                                  if (newType === 'PERCENTAGE' && parseFloat(discountValue || 0) > (maxDiscountPercent || 100)) {
+                                    setDiscountValue(String(maxDiscountPercent || 100));
+                                  }
+                                }}
+                              >
+                                <option value="FIXED">Fixed Amount (₹)</option>
+                                <option value="PERCENTAGE">Percentage (%)</option>
+                              </select>
+                            </td>
+                            <td>
+                              {numericDiscountVal > 0 ? (
+                                <span className="fw-bold text-danger">
+                                  -{formatCurrency(calculatedDiscount)}
+                                </span>
+                              ) : (
+                                <span className="text-muted small">₹0.00</span>
+                              )}
+                            </td>
+                            <td>
+                              <div className="input-group input-group-sm">
+                                <span className="input-group-text bg-white fw-bold text-danger border-danger-subtle">
+                                  {discountType === 'PERCENTAGE' ? '%' : '₹'}
+                                </span>
+                                <input
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  max={discountType === 'PERCENTAGE' ? (maxDiscountPercent || 100) : totalRoomCharge}
+                                  className="form-control fw-bold text-danger border-danger-subtle"
+                                  placeholder="0.00"
+                                  disabled={!canGiveDiscount}
+                                  value={discountValue}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    if (discountType === 'PERCENTAGE' && parseFloat(val) > (maxDiscountPercent || 100)) {
+                                      setDiscountValue(String(maxDiscountPercent || 100));
+                                      showWarning(`Maximum percentage discount allowed for your role is ${maxDiscountPercent}%.`, 'Discount Cap');
+                                    } else {
+                                      setDiscountValue(val);
+                                    }
+                                  }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
                         </tbody>
+                        {calculatedDiscount > 0 && (
+                          <tfoot className="table-light border-top">
+                            <tr>
+                              <td colSpan={2} className="fw-bold text-dark py-2 ps-3">
+                                Net Room Charges ({nights} Night{nights > 1 ? 's' : ''})
+                              </td>
+                              <td colSpan={2} className="text-end fw-bold text-success fs-6 py-2 pe-3">
+                                {formatCurrency(discountedRoomCharge)}
+                                <span className="badge bg-danger-subtle text-danger ms-2" style={{ fontSize: '0.72rem' }}>
+                                  Save {formatCurrency(calculatedDiscount)}
+                                </span>
+                              </td>
+                            </tr>
+                          </tfoot>
+                        )}
                       </table>
                     </div>
                   </div>
@@ -1020,7 +1180,7 @@ const BookingCreate = () => {
                     {/* Quick Deposit Chips */}
                     <div className="d-flex gap-1 mt-2 flex-wrap">
                       <span className="text-muted small me-1">Quick Deposit:</span>
-                      {[500, 1000, 2000, totalRoomCharge].map((amt) => (
+                      {[500, 1000, 2000, grandTotalEstimate].map((amt) => (
                         <button
                           key={amt}
                           type="button"
@@ -1032,6 +1192,39 @@ const BookingCreate = () => {
                         </button>
                       ))}
                     </div>
+
+                    {numericAdvance > 0 && (
+                      <div className="row g-2 mt-2 p-2.5 bg-light rounded-3 border border-success-subtle">
+                        <div className="col-sm-6">
+                          <label className="form-label extra-small fw-bold text-dark mb-1">
+                            Payment Method
+                          </label>
+                          <select
+                            className="form-select form-select-sm"
+                            value={paymentMethod}
+                            onChange={(e) => setPaymentMethod(e.target.value)}
+                          >
+                            <option value="CASH">Cash</option>
+                            <option value="UPI">UPI / QR</option>
+                            <option value="CARD">Card</option>
+                            <option value="BANK_TRANSFER">Bank Transfer</option>
+                            <option value="OTHER">Other</option>
+                          </select>
+                        </div>
+                        <div className="col-sm-6">
+                          <label className="form-label extra-small fw-bold text-dark mb-1">
+                            Txn Reference (Optional)
+                          </label>
+                          <input
+                            type="text"
+                            className="form-control form-control-sm font-monospace"
+                            placeholder="UPI Ref / UTR / Auth #"
+                            value={transactionReference}
+                            onChange={(e) => setTransactionReference(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="col-md-6">
@@ -1096,6 +1289,35 @@ const BookingCreate = () => {
                       <div className="small text-dark mt-2"><strong>Occupancy:</strong> {adults} Adult(s), {children} Child</div>
                     </div>
                   </div>
+
+                  {calculatedDiscount > 0 && (
+                    <div className="col-12">
+                      <div className="p-3 bg-danger-subtle rounded-3 border border-danger-subtle d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="text-danger small fw-semibold">Discount Applied</div>
+                          <div className="fw-bold text-danger fs-5">
+                            -{formatCurrency(calculatedDiscount)} ({discountType === 'PERCENTAGE' ? `${discountValue}% Off` : 'Fixed Amount'})
+                          </div>
+                        </div>
+                        <Tag size={24} className="text-danger" />
+                      </div>
+                    </div>
+                  )}
+
+                  {numericAdvance > 0 && (
+                    <div className="col-12">
+                      <div className="p-3 bg-success-subtle rounded-3 border border-success-subtle d-flex justify-content-between align-items-center">
+                        <div>
+                          <div className="text-success small fw-semibold">Advance Payment Collected</div>
+                          <div className="fw-bold text-success fs-5">
+                            {formatCurrency(numericAdvance)} via {paymentMethod}
+                            {transactionReference ? ` (Ref: ${transactionReference})` : ''}
+                          </div>
+                        </div>
+                        <CheckCircle2 size={24} className="text-success" />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Step 4 Navigation & Submit */}
@@ -1165,6 +1387,18 @@ const BookingCreate = () => {
                   <span>Room Charges Subtotal</span>
                   <strong className="text-dark">{formatCurrency(totalRoomCharge)}</strong>
                 </div>
+                {calculatedDiscount > 0 && (
+                  <>
+                    <div className="d-flex justify-content-between text-danger small mb-2">
+                      <span>Discount {discountType === 'PERCENTAGE' ? `(${discountValue}%)` : ''}</span>
+                      <strong className="text-danger">-{formatCurrency(calculatedDiscount)}</strong>
+                    </div>
+                    <div className="d-flex justify-content-between text-muted small mb-2">
+                      <span>Net Room Charges</span>
+                      <strong className="text-dark">{formatCurrency(discountedRoomCharge)}</strong>
+                    </div>
+                  </>
+                )}
                 {taxEnabled && taxPct > 0 && (
                   <div className="d-flex justify-content-between text-muted small mb-2">
                     <span>Estimated GST ({taxPct}%)</span>
@@ -1177,7 +1411,10 @@ const BookingCreate = () => {
                 </div>
                 <div className="d-flex justify-content-between text-muted small mb-2">
                   <span>Advance Deposit Paid</span>
-                  <strong className="text-success">{formatCurrency(numericAdvance)}</strong>
+                  <strong className="text-success">
+                    {formatCurrency(numericAdvance)}
+                    {numericAdvance > 0 && ` (${paymentMethod})`}
+                  </strong>
                 </div>
 
                 <div className="p-3 bg-danger-subtle rounded-3 border border-danger-subtle d-flex justify-content-between align-items-center mt-3">

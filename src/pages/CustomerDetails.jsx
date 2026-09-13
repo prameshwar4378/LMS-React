@@ -287,8 +287,8 @@ const CustomerDetails = () => {
         if (!Array.isArray(old)) return old;
         return old.map((c) => (c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c));
       });
-      queryClient.invalidateQueries({ queryKey: ['customer-details', id], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
@@ -317,7 +317,7 @@ const CustomerDetails = () => {
 
         try {
           await deleteCustomerApi(customer.id);
-          queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
         } catch (err) {
           showError(err.response?.data?.error || 'Error deleting customer record.', 'Deletion Failed');
           queryClient.invalidateQueries({ queryKey: ['customers'] });

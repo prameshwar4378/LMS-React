@@ -13,6 +13,7 @@ import { getSettingsApi } from '../api/settingsApi';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../utils/imageCompressor';
+import { extractErrorMessage } from '../utils/errorUtils';
 
 import {
   DoorOpen,
@@ -366,41 +367,6 @@ const CheckIn = () => {
 
   const loading = Boolean(bookingIdParam && bookingLoading);
 
-  const extractErrorMessage = (err, defaultMsg = 'Error processing check-in.') => {
-    if (!err) return defaultMsg;
-    if (typeof err === 'string') return err;
-    if (err.response && err.response.data) {
-      const d = err.response.data;
-      if (typeof d === 'string') return d;
-      let summaryMsg = d.message || d.error || d.detail || '';
-      if (d.errors && typeof d.errors === 'object') {
-        const keys = Object.keys(d.errors);
-        if (keys.length > 0) {
-          const detailList = keys.map(k => {
-            const v = d.errors[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : String(v);
-            return `${k}: ${vStr}`;
-          }).join(' | ');
-          return `${summaryMsg ? summaryMsg + ' — ' : ''}${detailList}`;
-        }
-      }
-      if (typeof d === 'object') {
-        const keys = Object.keys(d).filter(k => k !== 'success');
-        if (keys.length > 0) {
-          const detailList = keys.map(k => {
-            const v = d[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-            return `${k}: ${vStr}`;
-          }).join(' | ');
-          return detailList;
-        }
-      }
-      if (summaryMsg) return summaryMsg;
-    }
-    if (err.message) return err.message;
-    return defaultMsg;
-  };
-
   // Advance Booking Search Handler
   const handleAdvanceSearchInput = (e) => {
     const q = e.target.value;
@@ -677,13 +643,17 @@ const CheckIn = () => {
       }
 
       const res = await checkInBookingApi(selectedBooking.id, payload);
-      queryClient.invalidateQueries({ queryKey: ['checkin-data'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['checkin-advance-bookings'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
+      queryClient.invalidateQueries({ queryKey: ['checkin-advance-bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
       showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
       setShowAdvanceConfirmModal(false);
@@ -774,12 +744,12 @@ const CheckIn = () => {
       }
 
       const res = await createWalkInStayApi(formData);
-      queryClient.invalidateQueries({ queryKey: ['checkin-data'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['checkin-data'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
       showSuccess(`Walk-In Check-In for ${firstName} ${lastName} completed successfully!`, 'Check-In Successful');
       const stayId = res?.data?.id || res?.id || res?.data?.stay_id || res?.stay_id;
       if (stayId) {

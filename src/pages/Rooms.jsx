@@ -1,15 +1,18 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getRoomsApi, getRoomTypesApi, createRoomApi, updateRoomStatusApi, deleteRoomApi, createRoomTypeApi } from '../api/roomApi';
+import { getRoomsApi, getRoomTypesApi, createRoomApi, updateRoomStatusApi, deleteRoomApi, createRoomTypeApi, getPendingRoomDeletionRequestsApi } from '../api/roomApi';
 import { getCurrentSubscriptionApi } from '../api/subscriptionApi';
 import StatusBadge from '../components/StatusBadge';
 import RoomCalendar from '../components/RoomCalendar';
 import PageLoader from '../components/PageLoader';
+import RoomDeleteModal from '../components/RoomDeleteModal';
+import RoomDeletionRequestsModal from '../components/RoomDeletionRequestsModal';
 import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { exportRoomsToExcel, exportRoomsToPDF } from '../utils/exportUtils';
+import { Trash2, ShieldAlert, Bell } from 'lucide-react';
 
 const Rooms = () => {
   const { showConfirm, showError, showSuccess } = useNotification();
@@ -47,9 +50,26 @@ const Rooms = () => {
     gcTime: 5 * 60 * 1000,
   });
 
+  const isOwner = Boolean(isHotelOwner || isSuperUser);
   const loading = roomsLoading || typesLoading || subLoading;
   const [viewMode, setViewMode] = useState('grid'); // 'grid', 'table', 'calendar'
   const [filterStatus, setFilterStatus] = useState('ALL');
+
+  // Room Deletion & Approval Modal States
+  const [selectedRoomForDelete, setSelectedRoomForDelete] = useState(null);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showRequestsModal, setShowRequestsModal] = useState(false);
+
+  // Pending Deletion Requests Query for Hotel Owner
+  const {
+    data: pendingRequests = [],
+    refetch: refetchPendingRequests,
+  } = useQuery({
+    queryKey: ['roomDeletionRequests', 'pending', selectedProperty?.id],
+    queryFn: () => getPendingRoomDeletionRequestsApi().catch(() => []),
+    enabled: isOwner,
+    staleTime: 30 * 1000,
+  });
 
   // New Room Modal state
   const [showModal, setShowModal] = useState(false);
@@ -231,7 +251,7 @@ const Rooms = () => {
     });
     try {
       await updateRoomStatusApi(roomId, newStatus);
-      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
     } catch (err) {
       if (prevRooms) {
         queryClient.setQueryData(['rooms', selectedProperty?.id], prevRooms);
@@ -240,37 +260,17 @@ const Rooms = () => {
     }
   };
 
-  const handleDeleteRoom = (room) => {
-    if (!hasPermission('rooms', 'can_create')) {
-      showError('Your staff role is not authorized to delete room records.', 'Permission Denied');
-      return;
-    }
+  const handleOpenDeleteModal = (room) => {
+    setSelectedRoomForDelete(room);
+    setShowDeleteModal(true);
+  };
 
-    showConfirm({
-      title: 'Delete Room Record',
-      message: `Are you sure you want to permanently DELETE Room ${room.room_number}? This action cannot be undone.`,
-      confirmText: 'Yes, Delete Room',
-      cancelText: 'Cancel',
-      confirmVariant: 'danger',
-      onConfirm: async () => {
-        const prevRooms = queryClient.getQueryData(['rooms', selectedProperty?.id]);
-        queryClient.setQueriesData({ queryKey: ['rooms'] }, (old) => {
-          if (!Array.isArray(old)) return old;
-          return old.filter((r) => r.id !== room.id);
-        });
-        showSuccess(`Room ${room.room_number} deleted successfully!`, 'Room Deleted');
-        try {
-          await deleteRoomApi(room.id);
-          queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
-          queryClient.invalidateQueries({ queryKey: ['subscription'] });
-        } catch (err) {
-          if (prevRooms) {
-            queryClient.setQueryData(['rooms', selectedProperty?.id], prevRooms);
-          }
-          showError('Cannot delete room with active stays or reservations.', 'Deletion Failed');
-        }
-      },
-    });
+  const handleDeleteSuccess = ({ type, roomId }) => {
+    queryClient.invalidateQueries({ queryKey: ['rooms'] });
+    queryClient.invalidateQueries({ queryKey: ['subscription'] });
+    if (isOwner) {
+      refetchPendingRequests();
+    }
   };
 
   const filteredRooms = rooms.filter((r) => {
@@ -471,6 +471,21 @@ const Rooms = () => {
               <i className="bi bi-calendar-week me-1"></i> Calendar
             </button>
           </div>
+          {isOwner && (
+            <button
+              className={`btn ${pendingRequests.length > 0 ? 'btn-outline-danger' : 'btn-outline-secondary'} fw-semibold shadow-sm d-flex align-items-center gap-1.5`}
+              onClick={() => setShowRequestsModal(true)}
+              title="View Room Deletion Requests"
+            >
+              <ShieldAlert size={16} />
+              <span>Deletion Requests</span>
+              {pendingRequests.length > 0 && (
+                <span className="badge bg-danger rounded-pill extra-small ms-1">
+                  {pendingRequests.length}
+                </span>
+              )}
+            </button>
+          )}
           {hasPermission('rooms', 'can_create') && (
             <button
               className={`btn ${isRoomLimitReached ? 'btn-secondary opacity-75' : 'btn-primary'} fw-semibold shadow-sm d-flex align-items-center gap-1.5`}
@@ -572,6 +587,37 @@ const Rooms = () => {
         </div>
       </div>
 
+      {/* Owner Pending Deletion Requests Alert Banner */}
+      {isOwner && pendingRequests.length > 0 && (
+        <div className="alert alert-warning border-warning-subtle shadow-2xs rounded-3 p-3 mb-3 d-flex align-items-center justify-content-between flex-wrap gap-3">
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="rounded-circle d-flex align-items-center justify-content-center bg-warning text-dark flex-shrink-0"
+              style={{ width: '38px', height: '38px' }}
+            >
+              <Bell size={18} />
+            </div>
+            <div>
+              <div className="fw-bold text-dark d-flex align-items-center gap-2">
+                <span>{pendingRequests.length} Room Deletion Request{pendingRequests.length > 1 ? 's' : ''} Pending Review</span>
+                <span className="badge bg-danger rounded-pill extra-small px-2 py-0.5">Action Required</span>
+              </div>
+              <div className="text-muted extra-small mt-0.5">
+                Staff requested deletion for {pendingRequests.map((r) => `Room ${r.room_number}`).join(', ')}. Review room activity and authorize deletion.
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-dark fw-bold rounded-pill px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs"
+            onClick={() => setShowRequestsModal(true)}
+          >
+            <ShieldAlert size={15} />
+            <span>Review Requests ({pendingRequests.length})</span>
+          </button>
+        </div>
+      )}
+
       {/* Filter Tabs */}
       {viewMode !== 'calendar' && (
         <div className="d-flex gap-2 mb-4 overflow-auto pb-2">
@@ -603,7 +649,9 @@ const Rooms = () => {
                       <h4 className="fw-bold m-0 text-dark">Room {room.room_number}</h4>
                       <span className="text-muted small">{room.floor}</span>
                     </div>
-                    <StatusBadge status={room.status} />
+                    <div className="d-flex align-items-center gap-1.5">
+                      <StatusBadge status={room.status} />
+                    </div>
                   </div>
 
                   <div className="p-2 bg-light rounded my-3">
@@ -616,7 +664,18 @@ const Rooms = () => {
 
                   {/* Status Dropdown */}
                   <div className="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
-                    <span className="text-muted small">Update Status:</span>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-danger p-1 d-inline-flex align-items-center justify-content-center"
+                        style={{ width: '28px', height: '28px', borderRadius: '6px' }}
+                        title="Delete Room / View Connected Activity"
+                        onClick={() => handleOpenDeleteModal(room)}
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <span className="text-muted small">Update Status:</span>
+                    </div>
                     <select
                       className="form-select form-select-sm w-auto"
                       value={room.status}
@@ -789,17 +848,28 @@ const Rooms = () => {
                         )}
                         {columnVisibility.actions && (
                           <td className="text-end pe-3">
-                            <select
-                              className="form-select form-select-sm w-auto d-inline-block"
-                              value={room.status}
-                              onChange={(e) => handleStatusChange(room.id, e.target.value)}
-                            >
-                              <option value="AVAILABLE">AVAILABLE</option>
-                              <option value="RESERVED">RESERVED</option>
-                              <option value="OCCUPIED">OCCUPIED</option>
-                              <option value="CLEANING">CLEANING</option>
-                              <option value="MAINTENANCE">MAINTENANCE</option>
-                            </select>
+                            <div className="d-inline-flex align-items-center gap-1.5 justify-content-end">
+                              <select
+                                className="form-select form-select-sm w-auto d-inline-block"
+                                value={room.status}
+                                onChange={(e) => handleStatusChange(room.id, e.target.value)}
+                              >
+                                <option value="AVAILABLE">AVAILABLE</option>
+                                <option value="RESERVED">RESERVED</option>
+                                <option value="OCCUPIED">OCCUPIED</option>
+                                <option value="CLEANING">CLEANING</option>
+                                <option value="MAINTENANCE">MAINTENANCE</option>
+                              </select>
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger d-inline-flex align-items-center justify-content-center p-1"
+                                style={{ width: '31px', height: '31px', borderRadius: '6px' }}
+                                title="Delete Room / View Connected Activity"
+                                onClick={() => handleOpenDeleteModal(room)}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>
@@ -1151,6 +1221,29 @@ const Rooms = () => {
           </div>
         </div>
       )}
+
+      {/* Room Deletion & Activity Modal */}
+      <RoomDeleteModal
+        show={showDeleteModal}
+        room={selectedRoomForDelete}
+        onClose={() => {
+          setShowDeleteModal(false);
+          setSelectedRoomForDelete(null);
+        }}
+        onSuccess={handleDeleteSuccess}
+      />
+
+      {/* Room Deletion Requests Review Modal (Owner) */}
+      <RoomDeletionRequestsModal
+        show={showRequestsModal}
+        onClose={() => setShowRequestsModal(false)}
+        onActionSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['roomDeletionRequests'] });
+          queryClient.invalidateQueries({ queryKey: ['subscription'] });
+          refetchPendingRequests();
+        }}
+      />
     </div>
   );
 };

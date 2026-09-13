@@ -164,7 +164,7 @@ const StaffManagement = () => {
         if (!Array.isArray(old)) return [res];
         return [res, ...old];
       });
-      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.username?.[0]
@@ -193,7 +193,7 @@ const StaffManagement = () => {
     try {
       const res = await toggleUserActiveApi(targetUser.id);
       showSuccess(res.message, 'Status Updated');
-      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       if (prevStaff) {
         queryClient.setQueryData(['staff'], prevStaff);
@@ -227,7 +227,7 @@ const StaffManagement = () => {
 
     try {
       await deleteUserApi(targetUser.id);
-      queryClient.invalidateQueries({ queryKey: ['staff'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
     } catch (err) {
       if (prevStaff) {
         queryClient.setQueryData(['staff'], prevStaff);

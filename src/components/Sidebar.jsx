@@ -20,7 +20,8 @@ import {
   ShieldCheck,
   Lock,
   LifeBuoy,
-  Wallet
+  Wallet,
+  Globe
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -141,8 +142,8 @@ const Sidebar = () => {
               </NavLink>
             )}
 
-            {/* ROOMS GROUP */}
-            {!collapsed && <div className="sidebar-nav-header px-3 pt-3 pb-1">Rooms</div>}
+            {/* ROOMS & SHOWCASE GROUP */}
+            {!collapsed && <div className="sidebar-nav-header px-3 pt-3 pb-1">Rooms &amp; Showcase</div>}
             <NavLink to="/rooms" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} title="Rooms">
               <DoorClosed size={20} className="flex-shrink-0" />
               {!collapsed && <span>Rooms</span>}
@@ -150,6 +151,17 @@ const Sidebar = () => {
             <NavLink to="/room-types" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} title="Room Categories">
               <Grid size={20} className="flex-shrink-0" />
               {!collapsed && <span>Room Categories</span>}
+            </NavLink>
+            <NavLink to="/catalogue/manage" className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} title="Digital Catalogue">
+              <Globe size={20} className="flex-shrink-0 text-info" />
+              {!collapsed && (
+                <div className="d-flex align-items-center justify-content-between flex-grow-1">
+                  <span>Digital Catalogue</span>
+                  <span className="badge bg-primary-subtle text-primary extra-small px-1.5 py-0.5 rounded-pill" style={{ fontSize: '0.65rem' }}>
+                    Live
+                  </span>
+                </div>
+              )}
             </NavLink>
 
             {/* CUSTOMERS GROUP */}

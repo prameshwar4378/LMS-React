@@ -26,6 +26,8 @@ body {
 .p-4\.5 { padding: 1.75rem !important; }
 .px-4\.5 { padding-left: 1.75rem !important; padding-right: 1.75rem !important; }
 .py-4\.5 { padding-top: 1.75rem !important; padding-bottom: 1.75rem !important; }
+.gap-1\.5 { gap: 0.375rem !important; }
+.gap-2\.5 { gap: 0.625rem !important; }
 
 /* Slate Utility Classes */
 .bg-slate-900 { background-color: #0f172a !important; color: #ffffff !important; }
@@ -91,12 +93,20 @@ body {
   border-top: 4px solid #64748b;
 }
 
-/* Prevent Table Dropdown Menu Clipping */
+/* Prevent Table Dropdown Menu Clipping on Main Data Tables */
 .table-responsive {
   overflow-x: auto !important;
   overflow-y: visible !important;
   min-height: 260px;
   padding-bottom: 30px;
+}
+
+/* Modals, compact tables, and nested sub-tables should not have artificial empty space */
+.modal .table-responsive,
+.modal-body .table-responsive,
+.table-responsive-compact {
+  min-height: unset !important;
+  padding-bottom: 0 !important;
 }
 
 .card, .card-body, .saas-card, .saas-card-static {
@@ -118,6 +128,31 @@ body {
   margin-bottom: 0.35rem !important;
 }
 
+/* High-Visibility Amber Highlight Button */
+.btn-highlight-amber {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%) !important;
+  border: 1px solid #d97706 !important;
+  color: #0f172a !important;
+  font-weight: 700 !important;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4) !important;
+  transition: all 0.2s ease-in-out !important;
+  text-shadow: none !important;
+}
+
+.btn-highlight-amber:hover {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%) !important;
+  border-color: #f59e0b !important;
+  color: #0f172a !important;
+  transform: translateY(-1px);
+  box-shadow: 0 6px 18px rgba(245, 158, 11, 0.55) !important;
+}
+
+.btn-highlight-amber:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.35) !important;
+}
+
+
 /* Step Wizard Slide & Fade Animation */
 @keyframes fadeInUp {
   from {
@@ -138,11 +173,39 @@ body {
 /* FIXED SIDEBAR & VIEWPORT APP SHELL         */
 /* ========================================== */
 html, body {
-  height: 100% !important;
   margin: 0 !important;
   padding: 0 !important;
-  overflow: hidden !important;
   background-color: #0f172a !important;
+}
+
+/* Dashboard mode lock */
+html:not(.public-catalogue-page),
+body:not(.public-catalogue-page) {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+/* PUBLIC DIGITAL CATALOGUE: 100% UNRESTRICTED SMOOTH SCROLLING */
+html.public-catalogue-page,
+body.public-catalogue-page,
+html:has(.luxury-hotel-site),
+body:has(.luxury-hotel-site) {
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  background-color: #080d1a !important;
+  scroll-behavior: smooth !important;
+}
+
+html.public-catalogue-page #root,
+body.public-catalogue-page #root {
+  height: auto !important;
+  min-height: 100vh !important;
+  max-height: none !important;
+  overflow: visible !important;
 }
 
 .lms-wrapper {
@@ -454,11 +517,13 @@ html, body {
     visibility: hidden;
   }
 
-  /* SHOW ONLY THE INVOICE OR NIGHT AUDIT AND ITS DIRECT CHILD ELEMENTS */
+  /* SHOW ONLY THE INVOICE, NIGHT AUDIT, OR SHIFT AUDIT SHEET */
   .printable-invoice,
   .printable-invoice *,
   .printable-night-audit,
-  .printable-night-audit * {
+  .printable-night-audit *,
+  .printable-shift-sheet,
+  .printable-shift-sheet * {
     visibility: visible !important;
   }
 
@@ -490,9 +555,10 @@ html, body {
     visibility: visible !important;
   }
 
-  /* PIN INVOICE OR NIGHT AUDIT AT TOP OF PRINT SHEET */
+  /* PIN INVOICE, NIGHT AUDIT, OR SHIFT SHEET AT TOP OF PRINT SHEET */
   .printable-invoice,
-  .printable-night-audit {
+  .printable-night-audit,
+  .printable-shift-sheet {
     position: relative !important;
     left: 0 !important;
     top: 0 !important;
@@ -504,6 +570,47 @@ html, body {
     box-shadow: none !important;
     border: none !important;
     page-break-after: avoid !important;
+  }
+
+  /* Shift Sheet A4 Layout */
+  .printable-shift-sheet .card {
+    border: 1px solid #cbd5e1 !important;
+    box-shadow: none !important;
+    break-inside: avoid !important;
+    page-break-inside: avoid !important;
+    margin-bottom: 10px !important;
+  }
+
+  .printable-shift-sheet .table {
+    font-size: 10.5px !important;
+    margin-bottom: 0 !important;
+    width: 100% !important;
+  }
+
+  .printable-shift-sheet .table th,
+  .printable-shift-sheet .table td {
+    padding: 4px 8px !important;
+    border-color: #cbd5e1 !important;
+  }
+
+  .printable-shift-sheet .badge {
+    border: 1px solid currentColor !important;
+    font-size: 9px !important;
+    padding: 2px 6px !important;
+  }
+
+  .printable-shift-sheet .col-md-3 {
+    flex: 0 0 auto !important;
+    width: 25% !important;
+  }
+
+  .printable-shift-sheet .col-md-6 {
+    flex: 0 0 auto !important;
+    width: 50% !important;
+  }
+
+  .printable-shift-sheet .page-break-avoid {
+    break-inside: avoid !important;
     page-break-inside: avoid !important;
   }
 
@@ -806,6 +913,17 @@ html, body {
 
 .report-grid-card:hover .report-card-action-btn .arrow-icon {
   transform: translateX(5px) !important;
+}
+
+/* Responsive Width Utilities */
+@media (min-width: 576px) {
+  .w-sm-auto { width: auto !important; }
+}
+@media (min-width: 768px) {
+  .w-md-auto { width: auto !important; }
+}
+@media (min-width: 992px) {
+  .w-lg-auto { width: auto !important; }
 }
 
 

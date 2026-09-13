@@ -59,7 +59,7 @@ const NotificationModal = ({
     >
       <div
         className="modal-dialog modal-dialog-centered modal-dialog-animated"
-        style={{ maxWidth: '440px' }}
+        style={{ maxWidth: '470px' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -92,34 +92,34 @@ const NotificationModal = ({
           </p>
 
           {/* Action Buttons */}
-          <div className="d-flex justify-content-center gap-3">
+          <div className="d-flex justify-content-center gap-2.5">
             {type === 'confirm' ? (
               <>
                 <button
                   type="button"
-                  className="btn btn-light border fw-semibold px-4 py-2.5 rounded-3 w-50"
-                  style={{ height: '46px' }}
+                  className="btn btn-light border fw-semibold px-3 py-2 rounded-3 flex-fill d-inline-flex align-items-center justify-content-center text-center"
+                  style={{ minHeight: '46px', height: 'auto', fontSize: '0.92rem', lineHeight: '1.3' }}
                   onClick={onCancel || onClose}
                 >
-                  {cancelText}
+                  <span>{cancelText}</span>
                 </button>
                 <button
                   type="button"
-                  className={`btn ${btnClass} fw-bold px-4 py-2.5 rounded-3 w-50 shadow-sm`}
-                  style={{ height: '46px' }}
+                  className={`btn ${btnClass} fw-bold px-3 py-2 rounded-3 flex-fill shadow-sm d-inline-flex align-items-center justify-content-center text-center`}
+                  style={{ minHeight: '46px', height: 'auto', fontSize: '0.92rem', lineHeight: '1.3' }}
                   onClick={onConfirm}
                 >
-                  {confirmText}
+                  <span>{confirmText}</span>
                 </button>
               </>
             ) : (
               <button
                 type="button"
-                className={`btn ${btnClass} fw-bold px-5 py-2.5 rounded-3 shadow-sm`}
-                style={{ minWidth: '140px', height: '46px' }}
+                className={`btn ${btnClass} fw-bold px-5 py-2 rounded-3 shadow-sm d-inline-flex align-items-center justify-content-center text-center`}
+                style={{ minWidth: '140px', minHeight: '46px', height: 'auto', fontSize: '0.92rem', lineHeight: '1.3' }}
                 onClick={onClose}
               >
-                {confirmText}
+                <span>{confirmText}</span>
               </button>
             )}
           </div>

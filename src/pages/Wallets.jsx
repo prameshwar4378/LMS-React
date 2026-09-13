@@ -60,7 +60,6 @@ const DEFAULT_COLUMNS = {
   credit: true,
   dues: true,
   net: true,
-  activity: true,
   stays: true,
   actions: true
 };
@@ -71,7 +70,6 @@ const COLUMN_CONFIG = [
   { key: 'credit', label: 'Available Advance Credit' },
   { key: 'dues', label: 'Pending Stay Dues' },
   { key: 'net', label: 'Net Position' },
-  { key: 'activity', label: 'Latest Activity' },
   { key: 'stays', label: 'Stays Count' },
   { key: 'actions', label: 'Wallet Operations' }
 ];
@@ -91,7 +89,9 @@ const Wallets = () => {
     try {
       const saved = localStorage.getItem('lms_wallets_col_visibility');
       if (saved) {
-        return { ...DEFAULT_COLUMNS, ...JSON.parse(saved) };
+        const parsed = JSON.parse(saved);
+        delete parsed.activity;
+        return { ...DEFAULT_COLUMNS, ...parsed };
       }
     } catch (e) {
       console.error('Failed to parse saved column visibility', e);
@@ -325,7 +325,7 @@ const Wallets = () => {
           ),
         };
       });
-      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process advance deposit.';
@@ -391,7 +391,7 @@ const Wallets = () => {
           ),
         };
       });
-      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process wallet refund.';
@@ -443,7 +443,7 @@ const Wallets = () => {
           ),
         };
       });
-      queryClient.invalidateQueries({ queryKey: ['wallets'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['wallets'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to settle dues from wallet.';
@@ -509,12 +509,7 @@ const Wallets = () => {
           comparison = netA - netB;
           break;
         }
-        case 'activity': {
-          const dateA = a.last_transaction?.payment_date ? new Date(a.last_transaction.payment_date).getTime() : 0;
-          const dateB = b.last_transaction?.payment_date ? new Date(b.last_transaction.payment_date).getTime() : 0;
-          comparison = dateA - dateB;
-          break;
-        }
+
         case 'stays': {
           const staysA = parseInt(a.total_stays_count, 10) || 0;
           const staysB = parseInt(b.total_stays_count, 10) || 0;
@@ -869,7 +864,6 @@ const Wallets = () => {
                 <option value="name_asc">Guest Name (A → Z)</option>
                 <option value="name_desc">Guest Name (Z → A)</option>
                 <option value="contact_asc">Phone (0 → 9)</option>
-                <option value="activity_desc">Activity (Recent First)</option>
                 <option value="stays_desc">Stays (High → Low)</option>
               </select>
             </div>
@@ -1150,28 +1144,6 @@ const Wallets = () => {
                         </th>
                       )}
 
-                      {columnVisibility.activity && (
-                        <th
-                          className={`${density === 'compact' ? 'py-2' : 'py-3'} cursor-pointer user-select-none text-nowrap`}
-                          style={{ cursor: 'pointer', minWidth: '170px' }}
-                          onClick={() => handleHeaderSort('activity')}
-                          title="Click to sort by Activity Date"
-                        >
-                          <div className="d-inline-flex align-items-center gap-1.5">
-                            <span className={sortConfig.field === 'activity' ? 'text-primary fw-bold' : ''}>Latest Activity</span>
-                            {sortConfig.field === 'activity' ? (
-                              sortConfig.direction === 'asc' ? (
-                                <ArrowUp size={13} className="text-primary fw-bold" />
-                              ) : (
-                                <ArrowDown size={13} className="text-primary fw-bold" />
-                              )
-                            ) : (
-                              <ArrowUpDown size={12} className="text-muted opacity-40" />
-                            )}
-                          </div>
-                        </th>
-                      )}
-
                       {columnVisibility.stays && (
                         <th
                           className={`${density === 'compact' ? 'py-2' : 'py-3'} text-center cursor-pointer user-select-none text-nowrap`}
@@ -1197,7 +1169,7 @@ const Wallets = () => {
                       {columnVisibility.actions && (
                         <th
                           className={`pe-4 ${density === 'compact' ? 'py-2' : 'py-3'} text-end text-nowrap`}
-                          style={{ minWidth: '240px' }}
+                          style={{ minWidth: '190px', width: '190px' }}
                         >
                           Wallet Operations
                         </th>
@@ -1209,10 +1181,9 @@ const Wallets = () => {
                       const hasCredit = w.total_available_credit > 0.01;
                       const hasDues = w.pending_dues > 0.01;
                       const canSettle = hasCredit && hasDues;
-                      const lastTx = w.last_transaction;
 
                       return (
-                        <tr key={w.id} className="transition-all">
+                        <tr key={w.id} className="transition-all align-middle">
                           {/* Guest Profile */}
                           {columnVisibility.profile && (
                             <td className={`ps-4 ${density === 'compact' ? 'py-2' : 'py-3'}`}>
@@ -1316,26 +1287,6 @@ const Wallets = () => {
                             </td>
                           )}
 
-                          {/* Latest Activity */}
-                          {columnVisibility.activity && (
-                            <td className={density === 'compact' ? 'py-2' : 'py-3'}>
-                              {lastTx ? (
-                                <div className="extra-small">
-                                  <div className="text-dark fw-semibold">
-                                    {new Date(lastTx.payment_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
-                                    <span className={`ms-1 fw-bold font-monospace ${parseFloat(lastTx.amount) < 0 ? 'text-danger' : 'text-success'}`}>
-                                      {parseFloat(lastTx.amount) < 0 ? `-₹${Math.abs(parseFloat(lastTx.amount)).toFixed(0)}` : `+₹${parseFloat(lastTx.amount).toFixed(0)}`}
-                                    </span>
-                                  </div>
-                                  <div className="text-muted font-monospace text-truncate" style={{ maxWidth: '170px' }}>
-                                    {lastTx.payment_method} &bull; {lastTx.payment_number}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-muted extra-small">No recent activity</span>
-                              )}
-                            </td>
-                          )}
 
                           {/* Stays Count */}
                           {columnVisibility.stays && (
@@ -1346,59 +1297,75 @@ const Wallets = () => {
                             </td>
                           )}
 
-                          {/* Action Buttons: strictly single-line horizontal flex-nowrap */}
+                          {/* Action Buttons: 2 upside and 2 downside */}
                           {columnVisibility.actions && (
-                            <td className={`pe-4 ${density === 'compact' ? 'py-2' : 'py-3'} text-end`}>
-                              <div className="d-inline-flex align-items-center justify-content-end gap-1 flex-nowrap">
-                                {/* Record Deposit */}
+                            <td className={`pe-4 ${density === 'compact' ? 'py-1.5' : 'py-2'} text-end align-middle`}>
+                              <div
+                                className="d-inline-grid gap-1.5"
+                                style={{
+                                  gridTemplateColumns: 'repeat(2, 90px)',
+                                  justifyContent: 'end'
+                                }}
+                              >
+                                {/* Upside Left: Record Deposit */}
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-outline-success text-nowrap rounded-3 py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs"
+                                  className="btn btn-sm btn-outline-success text-nowrap rounded-3 py-1 px-1.5 extra-small fw-semibold d-inline-flex align-items-center justify-content-center gap-1 shadow-2xs w-100"
                                   onClick={() => handleOpenDeposit(w)}
                                   title={`Deposit advance funds into ${w.full_name}'s wallet`}
                                 >
-                                  <ArrowDownLeft size={12} />
+                                  <ArrowDownLeft size={12} className="flex-shrink-0" />
                                   <span>+ Deposit</span>
                                 </button>
 
-                                {/* Return / Refund */}
+                                {/* Upside Right: Return / Refund */}
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-outline-danger text-nowrap rounded-3 py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1 shadow-2xs"
+                                  className="btn btn-sm btn-outline-danger text-nowrap rounded-3 py-1 px-1.5 extra-small fw-semibold d-inline-flex align-items-center justify-content-center gap-1 shadow-2xs w-100"
                                   disabled={!hasCredit}
                                   onClick={() => handleOpenRefund(w)}
                                   title={hasCredit ? `Refund up to ₹${w.total_available_credit.toFixed(2)} to guest` : 'No available credit to refund'}
                                 >
-                                  <RotateCcw size={12} />
+                                  <RotateCcw size={12} className="flex-shrink-0" />
                                   <span>Refund</span>
                                 </button>
 
-                                {/* Settle Dues from Wallet */}
-                                {canSettle && (
-                                  <button
-                                    type="button"
-                                    className="btn btn-sm btn-warning text-dark text-nowrap rounded-3 py-1 px-2.5 extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-xs"
-                                    disabled={settlingDuesId === w.id}
-                                    onClick={() => handleSettleDuesFromWallet(w)}
-                                    title={`Apply wallet credit to clear ₹${Math.min(w.total_available_credit, w.pending_dues).toFixed(2)} in stay dues`}
-                                  >
-                                    {settlingDuesId === w.id ? (
-                                      <span className="spinner-border spinner-border-sm" role="status"></span>
-                                    ) : (
-                                      <CheckCircle2 size={12} />
-                                    )}
-                                    <span>Settle</span>
-                                  </button>
-                                )}
-
-                                {/* View Ledger / Statement */}
+                                {/* Downside Left: Settle Dues from Wallet */}
                                 <button
                                   type="button"
-                                  className="btn btn-sm btn-light border text-nowrap rounded-3 py-1 px-2.5 extra-small fw-semibold text-secondary d-inline-flex align-items-center gap-1 shadow-2xs"
+                                  className={`btn btn-sm ${
+                                    canSettle
+                                      ? 'btn-warning text-dark fw-bold shadow-xs'
+                                      : 'btn-outline-warning text-muted opacity-50'
+                                  } text-nowrap rounded-3 py-1 px-1.5 extra-small d-inline-flex align-items-center justify-content-center gap-1 shadow-2xs w-100`}
+                                  disabled={!canSettle || settlingDuesId === w.id}
+                                  onClick={() => handleSettleDuesFromWallet(w)}
+                                  title={
+                                    canSettle
+                                      ? `Apply wallet credit to clear ₹${Math.min(w.total_available_credit, w.pending_dues).toFixed(2)} in stay dues`
+                                      : hasCredit && !hasDues
+                                      ? 'No pending stay dues to settle'
+                                      : !hasCredit && hasDues
+                                      ? 'No advance credit available in wallet'
+                                      : 'No dues or credit to settle'
+                                  }
+                                >
+                                  {settlingDuesId === w.id ? (
+                                    <span className="spinner-border spinner-border-sm" role="status" style={{ width: '12px', height: '12px' }}></span>
+                                  ) : (
+                                    <CheckCircle2 size={12} className="flex-shrink-0" />
+                                  )}
+                                  <span>Settle</span>
+                                </button>
+
+                                {/* Downside Right: View Ledger / Statement */}
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-light border text-nowrap rounded-3 py-1 px-1.5 extra-small fw-semibold text-secondary d-inline-flex align-items-center justify-content-center gap-1 shadow-2xs w-100"
                                   onClick={() => handleOpenLedger(w)}
                                   title="View full wallet statement & transaction ledger"
                                 >
-                                  <FileText size={12} />
+                                  <FileText size={12} className="flex-shrink-0" />
                                   <span>Ledger</span>
                                 </button>
                               </div>
@@ -1446,9 +1413,6 @@ const Wallets = () => {
                             {visibleTotals.net > 0 ? `+${formatCurrency(visibleTotals.net)}` : formatCurrency(visibleTotals.net)}
                           </strong>
                         </td>
-                      )}
-                      {columnVisibility.activity && (
-                        <td className={`${density === 'compact' ? 'py-2' : 'py-2.5'} text-muted`}>—</td>
                       )}
                       {columnVisibility.stays && (
                         <td className={`${density === 'compact' ? 'py-2' : 'py-2.5'} text-center text-muted`}>—</td>

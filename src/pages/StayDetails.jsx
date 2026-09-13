@@ -310,7 +310,7 @@ const StayDetails = () => {
       setShowEditGuestModal(false);
       showSuccess('Primary guest profile updated successfully.', 'Guest Updated');
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
-      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to update guest details and documents.');
     } finally {
@@ -486,7 +486,7 @@ const StayDetails = () => {
 
         try {
           await deleteStayGuestApi(guestId);
-          queryClient.invalidateQueries({ queryKey: ['stay-details', id], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
         } catch (err) {
           if (prevStay) queryClient.setQueryData(['stay-details', id], prevStay);
           showError('Error removing guest from roster.', 'Removal Failed');
@@ -567,6 +567,8 @@ const StayDetails = () => {
       setShowPaymentModal(false);
       setEditPayment(null);
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error saving payment record.';
       showError(errMsg, 'Payment Failed');
@@ -597,6 +599,8 @@ const StayDetails = () => {
         try {
           await deletePaymentApi(paymentId);
           queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
+          queryClient.invalidateQueries({ queryKey: ['payments'] });
+          queryClient.invalidateQueries({ queryKey: ['current-stays'] });
         } catch (err) {
           if (prevStay) queryClient.setQueryData(['stay-details', id], prevStay);
           showError('Error deleting payment transaction.', 'Deletion Failed');

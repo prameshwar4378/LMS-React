@@ -531,7 +531,7 @@ const Customers = () => {
         }
         return [savedCustomer, ...old];
       });
-      queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
       const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
@@ -559,7 +559,7 @@ const Customers = () => {
 
         try {
           await deleteCustomerApi(c.id);
-          queryClient.invalidateQueries({ queryKey: ['customers'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['customers'] });
         } catch (err) {
           // Rollback if server rejects
           if (prevCustomers) {

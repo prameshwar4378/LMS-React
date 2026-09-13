@@ -1060,17 +1060,17 @@ const Shifts = () => {
                       </div>
                     </div>
 
-                    <div className="d-flex justify-content-between align-items-center pt-2 border-top">
+                    <div className="d-flex justify-content-between align-items-center pt-2 border-top gap-2 flex-wrap">
                       <div>
                         <div className="extra-small text-secondary fw-bold">EXPECTED CASH</div>
                         <div className="fs-5 fw-bold text-primary font-monospace">{formatCurrency(st.financials?.expected_cash ?? st.expected_cash)}</div>
                       </div>
-                      <div className="d-flex align-items-center gap-1.5">
+                      <div className="d-flex align-items-center gap-2 flex-wrap">
                         {hasRole(['SUPER_ADMIN', 'MANAGER']) && (
                           <>
                             <button
                               type="button"
-                              className="btn btn-sm btn-outline-danger rounded-3 extra-small fw-semibold"
+                              className="btn btn-sm btn-outline-danger rounded-3 extra-small fw-semibold px-2.5 py-1.5"
                               onClick={() => {
                                 setSelectedShiftForClose(st);
                                 setShowCloseModal(true);
@@ -1081,7 +1081,7 @@ const Shifts = () => {
                             </button>
                             <button
                               type="button"
-                              className="btn btn-sm btn-danger rounded-3 extra-small fw-semibold"
+                              className="btn btn-sm btn-danger rounded-3 extra-small fw-semibold px-2.5 py-1.5"
                               onClick={() => {
                                 setSelectedShiftForForceClose(st);
                                 setShowForceCloseModal(true);
@@ -1092,7 +1092,7 @@ const Shifts = () => {
                             </button>
                           </>
                         )}
-                        <Link to={`/shifts/${st.id}`} className="btn btn-sm btn-outline-primary rounded-3 extra-small fw-semibold">
+                        <Link to={`/shifts/${st.id}`} className="btn btn-sm btn-outline-primary rounded-3 extra-small fw-semibold px-2.5 py-1.5">
                           View Till <ArrowRight size={12} className="ms-1" />
                         </Link>
                       </div>
@@ -1397,7 +1397,7 @@ const Shifts = () => {
                             )}
                             {columnVisibility.actions && (
                               <td className="text-end pe-3">
-                                <div className="d-flex align-items-center justify-content-end gap-1.5">
+                                <div className="d-flex align-items-center justify-content-end gap-2">
                                   <Link
                                     to={`/shifts/${s.id}`}
                                     className="btn btn-xs btn-light border text-secondary px-2 py-1 rounded-2 text-decoration-none"
@@ -1595,7 +1595,7 @@ const Shifts = () => {
             has_active_shift: true,
             shift: newShift,
           }));
-          queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 
@@ -1614,7 +1614,7 @@ const Shifts = () => {
             has_active_shift: false,
             shift: null,
           }));
-          queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
         }}
       />
 

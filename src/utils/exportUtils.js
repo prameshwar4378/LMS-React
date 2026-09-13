@@ -384,11 +384,6 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
   const safeDate = new Date().toISOString().split('T')[0];
 
   const xmlRows = wallets.map((w, idx) => {
-    const lastTx = w.last_transaction;
-    const lastTxStr = lastTx
-      ? `${new Date(lastTx.payment_date).toLocaleDateString('en-IN')} (${lastTx.payment_method} ₹${Math.abs(parseFloat(lastTx.amount)).toFixed(2)})`
-      : 'No activity';
-
     let statusText = 'Settled';
     if (w.has_credit && !w.has_dues) statusText = 'Credit Active';
     else if (w.has_dues && !w.has_credit) statusText = 'Dues Pending';
@@ -406,7 +401,6 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
         <Cell ss:StyleID="${(w.net_balance || 0) >= 0 ? 'CellCurrencyCredit' : 'CellCurrencyDues'}"><Data ss:Type="Number">${(w.net_balance || 0).toFixed(2)}</Data></Cell>
         <Cell ss:StyleID="CellCenter"><Data ss:Type="String">${statusText}</Data></Cell>
         <Cell ss:StyleID="CellCenter"><Data ss:Type="Number">${w.total_stays_count || 0}</Data></Cell>
-        <Cell ss:StyleID="CellText"><Data ss:Type="String">${escapeXml(lastTxStr)}</Data></Cell>
       </Row>
     `;
   }).join('');
@@ -584,7 +578,6 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
    <Column ss:Width="95"/>
    <Column ss:Width="85"/>
    <Column ss:Width="65"/>
-   <Column ss:Width="160"/>
    <Row ss:Height="24">
     <Cell ss:StyleID="TitleStyle"><Data ss:Type="String">${escapeXml(hotelName.toUpperCase())}</Data></Cell>
     <Cell ss:Index="9" ss:StyleID="MetaLabel"><Data ss:Type="String">Property Code:</Data></Cell>
@@ -598,9 +591,9 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
    <Row ss:Height="10"/>
    <Row ss:Height="24">
     <Cell ss:MergeAcross="2" ss:StyleID="KpiCardCredit"><Data ss:Type="String">ADVANCE CREDIT HELD: ₹${(summary.total_advance_credit_held || 0).toFixed(2)}</Data></Cell>
-    <Cell ss:Index="4" ss:MergeAcross="2" ss:StyleID="KpiCardDues"><Data ss:Type="String">OUTSTANDING DUES: ₹${(summary.total_pending_dues || 0).toFixed(2)}</Data></Cell>
-    <Cell ss:Index="7" ss:MergeAcross="2" ss:StyleID="KpiCardNet"><Data ss:Type="String">NET POSITION: ₹${(summary.net_position || 0).toFixed(2)}</Data></Cell>
-    <Cell ss:Index="10" ss:MergeAcross="1" ss:StyleID="CellCenter"><Data ss:Type="String">Active Wallets: ${wallets.length}</Data></Cell>
+    <Cell ss:Index="4" ss:MergeAcross="1" ss:StyleID="KpiCardDues"><Data ss:Type="String">OUTSTANDING DUES: ₹${(summary.total_pending_dues || 0).toFixed(2)}</Data></Cell>
+    <Cell ss:Index="6" ss:MergeAcross="2" ss:StyleID="KpiCardNet"><Data ss:Type="String">NET POSITION: ₹${(summary.net_position || 0).toFixed(2)}</Data></Cell>
+    <Cell ss:Index="9" ss:MergeAcross="1" ss:StyleID="CellCenter"><Data ss:Type="String">Active Wallets: ${wallets.length}</Data></Cell>
    </Row>
    <Row ss:Height="12"/>
    <Row ss:Height="24">
@@ -614,7 +607,6 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
     <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Net Hotel Position</Data></Cell>
     <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Account Status</Data></Cell>
     <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Total Stays</Data></Cell>
-    <Cell ss:StyleID="ColHeader"><Data ss:Type="String">Latest Transaction Activity</Data></Cell>
    </Row>
    ${xmlRows}
    <Row ss:Height="22">
@@ -622,7 +614,7 @@ export const exportWalletsToExcel = (wallets, summary = {}, hotelInfo = {}) => {
     <Cell ss:Index="6" ss:StyleID="TotalValueCredit"><Data ss:Type="Number">${(summary.total_advance_credit_held || 0).toFixed(2)}</Data></Cell>
     <Cell ss:StyleID="TotalValueDues"><Data ss:Type="Number">${(summary.total_pending_dues || 0).toFixed(2)}</Data></Cell>
     <Cell ss:StyleID="${(summary.net_position || 0) >= 0 ? 'TotalValueCredit' : 'TotalValueDues'}"><Data ss:Type="Number">${(summary.net_position || 0).toFixed(2)}</Data></Cell>
-    <Cell ss:MergeAcross="2" ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
+    <Cell ss:MergeAcross="1" ss:StyleID="TotalLabel"><Data ss:Type="String"></Data></Cell>
    </Row>
   </Table>
   <!-- EXCEL NATIVE LANDSCAPE PRINT SETUP -->
@@ -860,16 +852,12 @@ export const exportWalletsToPDF = (wallets, summary = {}, hotelInfo = {}, option
 
   // --- 3. Table Rows & Headers ---
   const tableHeaders = [
-    ['#', 'Guest Name & ID', 'Contact Details', 'Available Credit', 'Stay Dues', 'Net Position', 'Status', 'Last Activity']
+    ['#', 'Guest Name & ID', 'Contact Details', 'Available Credit', 'Stay Dues', 'Net Position', 'Status']
   ];
 
   const tableRows = wallets.map((w, idx) => {
     const hasCredit = w.total_available_credit > 0.01;
     const hasDues = w.pending_dues > 0.01;
-    const lastTx = w.last_transaction;
-    const lastTxStr = lastTx
-      ? `${new Date(lastTx.payment_date).toLocaleDateString('en-IN')}\n(${lastTx.payment_method} Rs. ${Math.abs(parseFloat(lastTx.amount)).toFixed(2)})`
-      : 'No activity';
 
     let statusText = 'Settled';
     if (hasCredit && !hasDues) statusText = 'Credit Active';
@@ -886,8 +874,7 @@ export const exportWalletsToPDF = (wallets, summary = {}, hotelInfo = {}, option
       hasCredit ? formatPdfCurrency(w.total_available_credit, true) : 'Rs. 0.00',
       hasDues ? formatPdfCurrency(w.pending_dues, false) : 'Rs. 0.00',
       formatPdfCurrency(w.net_balance, w.net_balance > 0),
-      statusText,
-      lastTxStr
+      statusText
     ];
   });
 
@@ -900,7 +887,7 @@ export const exportWalletsToPDF = (wallets, summary = {}, hotelInfo = {}, option
     head: tableHeaders,
     body: tableRows,
     foot: [
-      ['', 'Consolidated Totals:', '', totCreditStr, totDuesStr, totNetStr, '', '']
+      ['', 'Consolidated Totals:', '', totCreditStr, totDuesStr, totNetStr, '']
     ],
     theme: 'grid',
     styles: {
@@ -929,13 +916,12 @@ export const exportWalletsToPDF = (wallets, summary = {}, hotelInfo = {}, option
     },
     columnStyles: {
       0: { cellWidth: 10, halign: 'center' },
-      1: { cellWidth: 46 },
-      2: { cellWidth: 50 },
-      3: { cellWidth: 35, halign: 'right', fontStyle: 'bold', textColor: [21, 128, 61] },
-      4: { cellWidth: 32, halign: 'right', fontStyle: 'bold', textColor: [185, 28, 28] },
-      5: { cellWidth: 34, halign: 'right', fontStyle: 'bold' },
-      6: { cellWidth: 26, halign: 'center', fontStyle: 'bold' },
-      7: { cellWidth: 36, fontSize: 7 }
+      1: { cellWidth: 55 },
+      2: { cellWidth: 56 },
+      3: { cellWidth: 40, halign: 'right', fontStyle: 'bold', textColor: [21, 128, 61] },
+      4: { cellWidth: 38, halign: 'right', fontStyle: 'bold', textColor: [185, 28, 28] },
+      5: { cellWidth: 40, halign: 'right', fontStyle: 'bold' },
+      6: { cellWidth: 30, halign: 'center', fontStyle: 'bold' }
     },
     didParseCell: function(data) {
       if (data.section === 'foot') {
@@ -5346,5 +5332,800 @@ export const exportShiftsListToPDF = (shiftsList, filterInfo = {}, propertyInfo 
   }
 
   doc.save(`Shift_Audit_Ledger_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Exports all system activity audit logs to PDF with high-definition styling.
+ * Supports filtering metadata, 4 KPI cards, full field-level diff breakdown, and clean page layout.
+ */
+export const exportActivityLogsToPDF = (logs, filterInfo = {}, propertyInfo = {}) => {
+  if (!logs || logs.length === 0) {
+    alert('No activity log records available to export.');
+    return;
+  }
+
+  const hotelName = propertyInfo?.name || propertyInfo?.hotel_name || 'LODGE & HOTEL MANAGEMENT';
+  const nowStr = new Date().toLocaleString('en-IN');
+  const safeDate = new Date().toISOString().split('T')[0];
+
+  const totalActivities = logs.length;
+  let totalCreated = 0;
+  let totalUpdated = 0;
+  let totalDeleted = 0;
+
+  logs.forEach((l) => {
+    if (l.action === 'CREATED') totalCreated++;
+    else if (l.action === 'UPDATED') totalUpdated++;
+    else if (l.action === 'DELETED') totalDeleted++;
+  });
+
+  const doc = new jsPDF({
+    orientation: 'landscape',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+
+  // Header Title
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(15, 23, 42);
+  doc.text('SYSTEM ACTIVITY & AUDIT TRAIL REPORT', 14, 14);
+
+  // Subtitle / Filters
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(71, 85, 105);
+  const filterParts = [];
+  if (filterInfo.model && filterInfo.model !== 'ALL') filterParts.push(`Entity: ${filterInfo.model}`);
+  if (filterInfo.action && filterInfo.action !== 'ALL') filterParts.push(`Action: ${filterInfo.action}`);
+  if (filterInfo.search) filterParts.push(`Search: "${filterInfo.search}"`);
+  filterParts.push('Retention: 15 Days');
+
+  doc.text(`Property: ${hotelName} | ${filterParts.join(' | ')}`, 14, 19);
+
+  // Meta Right
+  doc.setFontSize(8);
+  doc.text(`Generated: ${nowStr}`, pageWidth - 14, 14, { align: 'right' });
+  doc.text(`Total Activities: ${totalActivities}`, pageWidth - 14, 19, { align: 'right' });
+
+  // Divider Line
+  doc.setDrawColor(15, 23, 42);
+  doc.setLineWidth(0.4);
+  doc.line(14, 22, pageWidth - 14, 22);
+
+  // 4 KPI Summary Cards
+  const kpiY = 25;
+  const kpiH = 12;
+  const kpiGap = 4;
+  const kpiW = (pageWidth - 28 - (3 * kpiGap)) / 4;
+
+  const kpis = [
+    { label: 'TOTAL ACTIVITIES', val: String(totalActivities), color: [15, 23, 42] },
+    { label: 'CREATED (NEW)', val: String(totalCreated), color: [16, 185, 129] },
+    { label: 'UPDATED (MODIFIED)', val: String(totalUpdated), color: [59, 130, 246] },
+    { label: 'DELETED (REMOVED)', val: String(totalDeleted), color: [239, 68, 68] },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const x = 14 + idx * (kpiW + kpiGap);
+    doc.setFillColor(248, 250, 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.roundedRect(x, kpiY, kpiW, kpiH, 1.5, 1.5, 'FD');
+
+    doc.setFillColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.rect(x, kpiY, 1.8, kpiH, 'F');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(kpi.label, x + 4, kpiY + 4.5);
+
+    doc.setFontSize(9);
+    doc.setTextColor(kpi.color[0], kpi.color[1], kpi.color[2]);
+    doc.text(kpi.val, x + 4, kpiY + 9.5);
+  });
+
+  // Table Data Mapping
+  const tableHeaders = [
+    ['#', 'Date & Time', 'Action', 'Entity', 'Object Description', 'Staff / User', 'Details / Modifications']
+  ];
+
+  const tableRows = logs.map((item, idx) => {
+    const dt = new Date(item.timestamp);
+    const dateFormatted = !isNaN(dt.getTime())
+      ? `${dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}\n${dt.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}`
+      : item.timestamp;
+
+    const actionText = item.action || 'MODIFIED';
+    const entityText = item.model_label || item.model || 'Entity';
+    const objDesc = item.object_repr || '-';
+
+    const userText = item.user
+      ? `${item.user.full_name || item.user.username || 'Staff'}\n(${item.user.role || 'STAFF'})`
+      : 'System';
+
+    // Format changes / diffs
+    let detailsText = '';
+    if (item.action === 'CREATED') {
+      detailsText = item.change_reason ? item.change_reason : 'New record created';
+    } else if (item.action === 'DELETED') {
+      detailsText = item.change_reason ? item.change_reason : 'Record permanently deleted';
+    } else if (item.changes && item.changes.length > 0) {
+      detailsText = item.changes.map(c => `${c.field_label}: ${c.old_value} -> ${c.new_value}`).join('\n');
+      if (item.change_reason) {
+        detailsText += `\nReason: "${item.change_reason}"`;
+      }
+    } else {
+      detailsText = item.summary || item.change_reason || 'Status recorded';
+    }
+
+    return [
+      idx + 1,
+      dateFormatted,
+      actionText,
+      entityText,
+      objDesc,
+      userText,
+      detailsText
+    ];
+  });
+
+  autoTable(doc, {
+    head: tableHeaders,
+    body: tableRows,
+    startY: 40,
+    theme: 'grid',
+    styles: {
+      fontSize: 7,
+      cellPadding: 2,
+      overflow: 'linebreak',
+      valign: 'middle',
+    },
+    headStyles: {
+      fillColor: [241, 245, 249],
+      textColor: [15, 23, 42],
+      fontStyle: 'bold',
+      lineColor: [203, 213, 225],
+      lineWidth: 0.2,
+    },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 10 },
+      1: { halign: 'center', cellWidth: 26 },
+      2: { halign: 'center', cellWidth: 20, fontStyle: 'bold' },
+      3: { halign: 'left', cellWidth: 28 },
+      4: { halign: 'left', cellWidth: 50, fontStyle: 'bold' },
+      5: { halign: 'center', cellWidth: 32 },
+      6: { halign: 'left', cellWidth: 'auto' },
+    },
+    didParseCell: function(data) {
+      if (data.section === 'body') {
+        if (data.column.index === 2) {
+          const act = String(data.cell.raw).toUpperCase();
+          if (act.includes('CREATED')) {
+            data.cell.styles.textColor = [16, 185, 129];
+          } else if (act.includes('DELETED')) {
+            data.cell.styles.textColor = [239, 68, 68];
+          } else if (act.includes('UPDATED')) {
+            data.cell.styles.textColor = [59, 130, 246];
+          }
+        }
+      }
+    },
+    alternateRowStyles: {
+      fillColor: [250, 250, 250],
+    },
+  });
+
+  // Footers with page numbers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text('LodgeMaster PMS • System Activity & Audit Trail • Confidential', 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  const safeHotel = hotelName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  doc.save(`Activity_Log_${safeHotel}_${safeDate}.pdf`);
+  return doc;
+};
+
+/**
+ * Helper to convert image URL to base64 Data URL for jsPDF embedding
+ */
+const loadImageAsBase64 = (url, timeout = 3500) => {
+  return new Promise((resolve) => {
+    if (!url) return resolve(null);
+    if (url.startsWith('data:')) return resolve(url);
+
+    const img = new Image();
+    img.crossOrigin = 'Anonymous';
+    const timer = setTimeout(() => resolve(null), timeout);
+
+    img.onload = () => {
+      clearTimeout(timer);
+      try {
+        const canvas = document.createElement('canvas');
+        const maxDim = 800;
+        let w = img.width || 600;
+        let h = img.height || 400;
+        if (w > maxDim || h > maxDim) {
+          if (w > h) {
+            h = Math.round((h * maxDim) / w);
+            w = maxDim;
+          } else {
+            w = Math.round((w * maxDim) / h);
+            h = maxDim;
+          }
+        }
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
+        resolve(dataUrl);
+      } catch (e) {
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => {
+      clearTimeout(timer);
+      resolve(null);
+    };
+
+    img.src = url;
+  });
+};
+
+/**
+ * Exports official comprehensive Hotel Catalogue & Digital Brochure to PDF
+ */
+export const exportHotelCataloguePDF = async (
+  hotel = {},
+  config = {},
+  roomTypes = [],
+  enabledFacilities = [],
+  options = {}
+) => {
+  const { galleryPhotos = [], googleMapsUrl = '' } = options;
+  const hotelName = hotel?.name || 'Hotel & Luxury Suites';
+  const safeHotel = hotelName.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+  // Preload all available gallery photos concurrently
+  let validGalleryPhotos = [];
+  if (galleryPhotos && galleryPhotos.length > 0) {
+    const loaded = await Promise.all(
+      galleryPhotos.map(async (p, idx) => {
+        const dataUrl = await loadImageAsBase64(p.image);
+        return dataUrl
+          ? {
+              dataUrl,
+              caption: p.caption || `Hotel Property View ${idx + 1}`
+            }
+          : null;
+      })
+    );
+    validGalleryPhotos = loaded.filter(Boolean);
+  }
+
+  // Fallback high-res photos if a room has no photo
+  const FALLBACK_ROOM_PHOTOS = [
+    'https://images.unsplash.com/photo-1590490360182-c33d57733427?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1566665797739-1674de7a421a?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1618773928121-c32242e63f39?w=800&auto=format&fit=crop&q=80',
+    'https://images.unsplash.com/photo-1591088398332-8a7791972843?w=800&auto=format&fit=crop&q=80'
+  ];
+
+  // Preload all room photos concurrently for the rich room cards
+  const roomPhotosMap = {};
+  if (roomTypes && roomTypes.length > 0) {
+    await Promise.all(
+      roomTypes.map(async (room, idx) => {
+        let photoUrl = (room.photos && room.photos.length > 0 && room.photos[0]?.image)
+          ? room.photos[0].image
+          : (room.primary_photo || FALLBACK_ROOM_PHOTOS[idx % FALLBACK_ROOM_PHOTOS.length]);
+        if (photoUrl) {
+          const dataUrl = await loadImageAsBase64(photoUrl);
+          if (dataUrl) {
+            roomPhotosMap[room.id || room.name || idx] = dataUrl;
+          }
+        }
+      })
+    );
+  }
+
+  const doc = new jsPDF({
+    orientation: 'portrait',
+    unit: 'mm',
+    format: 'a4',
+  });
+
+  const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+  const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
+
+  // Helper to format currency
+  const formatTariff = (val) => {
+    const num = parseFloat(val) || 0;
+    return `Rs. ${num.toLocaleString('en-IN')}`;
+  };
+
+  // 1. Top Luxury Gold Bar
+  doc.setFillColor(217, 119, 6); // Gold #d97706
+  doc.rect(0, 0, pageWidth, 4, 'F');
+
+  // 2. Top Dark Brand Header Banner
+  doc.setFillColor(15, 23, 42); // Navy Dark #0f172a
+  doc.rect(0, 4, pageWidth, 36, 'F');
+
+  // Gold pill badge (Clean ASCII text, ample width so text never overflows)
+  const overallRating = options.ratingSummary?.overall_rating || config.rating_summary_json?.overall_rating || '4.9';
+  const showReviews = config.show_reviews !== false;
+  const ratingBadgeText = showReviews ? `${overallRating} / 5.0 LUXURY RATING` : 'VERIFIED HOTEL DIRECTORY';
+  doc.setFillColor(245, 158, 11);
+  const badgeW = doc.getTextWidth(ratingBadgeText) + 8;
+  doc.roundedRect(14, 9, Math.max(badgeW, 44), 5.5, 1.2, 1.2, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(69, 26, 3);
+  doc.text(ratingBadgeText, 17, 12.8);
+
+  // Hotel Name
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(16);
+  doc.setTextColor(255, 255, 255);
+  doc.text(hotelName.toUpperCase(), 14, 22);
+
+  // Subtitle / City
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(203, 213, 225);
+  const subtitle = hotel.city
+    ? `${hotel.city.toUpperCase()} • OFFICIAL GUEST BROCHURE & DIRECT TARIFF SHEET`
+    : 'OFFICIAL GUEST BROCHURE & DIRECT TARIFF SHEET';
+  doc.text(subtitle, 14, 28);
+
+  // Generation Date on right
+  doc.setFontSize(7.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Direct Booking Factsheet • Valid as of ${new Date().toLocaleDateString('en-IN')}`, pageWidth - 14, 22, { align: 'right' });
+  doc.text('Lowest Rate Guarantee • 0% Commission', pageWidth - 14, 28, { align: 'right' });
+
+  // 3. Contact & Property Details Card
+  let currentY = 44;
+  const cardHeight = 35;
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.roundedRect(14, currentY, pageWidth - 28, cardHeight, 2, 2, 'FD');
+
+  // Left column: Contact details
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('HOTEL CONTACT & LOCATION DETAILS', 18, currentY + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Address: ${hotel.address || hotel.city || 'Central Hotel Location'}`, 18, currentY + 11.5);
+  doc.text(`Phone / Front Desk: ${hotel.phone || 'Available 24/7'}`, 18, currentY + 16);
+  doc.text(`WhatsApp Concierge: ${hotel.whatsapp || 'Available'}`, 18, currentY + 20.5);
+
+  // Attractive Google Maps Button
+  const mapsBtnX = 18;
+  const mapsBtnY = currentY + 24.5;
+  const mapsBtnW = 86;
+  const mapsBtnH = 7.5;
+
+  // Button background: Google Maps Red #EA4335
+  doc.setFillColor(234, 67, 53);
+  doc.roundedRect(mapsBtnX, mapsBtnY, mapsBtnW, mapsBtnH, 1.5, 1.5, 'F');
+
+  // Pin marker icon
+  doc.setFillColor(255, 255, 255);
+  doc.circle(mapsBtnX + 5, mapsBtnY + 3.75, 1.8, 'F');
+  doc.setFillColor(234, 67, 53);
+  doc.circle(mapsBtnX + 5, mapsBtnY + 3.75, 0.8, 'F');
+
+  // Button text
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7);
+  doc.setTextColor(255, 255, 255);
+  doc.text('GET DIRECTIONS ON GOOGLE MAPS ->', mapsBtnX + 9.5, mapsBtnY + 4.9);
+
+  // Clickable link hotspot
+  if (googleMapsUrl) {
+    doc.link(mapsBtnX, mapsBtnY, mapsBtnW, mapsBtnH, { url: googleMapsUrl });
+  }
+
+  // Right column: Basic Information & Timings
+  const midX = 118;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('GUEST TIMINGS & POLICIES', midX, currentY + 6);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(51, 65, 85);
+  doc.text(`Standard Check-In: ${config.check_in_time || '12:00 PM'}`, midX, currentY + 11.5);
+  doc.text(`Standard Check-Out: ${config.check_out_time || '11:00 AM'}`, midX, currentY + 16);
+  doc.text('Govt ID Required: Aadhaar / Passport / DL', midX, currentY + 20.5);
+  doc.text('Payment Modes: Cash, UPI, Card, Net Banking', midX, currentY + 25);
+
+  currentY += cardHeight + 4;
+
+  // 4. Signature Facilities Box (Clean multi-column grid with vector bullets)
+  if (enabledFacilities && enabledFacilities.length > 0) {
+    const items = enabledFacilities.slice(0, 12);
+    const numRows = Math.ceil(items.length / 3);
+    const facBoxHeight = 12 + numRows * 4.2;
+
+    doc.setFillColor(241, 245, 249);
+    doc.setDrawColor(203, 213, 225);
+    doc.roundedRect(14, currentY, pageWidth - 28, facBoxHeight, 1.5, 1.5, 'FD');
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(30, 41, 59);
+    doc.text('SIGNATURE AMENITIES & COMPLIMENTARY COMFORTS:', 18, currentY + 5);
+
+    const numCols = 3;
+    const colWidth = (pageWidth - 36) / numCols;
+    const startX = 18;
+    const startItemY = currentY + 10;
+
+    items.forEach((fac, idx) => {
+      const col = idx % numCols;
+      const row = Math.floor(idx / numCols);
+      const x = startX + col * colWidth;
+      const y = startItemY + row * 4.2;
+
+      // Draw small blue bullet dot
+      doc.setFillColor(37, 99, 235);
+      doc.circle(x + 1, y - 1, 0.9, 'F');
+
+      // Facility label
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(fac.label, x + 3.2, y);
+    });
+
+    currentY += facBoxHeight + 5;
+  }
+
+  // 5. Hotel Property Gallery Showcase (Whatever number of images available for hotel slider)
+  if (validGalleryPhotos.length > 0) {
+    // Check if near page bottom before starting gallery
+    if (currentY > 210) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(`HOTEL PROPERTY PHOTO GALLERY & SUITE SHOWCASE (${validGalleryPhotos.length} Photos)`, 14, currentY + 2);
+    currentY += 5.5;
+
+    const colW = (pageWidth - 28 - 6) / 2; // 88mm width per photo
+    const photoH = 46; // 16:9 ratio
+    const captionH = 5;
+    const rowH = photoH + captionH + 4; // 55mm total row height
+
+    for (let i = 0; i < validGalleryPhotos.length; i += 2) {
+      // Check page overflow
+      if (currentY + rowH > pageHeight - 14) {
+        doc.addPage();
+        currentY = 16;
+      }
+
+      const photo1 = validGalleryPhotos[i];
+      const photo2 = validGalleryPhotos[i + 1];
+
+      // Render Photo 1
+      if (photo1) {
+        const x1 = 14;
+        try {
+          doc.addImage(photo1.dataUrl, 'JPEG', x1, currentY, colW, photoH);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.3);
+          doc.rect(x1, currentY, colW, photoH);
+
+          // Caption strip
+          doc.setFillColor(15, 23, 42);
+          doc.rect(x1, currentY + photoH, colW, captionH, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.setTextColor(255, 255, 255);
+          const cap1 = photo1.caption.length > 46 ? photo1.caption.slice(0, 44) + '...' : photo1.caption;
+          doc.text(cap1, x1 + 2.5, currentY + photoH + 3.6);
+        } catch (e) {
+          console.warn('Failed to draw photo1 to PDF', e);
+        }
+      }
+
+      // Render Photo 2
+      if (photo2) {
+        const x2 = 14 + colW + 6;
+        try {
+          doc.addImage(photo2.dataUrl, 'JPEG', x2, currentY, colW, photoH);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.3);
+          doc.rect(x2, currentY, colW, photoH);
+
+          // Caption strip
+          doc.setFillColor(15, 23, 42);
+          doc.rect(x2, currentY + photoH, colW, captionH, 'F');
+          doc.setFont('helvetica', 'bold');
+          doc.setFontSize(6.5);
+          doc.setTextColor(255, 255, 255);
+          const cap2 = photo2.caption.length > 46 ? photo2.caption.slice(0, 44) + '...' : photo2.caption;
+          doc.text(cap2, x2 + 2.5, currentY + photoH + 3.6);
+        } catch (e) {
+          console.warn('Failed to draw photo2 to PDF', e);
+        }
+      }
+
+      currentY += rowH;
+    }
+
+    currentY += 2;
+  }
+
+  // 6. Group Rooms Category-Wise
+  const categoriesMap = {};
+  roomTypes.forEach((r) => {
+    const rawCat = r.category || (r.name ? r.name.split(' ')[0] : 'STANDARD');
+    const catName = rawCat.toUpperCase() + ' SUITES & ACCOMMODATIONS';
+    if (!categoriesMap[catName]) {
+      categoriesMap[catName] = [];
+    }
+    categoriesMap[catName].push(r);
+  });
+
+  if (currentY > 215) {
+    doc.addPage();
+    currentY = 16;
+  }
+
+  // Table styling & Section divider for Categories
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9.5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('AVAILABLE SUITES & TARIFF DIRECTORY (CATEGORY-WISE)', 14, currentY + 2);
+  currentY += 5.5;
+
+  if (roomTypes.length === 0) {
+    autoTable(doc, {
+      startY: currentY,
+      margin: { left: 14, right: 14 },
+      head: [['SUITE / ROOM TYPE', 'CAPACITY', 'AMENITIES INCLUDED', 'DIRECT TARIFF']],
+      body: [['Contact Front Desk for Suite Availability & Rates', 'All Occupancies', 'Complimentary Amenities', 'Direct Tariff']],
+      theme: 'grid',
+      styles: { fontSize: 8, cellPadding: 3 },
+    });
+    currentY = doc.lastAutoTable.finalY + 4;
+  }
+
+  Object.entries(categoriesMap).forEach(([catTitle, rooms]) => {
+    // Check if near page bottom, add page
+    if (currentY > 235) {
+      doc.addPage();
+      currentY = 16;
+    }
+
+    // Category Header Banner (Matching print brochure)
+    const headerH = 7;
+    doc.setFillColor(30, 58, 138); // Dark Navy Blue
+    doc.rect(14, currentY, pageWidth - 28, headerH, 'F');
+
+    // Gold accent indicator strip on left
+    doc.setFillColor(245, 158, 11);
+    doc.rect(14, currentY, 2.5, headerH, 'F');
+
+    // Category Title
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 255, 255);
+    doc.text(`◆ ${catTitle}`, 19, currentY + 4.8);
+
+    // Suite Count Badge on right
+    const badgeText = `${rooms.length} Suite Option${rooms.length > 1 ? 's' : ''}`;
+    doc.setFontSize(7);
+    const badgeTextW = doc.getTextWidth(badgeText);
+    const badgeW = badgeTextW + 6;
+    const badgeX = pageWidth - 14 - badgeW - 3;
+    doc.setFillColor(23, 37, 84); // Navy Pill
+    doc.roundedRect(badgeX, currentY + 1.2, badgeW, 4.6, 1.2, 1.2, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.text(badgeText, badgeX + 3, currentY + 4.3);
+
+    currentY += headerH + 2.5;
+
+    // Render Rich Room Showcase Cards with embedded photos (Matching print brochure)
+    rooms.forEach((room, rIdx) => {
+      // Check if room card overflows page
+      const cardH = 26;
+      if (currentY + cardH > pageHeight - 14) {
+        doc.addPage();
+        currentY = 16;
+      }
+
+      const cardW = pageWidth - 28; // 182mm
+      const cardX = 14;
+
+      // Card Background with clean subtle border
+      doc.setFillColor(rIdx % 2 === 0 ? 255 : 250, rIdx % 2 === 0 ? 255 : 251, rIdx % 2 === 0 ? 255 : 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.25);
+      doc.roundedRect(cardX, currentY, cardW, cardH, 1.5, 1.5, 'FD');
+
+      // 1. Room Photo on Left (16:10 ratio)
+      const photoKey = room.id || room.name || rIdx;
+      const photoDataUrl = roomPhotosMap[photoKey];
+      const photoX = cardX + 2;
+      const photoY = currentY + 2;
+      const photoW = 38;
+      const photoH = 22;
+
+      if (photoDataUrl) {
+        try {
+          doc.addImage(photoDataUrl, 'JPEG', photoX, photoY, photoW, photoH);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.2);
+          doc.rect(photoX, photoY, photoW, photoH);
+        } catch (e) {
+          doc.setFillColor(241, 245, 249);
+          doc.rect(photoX, photoY, photoW, photoH, 'F');
+        }
+      } else {
+        doc.setFillColor(241, 245, 249);
+        doc.setDrawColor(226, 232, 240);
+        doc.rect(photoX, photoY, photoW, photoH, 'FD');
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text('Suite Photo', photoX + 13, photoY + 11.5);
+      }
+
+      // 2. Middle Content: Room Name, Capacity, Amenities
+      const midStartX = cardX + photoW + 5; // ~57mm
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text(room.name, midStartX, currentY + 6.5);
+
+      // Capacity
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      const capText = `Max ${room.max_adults || 2} Adults${room.max_children ? ` • ${room.max_children} Child` : ''}`;
+      doc.text(capText, midStartX, currentY + 11.2);
+
+      // Amenity Pill Badges
+      const amenitiesList = room.amenities
+        ? room.amenities.split(',').map(a => a.trim()).slice(0, 4)
+        : ['Air Conditioning', 'Free Wi-Fi', 'Smart TV', 'Hot Water 24/7'];
+
+      let pillX = midStartX;
+      amenitiesList.forEach((amenity) => {
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(6.5);
+        const textW = doc.getTextWidth(amenity);
+        const pillW = textW + 3.8;
+        if (pillX + pillW < cardX + cardW - 40) {
+          doc.setFillColor(241, 245, 249);
+          doc.setDrawColor(203, 213, 225);
+          doc.setLineWidth(0.2);
+          doc.roundedRect(pillX, currentY + 13.8, pillW, 4, 0.8, 0.8, 'FD');
+          doc.setTextColor(51, 65, 85);
+          doc.text(amenity, pillX + 1.9, currentY + 16.8);
+          pillX += pillW + 2;
+        }
+      });
+
+      // Description or Note (if available)
+      if (room.description) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(100, 116, 139);
+        const descText = room.description.length > 58 ? room.description.slice(0, 56) + '...' : room.description;
+        doc.text(descText, midStartX, currentY + 22);
+      }
+
+      // 3. Right Tariff & Booking Guarantee
+      const rightX = cardX + cardW - 3;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(29, 78, 216); // Royal Blue
+      doc.text(formatTariff(room.base_price || 0), rightX, currentY + 9.5, { align: 'right' });
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(148, 163, 184);
+      doc.text('per night (Direct)', rightX, currentY + 14.2, { align: 'right' });
+
+      currentY += cardH + 3;
+    });
+
+    currentY += 2;
+  });
+
+  // Check for Policies Box
+  if (currentY > 230) {
+    doc.addPage();
+    currentY = 16;
+  }
+
+  // Terms & Direct Booking Guarantees
+  const privileges = (Array.isArray(options.directPrivileges) && options.directPrivileges.length > 0)
+    ? options.directPrivileges
+    : (Array.isArray(config.direct_privileges_json) && config.direct_privileges_json.length > 0)
+      ? config.direct_privileges_json
+      : [
+          'Best Tariff Guarantee: Direct booking from reception ensures zero commission and lowest rate.',
+          'Complimentary High Speed Fiber Wi-Fi across all suites and premises.'
+        ];
+
+  const privsToShow = privileges.slice(0, 3);
+  const polBoxHeight = 16 + privsToShow.length * 4.5 + (config.house_rules ? 4.5 : 0) + (googleMapsUrl ? 4.5 : 0);
+
+  doc.setFillColor(254, 243, 199); // Light Amber
+  doc.setDrawColor(245, 158, 11);
+  doc.roundedRect(14, currentY, pageWidth - 28, polBoxHeight, 1.5, 1.5, 'FD');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(7.5);
+  doc.setTextColor(146, 64, 14);
+  doc.text('DIRECT BOOKING BENEFITS & HOTEL POLICIES:', 18, currentY + 4.5);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(120, 53, 15);
+  let pY = currentY + 9;
+  privsToShow.forEach((p) => {
+    doc.text(`• ${p}`, 18, pY);
+    pY += 4.5;
+  });
+  doc.text(`• Cancellation Policy: ${config.cancellation_policy || 'Free cancellation up to 24 hours prior to check-in.'}`, 18, pY);
+  pY += 4.5;
+  if (config.house_rules) {
+    doc.text(`• House Rules: ${config.house_rules}`, 18, pY);
+    pY += 4.5;
+  }
+  if (googleMapsUrl) {
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(29, 78, 216);
+    doc.text('• Turn-by-Turn Navigation: Click here to navigate via Google Maps', 18, pY);
+    doc.link(18, pY - 3.5, 95, 4.5, { url: googleMapsUrl });
+  }
+
+  // Add Footers with Page Numbers
+  const totalPages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= totalPages; i++) {
+    doc.setPage(i);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(148, 163, 184);
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.2);
+    doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
+    doc.text(`${hotelName} • Official Digital Catalogue & Tariff Sheet • Reception: ${hotel.phone || '24/7'}`, 14, pageHeight - 3.8);
+    doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
+  }
+
+  doc.save(`${safeHotel}_Digital_Catalogue.pdf`);
   return doc;
 };

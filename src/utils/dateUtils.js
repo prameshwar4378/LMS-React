@@ -61,3 +61,23 @@ export const getCurrentTimeString = () => {
   return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
 };
 
+export const formatTime12Hour = (timeStr) => {
+  if (!timeStr) return '';
+  if (typeof timeStr !== 'string') timeStr = String(timeStr);
+  const clean = timeStr.trim();
+  if (clean.includes('AM') || clean.includes('PM')) return clean;
+
+  const parts = clean.split(':');
+  if (parts.length >= 2) {
+    let hours = parseInt(parts[0], 10);
+    const minutes = parts[1].padStart(2, '0');
+    if (isNaN(hours)) return clean;
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const formattedHours = String(hours).padStart(2, '0');
+    return `${formattedHours}:${minutes} ${ampm}`;
+  }
+  return clean;
+};
+

@@ -6,6 +6,7 @@ const SearchableCustomerSelect = ({
   customers = [],
   selectedCustomerId,
   onSelectCustomer,
+  onRegisterNewClick,
   placeholder = "Search customer by name or mobile number..."
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
@@ -293,9 +294,21 @@ const SearchableCustomerSelect = ({
                 <div className="p-4 text-center text-muted">
                   <i className="bi bi-person-x fs-2 d-block mb-2 text-secondary"></i>
                   <div className="fw-semibold text-dark">No customer found matching "{searchQuery}"</div>
-                  <div className="extra-small text-muted mt-1">
-                    No records found by name or mobile number. Switch to "+ Register & Create New Customer Profile" to add this guest.
+                  <div className="extra-small text-muted mt-1 mb-2.5">
+                    No records found by name or mobile number in directory.
                   </div>
+                  {onRegisterNewClick && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-highlight-amber px-3 py-1.5 rounded-2 d-inline-flex align-items-center gap-1.5 extra-small"
+                      onClick={() => {
+                        setIsOpen(false);
+                        onRegisterNewClick();
+                      }}
+                    >
+                      <i className="bi bi-person-plus-fill"></i> + Register New Customer Profile
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="list-group list-group-flush overflow-auto" style={{ maxHeight: '285px' }}>

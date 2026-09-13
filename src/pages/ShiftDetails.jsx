@@ -35,7 +35,7 @@ import {
 const ShiftDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { hasRole, isSingleOwner } = useAuth();
+  const { hasRole, isSingleOwner, selectedProperty } = useAuth();
   const queryClient = useQueryClient();
 
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -60,7 +60,156 @@ const ShiftDetails = () => {
   });
 
   const handlePrint = () => {
-    window.print();
+    const printContent = document.getElementById('printable-shift-sheet');
+    if (!printContent) {
+      window.print();
+      return;
+    }
+
+    const hotelName = selectedProperty?.name || selectedProperty?.hotel_name || shift?.property_name || 'HOTEL MANAGEMENT SYSTEM';
+    const hotelAddress = selectedProperty?.address || '';
+    const hotelContact = [selectedProperty?.phone, selectedProperty?.email].filter(Boolean).join(' • ');
+
+    const printWindow = window.open('', '_blank', 'width=980,height=900');
+    if (printWindow) {
+      printWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <meta charset="utf-8">
+            <title>Till Closing Summary - #${shift.shift_number}</title>
+            <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+            <style>
+              @page {
+                size: A4 portrait;
+                margin: 8mm 10mm;
+              }
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+                box-sizing: border-box;
+              }
+              body {
+                font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+                color: #0f172a;
+                background-color: #ffffff !important;
+                font-size: 11px;
+                line-height: 1.35;
+                padding: 12px 14px;
+                margin: 0;
+              }
+              .no-print, .d-print-none {
+                display: none !important;
+              }
+              .print-header-banner {
+                border-bottom: 2px solid #0f172a;
+                padding-bottom: 8px;
+                margin-bottom: 12px;
+              }
+              .print-header-banner h2 {
+                font-size: 18px;
+                font-weight: 800;
+                color: #0f172a;
+                margin: 0;
+                text-transform: uppercase;
+                letter-spacing: -0.01em;
+              }
+              .card {
+                border: 1px solid #cbd5e1 !important;
+                border-radius: 8px !important;
+                box-shadow: none !important;
+                background-color: #ffffff !important;
+                margin-bottom: 12px !important;
+              }
+              .card-body, .p-3, .p-3.5, .p-4 {
+                padding: 10px 14px !important;
+              }
+              .bg-light {
+                background-color: #f8fafc !important;
+              }
+              .bg-white {
+                background-color: #ffffff !important;
+              }
+              .border, .border-top, .border-bottom, .border-end, .border-start {
+                border-color: #cbd5e1 !important;
+              }
+              .table {
+                font-size: 10.5px !important;
+                margin-bottom: 0 !important;
+                width: 100% !important;
+              }
+              .table th, .table td {
+                padding: 4px 8px !important;
+                border-color: #cbd5e1 !important;
+              }
+              .table-light {
+                background-color: #f1f5f9 !important;
+              }
+              .badge {
+                font-size: 9px !important;
+                padding: 2px 6px !important;
+                border: 1px solid currentColor !important;
+              }
+              .text-primary { color: #2563eb !important; }
+              .text-success { color: #16a34a !important; }
+              .text-danger { color: #dc2626 !important; }
+              .text-secondary { color: #64748b !important; }
+              .text-dark { color: #0f172a !important; }
+              .font-monospace {
+                font-family: SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+              }
+              /* Force 4-column cards across A4 width */
+              .col-md-3 {
+                flex: 0 0 auto !important;
+                width: 25% !important;
+              }
+              .col-md-6 {
+                flex: 0 0 auto !important;
+                width: 50% !important;
+              }
+              .page-break-avoid {
+                break-inside: avoid !important;
+                page-break-inside: avoid !important;
+              }
+              tr {
+                page-break-inside: avoid !important;
+              }
+              thead {
+                display: table-header-group;
+              }
+            </style>
+          </head>
+          <body>
+            <div class="print-header-banner d-flex justify-content-between align-items-center">
+              <div>
+                <h2>${hotelName}</h2>
+                ${hotelAddress ? `<div class="text-secondary" style="font-size: 9.5px;">${hotelAddress}</div>` : ''}
+                ${hotelContact ? `<div class="text-secondary" style="font-size: 9.5px;">${hotelContact}</div>` : ''}
+              </div>
+              <div class="text-end">
+                <span class="badge bg-light text-dark border px-2 py-0.5 fw-bold" style="font-size: 9.5px !important;">
+                  OFFICIAL RECEPTION TILL AUDIT
+                </span>
+                <div class="text-muted mt-1" style="font-size: 9px;">
+                  Generated: ${new Date().toLocaleDateString('en-IN')} ${new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </div>
+            </div>
+            <div class="printable-shift-content">
+              ${printContent.innerHTML}
+            </div>
+          </body>
+        </html>
+      `);
+      printWindow.document.close();
+      printWindow.focus();
+      setTimeout(() => {
+        printWindow.print();
+        printWindow.close();
+      }, 400);
+    } else {
+      window.print();
+    }
   };
 
   if (isSingleOwner) {
@@ -180,15 +329,23 @@ const ShiftDetails = () => {
       </div>
 
       {/* Printable Sheet Header */}
-      <div className="card border-0 shadow-xs bg-white rounded-4 p-4 mb-4" style={{ border: '1px solid #E2E8F0' }}>
+      <div id="printable-shift-sheet" className="card border-0 shadow-xs bg-white rounded-4 p-4 mb-4 printable-shift-sheet" style={{ border: '1px solid #E2E8F0' }}>
         
         {/* Executive Summary Row */}
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 pb-3 mb-3 border-bottom">
           <div>
-            <div className="extra-small fw-bold text-secondary text-uppercase tracking-wider">LODGE MANAGEMENT SYSTEM</div>
+            <div className="extra-small fw-bold text-secondary text-uppercase tracking-wider">
+              {selectedProperty?.name || selectedProperty?.hotel_name || 'LODGE MANAGEMENT SYSTEM'}
+            </div>
             <h3 className="fw-bold text-dark mb-1">Official Reception Till Closing Summary</h3>
             <div className="text-secondary extra-small">
               Shift Number: <strong>{shift.shift_number}</strong> &bull; Cashier: <strong>{shift.user_name}</strong>
+              {shift.opened_at && (
+                <span> &bull; Opened: <strong>{new Date(shift.opened_at).toLocaleDateString('en-IN')} {new Date(shift.opened_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+              )}
+              {shift.closed_at && (
+                <span> &bull; Closed: <strong>{new Date(shift.closed_at).toLocaleDateString('en-IN')} {new Date(shift.closed_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}</strong></span>
+              )}
             </div>
           </div>
 
@@ -439,7 +596,7 @@ const ShiftDetails = () => {
                         <span className="font-monospace fw-bold text-danger">-{formatCurrency(e.amount)}</span>
                         <button
                           type="button"
-                          className="btn btn-xs btn-light border p-1 rounded-1 text-secondary"
+                          className="btn btn-xs btn-light border p-1 rounded-1 text-secondary no-print d-print-none"
                           title="Print Thermal Petty Cash Voucher (80mm/58mm)"
                           onClick={() => {
                             setSelectedExpense(e);
@@ -555,7 +712,7 @@ const ShiftDetails = () => {
         </div>
 
         {/* Audit Trail & Signatures */}
-        <div className="pt-3 border-top">
+        <div className="pt-3 border-top page-break-avoid">
           <h6 className="fw-bold text-dark mb-2.5" style={{ fontSize: '0.85rem' }}>
             Shift Audit History &amp; Authorizations
           </h6>
@@ -608,8 +765,8 @@ const ShiftDetails = () => {
           shift={shift}
           onSuccess={() => {
             queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'CLOSED', status_display: 'Closed' } : old));
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
-            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
           }}
         />
       )}
@@ -635,8 +792,8 @@ const ShiftDetails = () => {
           financials={shift.financials}
           onSuccess={() => {
             queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'PENDING_APPROVAL', status_display: 'Pending Sign-Off' } : old));
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
-            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
           }}
         />
       )}
@@ -649,8 +806,8 @@ const ShiftDetails = () => {
           shift={shift}
           onSuccess={() => {
             queryClient.setQueryData(['shift-details', id], (old) => (old ? { ...old, status: 'CLOSED', status_display: 'Closed (Forced)' } : old));
-            queryClient.invalidateQueries({ queryKey: ['shift-details', id], refetchType: 'none' });
-            queryClient.invalidateQueries({ queryKey: ['shifts'], refetchType: 'none' });
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
           }}
         />
       )}

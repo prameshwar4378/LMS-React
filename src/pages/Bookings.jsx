@@ -17,6 +17,8 @@ const Bookings = () => {
   const { user, selectedProperty, hasPermission, getPermissionLimit } = useAuth();
   const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
+  const canGiveDiscount = hasPermission('billing', 'can_give_discount');
+  const maxDiscountPercent = getPermissionLimit('billing', 'max_discount_percent') ?? 100;
   const queryClient = useQueryClient();
 
   const [statusFilter, setStatusFilter] = useState('CONFIRMED');
@@ -24,15 +26,20 @@ const Bookings = () => {
 
   // TanStack Query for bookings data fetching
   const {
-    data: bookings = [],
+    data: rawBookings = [],
     isLoading: loading,
     refetch: loadBookings,
   } = useQuery({
-    queryKey: ['bookings', statusFilter, search],
-    queryFn: () => getBookingsApi({ status: statusFilter, search }),
+    queryKey: ['bookings', search],
+    queryFn: () => getBookingsApi({ search }),
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
+
+  const bookings = useMemo(() => {
+    if (!statusFilter) return rawBookings;
+    return rawBookings.filter((b) => b.status === statusFilter);
+  }, [rawBookings, statusFilter]);
 
   // Selected Booking for View Details Modal
   const [viewBooking, setViewBooking] = useState(null);
@@ -48,7 +55,11 @@ const Bookings = () => {
     adults: 1,
     children: 0,
     room_rate: '',
+    discount_type: 'FIXED',
+    discount_value: '',
     advance_amount: '',
+    payment_method: 'CASH',
+    transaction_reference: '',
     notes: '',
   });
   const [editAvailableRooms, setEditAvailableRooms] = useState([]);
@@ -70,10 +81,10 @@ const Bookings = () => {
   const navigate = useNavigate();
 
   // KPI Analytics Counters
-  const totalBookings = bookings.length;
-  const confirmedBookings = bookings.filter((b) => b.status === 'CONFIRMED').length;
-  const checkedInBookings = bookings.filter((b) => b.status === 'CHECKED_IN').length;
-  const totalAdvancePaid = bookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
+  const totalBookings = rawBookings.length;
+  const confirmedBookings = rawBookings.filter((b) => b.status === 'CONFIRMED').length;
+  const checkedInBookings = rawBookings.filter((b) => b.status === 'CHECKED_IN').length;
+  const totalAdvancePaid = rawBookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
 
   // -------------------------------------------------------------
   // Column Visibility & Definitions
@@ -343,7 +354,11 @@ const Bookings = () => {
       adults: booking.adults || 1,
       children: booking.children || 0,
       room_rate: booking.room_rate || '',
+      discount_type: booking.discount_type || 'FIXED',
+      discount_value: booking.discount_value !== undefined && booking.discount_value !== null && parseFloat(booking.discount_value) > 0 ? String(booking.discount_value) : '',
       advance_amount: booking.advance_amount || '',
+      payment_method: 'CASH',
+      transaction_reference: '',
       notes: booking.notes || '',
     });
 
@@ -444,7 +459,11 @@ const Bookings = () => {
         adults: parseInt(editForm.adults),
         children: parseInt(editForm.children),
         room_rate: parseFloat(editForm.room_rate || 0),
+        discount_type: editForm.discount_type || 'FIXED',
+        discount_value: parseFloat(editForm.discount_value || 0),
         advance_amount: parseFloat(editForm.advance_amount || 0),
+        payment_method: editForm.payment_method || 'CASH',
+        transaction_reference: editForm.transaction_reference || '',
         notes: editForm.notes,
         status: editBooking.status
       });
@@ -455,7 +474,11 @@ const Bookings = () => {
         if (!Array.isArray(old)) return old;
         return old.map((b) => (b.id === updatedBooking.id ? { ...b, ...updatedBooking } : b));
       });
-      queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
+      queryClient.invalidateQueries({ queryKey: ['current-shift'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       console.error(err);
       const serverMsg = err.response?.data?.room?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error updating booking.';
@@ -489,8 +512,10 @@ const Bookings = () => {
 
         try {
           await cancelBookingApi(booking.id);
-          queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
           queryClient.invalidateQueries({ queryKey: ['rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
+          queryClient.invalidateQueries({ queryKey: ['customer-wallets'] });
         } catch (err) {
           if (prevBookings) {
             queryClient.setQueryData(['bookings', statusFilter, search], prevBookings);
@@ -522,8 +547,9 @@ const Bookings = () => {
 
         try {
           await deleteBookingApi(booking.id);
-          queryClient.invalidateQueries({ queryKey: ['bookings'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['bookings'] });
           queryClient.invalidateQueries({ queryKey: ['rooms'] });
+          queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
         } catch (err) {
           if (prevBookings) {
             queryClient.setQueryData(['bookings', statusFilter, search], prevBookings);
@@ -1120,16 +1146,26 @@ const Bookings = () => {
                   <div className="col-12">
                     <div className="card border-primary bg-primary bg-opacity-10">
                       <div className="card-body p-3">
-                        <div className="row text-center">
-                          <div className="col-md-4">
+                        <div className="row text-center align-items-center">
+                          <div className={parseFloat(viewBooking.discount_value || 0) > 0 ? "col-md-3 col-6 mb-2 mb-md-0" : "col-md-4 col-12 mb-2 mb-md-0"}>
                             <span className="text-muted small d-block">Agreed Nightly Rate</span>
                             <span className="fs-5 fw-bold text-dark">{formatCurrency(viewBooking.room_rate)}</span>
                           </div>
-                          <div className="col-md-4">
+                          {parseFloat(viewBooking.discount_value || 0) > 0 && (
+                            <div className="col-md-3 col-6 mb-2 mb-md-0">
+                              <span className="text-muted small d-block">Discount Applied</span>
+                              <span className="fs-5 fw-bold text-danger">
+                                -{viewBooking.discount_type === 'PERCENTAGE' 
+                                  ? `${viewBooking.discount_value}%` 
+                                  : formatCurrency(viewBooking.discount_value)}
+                              </span>
+                            </div>
+                          )}
+                          <div className={parseFloat(viewBooking.discount_value || 0) > 0 ? "col-md-3 col-6 mb-2 mb-md-0" : "col-md-4 col-12 mb-2 mb-md-0"}>
                             <span className="text-muted small d-block">Advance Paid Deposit</span>
                             <span className="fs-5 fw-bold text-success">{formatCurrency(viewBooking.advance_amount)}</span>
                           </div>
-                          <div className="col-md-4">
+                          <div className={parseFloat(viewBooking.discount_value || 0) > 0 ? "col-md-3 col-6 mb-2 mb-md-0" : "col-md-4 col-12 mb-2 mb-md-0"}>
                             <span className="text-muted small d-block">Booking Notes</span>
                             <span className="small text-dark fw-semibold">{viewBooking.notes || 'No notes added.'}</span>
                           </div>
@@ -1321,6 +1357,88 @@ const Bookings = () => {
                           />
                         </div>
                       </div>
+
+                      {/* Discount Fields */}
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">Discount Type</label>
+                        <select
+                          className="form-select py-2.5"
+                          style={{ height: '46px' }}
+                          value={editForm.discount_type || 'FIXED'}
+                          disabled={!canGiveDiscount}
+                          onChange={(e) => {
+                            const newType = e.target.value;
+                            handleEditInputChange('discount_type', newType);
+                            if (newType === 'PERCENTAGE' && parseFloat(editForm.discount_value || 0) > (maxDiscountPercent || 100)) {
+                              handleEditInputChange('discount_value', String(maxDiscountPercent || 100));
+                            }
+                          }}
+                        >
+                          <option value="FIXED">Fixed Amount (₹)</option>
+                          <option value="PERCENTAGE">Percentage (%)</option>
+                        </select>
+                      </div>
+
+                      <div className="col-md-6">
+                        <label className="form-label small fw-semibold text-dark mb-1">
+                          Discount Value ({editForm.discount_type === 'PERCENTAGE' ? '%' : '₹'})
+                        </label>
+                        <div className="input-group">
+                          <span className="input-group-text bg-light border-end-0 text-danger fw-bold">
+                            {editForm.discount_type === 'PERCENTAGE' ? '%' : '₹'}
+                          </span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            max={editForm.discount_type === 'PERCENTAGE' ? (maxDiscountPercent || 100) : undefined}
+                            className="form-control border-start-0 py-2.5 font-bold text-danger"
+                            style={{ height: '46px' }}
+                            placeholder="0.00"
+                            disabled={!canGiveDiscount}
+                            value={editForm.discount_value}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              if (editForm.discount_type === 'PERCENTAGE' && parseFloat(val) > (maxDiscountPercent || 100)) {
+                                handleEditInputChange('discount_value', String(maxDiscountPercent || 100));
+                              } else {
+                                handleEditInputChange('discount_value', val);
+                              }
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {parseFloat(editForm.advance_amount || 0) > 0 && (
+                        <>
+                          <div className="col-md-6">
+                            <label className="form-label small fw-semibold text-dark mb-1">Payment Method</label>
+                            <select
+                              className="form-select py-2.5"
+                              style={{ height: '46px' }}
+                              value={editForm.payment_method || 'CASH'}
+                              onChange={(e) => handleEditInputChange('payment_method', e.target.value)}
+                            >
+                              <option value="CASH">Cash</option>
+                              <option value="UPI">UPI / QR</option>
+                              <option value="CARD">Card</option>
+                              <option value="BANK_TRANSFER">Bank Transfer</option>
+                              <option value="OTHER">Other</option>
+                            </select>
+                          </div>
+                          <div className="col-md-6">
+                            <label className="form-label small fw-semibold text-dark mb-1">Txn Reference (Optional)</label>
+                            <input
+                              type="text"
+                              className="form-control py-2.5 font-monospace"
+                              style={{ height: '46px' }}
+                              placeholder="UPI Ref / UTR / Auth #"
+                              value={editForm.transaction_reference || ''}
+                              onChange={(e) => handleEditInputChange('transaction_reference', e.target.value)}
+                            />
+                          </div>
+                        </>
+                      )}
 
                       {/* Guests Count */}
                       <div className="col-md-6 col-6">

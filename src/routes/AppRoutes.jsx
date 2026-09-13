@@ -24,6 +24,8 @@ import ShiftDetails from '../pages/ShiftDetails';
 import PlatformProperties from '../pages/PlatformProperties';
 import SubscriptionRenewal from '../pages/SubscriptionRenewal';
 import Wallets from '../pages/Wallets';
+import PublicCatalogue from '../pages/PublicCatalogue';
+import CatalogueManage from '../pages/CatalogueManage';
 
 // Smart Root Redirect based on user role
 const RootRedirect = () => {
@@ -94,6 +96,10 @@ const AppRoutes = () => {
       {/* Public Login Route */}
       <Route path="/login" element={<Login />} />
 
+      {/* Public Guest Digital Catalogue & Showcase */}
+      <Route path="/catalogue/:propertyCode" element={<PublicCatalogue />} />
+      <Route path="/catalogue/:propertyCode/:branchCode" element={<PublicCatalogue />} />
+
       {/* Root Path Auto-Redirect */}
       <Route path="/" element={<RootRedirect />} />
 
@@ -133,6 +139,9 @@ const AppRoutes = () => {
             {/* Room Inventory Management */}
             <Route path="/rooms" element={<Rooms />} />
             <Route path="/room-types" element={<RoomTypes />} />
+
+            {/* Digital Catalogue & Public Showcase */}
+            <Route path="/catalogue/manage" element={<CatalogueManage />} />
 
             {/* Customer CRM */}
             <Route path="/customers" element={<Customers />} />

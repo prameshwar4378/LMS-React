@@ -81,7 +81,7 @@ const RoomTypes = () => {
         }
         return [...old, saved];
       });
-      queryClient.invalidateQueries({ queryKey: ['roomTypes'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
     } catch (err) {
       showError(err.response?.data?.detail || 'Error saving room type.', 'Save Failed');
     } finally {
@@ -107,7 +107,7 @@ const RoomTypes = () => {
 
         try {
           await deleteRoomTypeApi(rt.id);
-          queryClient.invalidateQueries({ queryKey: ['roomTypes'], refetchType: 'none' });
+          queryClient.invalidateQueries({ queryKey: ['roomTypes'] });
         } catch (err) {
           if (prevRoomTypes) {
             queryClient.setQueryData(['roomTypes'], prevRoomTypes);

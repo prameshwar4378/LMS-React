@@ -139,7 +139,8 @@ const Payments = () => {
       if (activeTab === 'cash' && (p.payment_method || '').toUpperCase() !== 'CASH') return false;
       if (activeTab === 'upi' && (p.payment_method || '').toUpperCase() !== 'UPI') return false;
       if (activeTab === 'card' && !['CARD', 'BANK_TRANSFER'].includes((p.payment_method || '').toUpperCase())) return false;
-      if (activeTab === 'wallet' && p.stay_number) return false; // direct wallet advance
+      if (activeTab === 'advance' && !p.booking_number) return false;
+      if (activeTab === 'wallet' && (p.stay_number || p.booking_number)) return false; // direct wallet advance
 
       // 2. Method filter
       if (methodFilter !== 'ALL' && (p.payment_method || '').toUpperCase() !== methodFilter) {
@@ -185,6 +186,7 @@ const Payments = () => {
         const query = searchQuery.toLowerCase().trim();
         const payNum = (p.payment_number || '').toLowerCase();
         const stayNum = (p.stay_number || '').toLowerCase();
+        const bookingNum = (p.booking_number || '').toLowerCase();
         const guestName = (p.customer_name || '').toLowerCase();
         const mobile = (p.customer_mobile || '').toLowerCase();
         const room = String(p.room_number || '').toLowerCase();
@@ -196,6 +198,7 @@ const Payments = () => {
         const matches =
           payNum.includes(query) ||
           stayNum.includes(query) ||
+          bookingNum.includes(query) ||
           guestName.includes(query) ||
           mobile.includes(query) ||
           room.includes(query) ||
@@ -502,7 +505,7 @@ const Payments = () => {
               </div>
               <div class="meta-item">
                 <span class="meta-label">Stay / Folio #:</span>
-                <span class="meta-val">${payment.stay_number || 'Direct Advance Deposit'}</span>
+                <span class="meta-val">${payment.stay_number ? payment.stay_number : (payment.booking_number ? `Advance Booking #${payment.booking_number}` : 'Direct Advance Deposit')}</span>
               </div>
               <div class="meta-item">
                 <span class="meta-label">Allocated Room:</span>
@@ -891,9 +894,14 @@ const Payments = () => {
                 ).length
               },
               {
+                id: 'advance',
+                label: 'Reservations',
+                count: payments.filter((p) => Boolean(p.booking_number)).length
+              },
+              {
                 id: 'wallet',
                 label: 'Direct Wallet',
-                count: payments.filter((p) => !p.stay_number).length
+                count: payments.filter((p) => !p.stay_number && !p.booking_number).length
               }
             ].map((tab) => (
               <button
@@ -1365,6 +1373,20 @@ const Payments = () => {
                                 >
                                   {p.stay_number}
                                 </Link>
+                              ) : p.booking_number ? (
+                                <Link
+                                  to={`/bookings`}
+                                  className="badge rounded-pill fw-medium text-decoration-none"
+                                  style={{
+                                    backgroundColor: '#FEF3C7',
+                                    color: '#92400E',
+                                    border: '1px solid #FDE68A',
+                                    fontSize: '0.7rem'
+                                  }}
+                                  title={`Advance Booking #${p.booking_number}`}
+                                >
+                                  #{p.booking_number}
+                                </Link>
                               ) : (
                                 <span
                                   className="badge rounded-pill fw-medium"
@@ -1711,11 +1733,26 @@ const Payments = () => {
                   )}
 
                   <div className="d-flex justify-content-between pb-1.5 border-bottom">
-                    <span className="text-muted">Stay Folio #:</span>
+                    <span className="text-muted">Stay Folio / Reservation #:</span>
                     <span className="fw-bold text-primary font-monospace">
-                      {selectedPayment.stay_number ? selectedPayment.stay_number : 'Direct Customer Wallet'}
+                      {selectedPayment.stay_number ? (
+                        selectedPayment.stay_number
+                      ) : selectedPayment.booking_number ? (
+                        `Advance Booking #${selectedPayment.booking_number}`
+                      ) : (
+                        'Direct Customer Wallet'
+                      )}
                     </span>
                   </div>
+
+                  {selectedPayment.stay_number && selectedPayment.booking_number && (
+                    <div className="d-flex justify-content-between pb-1.5 border-bottom">
+                      <span className="text-muted">Originating Reservation:</span>
+                      <span className="fw-semibold text-secondary font-monospace">
+                        #{selectedPayment.booking_number}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="d-flex justify-content-between pb-1.5 border-bottom">
                     <span className="text-muted">Allocated Room:</span>

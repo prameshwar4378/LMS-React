@@ -21,8 +21,8 @@ export const updateBookingApi = async (id, data) => {
   return res.data;
 };
 
-export const cancelBookingApi = async (id) => {
-  const res = await api.post(`/bookings/${id}/cancel/`);
+export const cancelBookingApi = async (id, data = {}) => {
+  const res = await api.post(`/bookings/${id}/cancel/`, data);
   return res.data;
 };
 

@@ -10,6 +10,7 @@ import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import PageLoader from '../components/PageLoader';
+import { extractErrorMessage } from '../utils/errorUtils';
 
 import {
   Calendar,
@@ -208,41 +209,6 @@ const Checkout = () => {
   const isPendingDue = liveBalance > 0.01;
   const isFullyBalanced = !isExcessPaid && !isPendingDue;
 
-  const extractErrorMessage = (err, defaultMsg = 'Error completing checkout.') => {
-    if (!err) return defaultMsg;
-    if (typeof err === 'string') return err;
-    if (err.response && err.response.data) {
-      const d = err.response.data;
-      if (typeof d === 'string') return d;
-      let summaryMsg = d.message || d.error || d.detail || '';
-      if (d.errors && typeof d.errors === 'object') {
-        const keys = Object.keys(d.errors);
-        if (keys.length > 0) {
-          const detailList = keys.map((k) => {
-            const v = d.errors[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : String(v);
-            return `${k.toUpperCase()}: ${vStr}`;
-          }).join(' | ');
-          return `${summaryMsg ? summaryMsg + ' — ' : ''}${detailList}`;
-        }
-      }
-      if (typeof d === 'object') {
-        const keys = Object.keys(d).filter((k) => k !== 'success');
-        if (keys.length > 0) {
-          const detailList = keys.map((k) => {
-            const v = d[k];
-            const vStr = Array.isArray(v) ? v.join(', ') : typeof v === 'object' ? JSON.stringify(v) : String(v);
-            return `${k.toUpperCase()}: ${vStr}`;
-          }).join(' | ');
-          return detailList;
-        }
-      }
-      if (summaryMsg) return summaryMsg;
-    }
-    if (err.message) return err.message;
-    return defaultMsg;
-  };
-
   // Open Pre-Checkout Confirmation Dialog
   const handleOpenConfirmModal = (e) => {
     if (e) e.preventDefault();
@@ -312,8 +278,8 @@ const Checkout = () => {
       await createPaymentApi(payload);
       showSuccess(`Refund of ₹${amt.toFixed(2)} returned to guest and logged as debit transaction!`, 'Refund Processed');
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to process refund transaction.';
@@ -331,8 +297,8 @@ const Checkout = () => {
       showSuccess('Payment transaction recorded successfully!', 'Payment Received');
       setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error recording payment.';
       showError(errMsg, 'Payment Failed');
@@ -370,14 +336,16 @@ const Checkout = () => {
 
       await checkoutStayApi(id, payload);
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
-      queryClient.invalidateQueries({ queryKey: ['current-stays'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['stays'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
       queryClient.invalidateQueries({ queryKey: ['stay-details'] });
-      queryClient.invalidateQueries({ queryKey: ['rooms'], refetchType: 'none' });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['customer-details'] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
       showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
       setShowInvoice(true);
     } catch (err) {

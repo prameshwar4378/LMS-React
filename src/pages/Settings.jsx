@@ -82,7 +82,7 @@ const Settings = () => {
         setLogoPreview(updated.logo);
       }
       queryClient.setQueryData(['settings'], updated);
-      queryClient.invalidateQueries({ queryKey: ['settings'], refetchType: 'none' });
+      queryClient.invalidateQueries({ queryKey: ['settings'] });
       showSuccess('Lodge settings and branding updated successfully!', 'Settings Saved');
     } catch (err) {
       console.error('Failed to update settings:', err);

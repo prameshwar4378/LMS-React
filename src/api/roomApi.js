@@ -15,6 +15,11 @@ export const updateRoomTypeApi = async (id, data) => {
   return res.data;
 };
 
+export const patchRoomTypeApi = async (id, data) => {
+  const res = await api.patch(`/room-types/${id}/`, data);
+  return res.data;
+};
+
 export const deleteRoomTypeApi = async (id) => {
   const res = await api.delete(`/room-types/${id}/`);
   return res.data;
@@ -53,3 +58,35 @@ export const checkAvailabilityApi = async (checkIn, checkOut, roomType = '', exc
   const res = await api.get(url);
   return res.data;
 };
+
+export const getRoomActivityApi = async (roomId) => {
+  const res = await api.get(`/rooms/${roomId}/activity/`);
+  return res.data;
+};
+
+export const requestRoomDeletionApi = async (roomId, data) => {
+  const res = await api.post(`/rooms/${roomId}/request_deletion/`, data);
+  return res.data;
+};
+
+export const getRoomDeletionRequestsApi = async (status = '') => {
+  const url = status ? `/room-deletion-requests/?status=${status}` : '/room-deletion-requests/';
+  const res = await api.get(url);
+  return res.data;
+};
+
+export const getPendingRoomDeletionRequestsApi = async () => {
+  const res = await api.get('/room-deletion-requests/pending/');
+  return res.data;
+};
+
+export const approveRoomDeletionRequestApi = async (requestId, data = {}) => {
+  const res = await api.post(`/room-deletion-requests/${requestId}/approve/`, data);
+  return res.data;
+};
+
+export const rejectRoomDeletionRequestApi = async (requestId, data = {}) => {
+  const res = await api.post(`/room-deletion-requests/${requestId}/reject/`, data);
+  return res.data;
+};
+

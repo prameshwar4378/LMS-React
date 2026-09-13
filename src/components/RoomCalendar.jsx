@@ -4,7 +4,7 @@ import { getRoomsApi, updateRoomStatusApi } from '../api/roomApi';
 import { getBookingsApi } from '../api/bookingApi';
 import { getStaysApi } from '../api/stayApi';
 import StatusBadge from './StatusBadge';
-import { formatDate } from '../utils/dateUtils';
+import { formatDate, formatTime12Hour } from '../utils/dateUtils';
 import { formatCurrency } from '../utils/formatCurrency';
 
 const RoomCalendar = () => {
@@ -90,7 +90,9 @@ const RoomCalendar = () => {
         recordId: activeStay.id,
         recordType: 'stay',
         checkIn: activeStay.check_in_date,
-        checkout: activeStay.expected_checkout_date,
+        checkInTime: activeStay.check_in_time || '12:00',
+        checkout: activeStay.actual_checkout_date || activeStay.expected_checkout_date,
+        checkoutTime: activeStay.actual_checkout_time || activeStay.expected_checkout_time || '11:00',
         grandTotal: bill.grand_total,
         totalPaid: bill.total_paid,
         balance: bill.balance,
@@ -122,7 +124,9 @@ const RoomCalendar = () => {
         recordId: activeBooking.id,
         recordType: 'booking',
         checkIn: activeBooking.check_in_date,
+        checkInTime: activeBooking.check_in_time || '12:00',
         checkout: activeBooking.expected_checkout_date,
+        checkoutTime: activeBooking.expected_checkout_time || '11:00',
         advanceAmount: activeBooking.advance_amount,
         adults: activeBooking.adults || 1,
         children: activeBooking.children || 0,
@@ -317,11 +321,25 @@ const RoomCalendar = () => {
                         </div>
                         <div className="d-flex justify-content-between small py-1 border-bottom">
                           <span className="text-muted">Check-In Date:</span>
-                          <strong className="text-dark">{formatDate(selectedCell.cell.checkIn)}</strong>
+                          <strong className="text-dark">
+                            {formatDate(selectedCell.cell.checkIn)}
+                            {selectedCell.cell.checkInTime && (
+                              <span className="text-primary fw-semibold ms-1">
+                                @ {formatTime12Hour(selectedCell.cell.checkInTime)}
+                              </span>
+                            )}
+                          </strong>
                         </div>
                         <div className="d-flex justify-content-between small py-1 border-bottom">
                           <span className="text-muted">Check-Out Date:</span>
-                          <strong className="text-dark">{formatDate(selectedCell.cell.checkout)}</strong>
+                          <strong className="text-dark">
+                            {formatDate(selectedCell.cell.checkout)}
+                            {selectedCell.cell.checkoutTime && (
+                              <span className="text-primary fw-semibold ms-1">
+                                @ {formatTime12Hour(selectedCell.cell.checkoutTime)}
+                              </span>
+                            )}
+                          </strong>
                         </div>
                         <div className="d-flex justify-content-between small py-1">
                           <span className="text-muted">Occupancy:</span>

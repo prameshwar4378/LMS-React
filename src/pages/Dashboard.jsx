@@ -44,16 +44,21 @@ import {
   CreditCard,
   Building2,
   ChevronRight,
-  SlidersHorizontal
+  SlidersHorizontal,
+  History
 } from 'lucide-react';
+import ActivityLogModal from '../components/ActivityLogModal';
 
 const Dashboard = () => {
-  const { user, isShiftWise } = useAuth();
+  const { user, isShiftWise, isHotelOwner, isSuperUser, isManager } = useAuth();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const [analyticsRange, setAnalyticsRange] = useState('7d'); // '7d' | '30d' | '90d'
   const [activeGuestTab, setActiveGuestTab] = useState('inhouse'); // 'inhouse' | 'upcoming'
+  const [showActivityLogModal, setShowActivityLogModal] = useState(false);
+
+  const canViewActivityLog = Boolean(isHotelOwner || isSuperUser || isManager || user?.role === 'MANAGER' || user?.role === 'HOTEL_OWNER');
 
   const {
     data = null,
@@ -282,6 +287,18 @@ const Dashboard = () => {
               <Clock size={15} className={shiftData?.has_active_shift ? 'text-success' : 'text-primary'} />
               <span>{shiftData?.has_active_shift ? `Till #${shiftData.shift?.shift_number}` : 'Shift & Till'}</span>
             </Link>
+          )}
+          {canViewActivityLog && (
+            <button
+              type="button"
+              className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
+              style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
+              onClick={() => setShowActivityLogModal(true)}
+              title="System Activity & Audit Log (Manager & Owner Only)"
+            >
+              <History size={15} className="text-primary" />
+              <span>Activity Log</span>
+            </button>
           )}
         </div>
       </div>
@@ -1223,6 +1240,12 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+
+      {/* System Activity & Audit Log Modal (Manager & Owner Only) */}
+      <ActivityLogModal
+        show={showActivityLogModal}
+        onClose={() => setShowActivityLogModal(false)}
+      />
     </div>
   );
 };
