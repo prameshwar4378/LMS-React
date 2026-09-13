@@ -23,7 +23,11 @@ import {
   deletePlatformStaffApi,
   resetPlatformStaffPasswordApi,
   recordPropertySubscriptionPaymentApi,
-  deletePropertySubscriptionPaymentApi
+  deletePropertySubscriptionPaymentApi,
+  getPlatformInquiriesApi,
+  togglePlatformInquiryContactedApi,
+  updatePlatformInquiryNotesApi,
+  deletePlatformInquiryApi
 } from '../api/platformApi';
 import PageLoader from '../components/PageLoader';
 import DeveloperLayout from '../layouts/DeveloperLayout';
@@ -98,6 +102,8 @@ import {
   Trash2,
   Shield,
   Printer,
+  MessageSquare,
+  MessageCircle,
   X
 } from 'lucide-react';
 
@@ -240,7 +246,7 @@ const PlatformProperties = ({ initialTab = null }) => {
   const navigate = useNavigate();
 
   const queryTab = searchParams.get('tab');
-  const validTabs = ['overview', 'properties', 'subscriptions', 'health'];
+  const validTabs = ['overview', 'inquiries', 'properties', 'subscriptions', 'health'];
   const resolvedInitialTab = (initialTab && validTabs.includes(initialTab))
     ? initialTab
     : (routeTab && validTabs.includes(routeTab))
@@ -300,6 +306,101 @@ const PlatformProperties = ({ initialTab = null }) => {
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
+
+  // Inquiries Tab State & TanStack Query
+  const [inquiriesSearch, setInquiriesSearch] = useState('');
+  const [inquiriesStatusFilter, setInquiriesStatusFilter] = useState('all'); // 'all' | 'pending' | 'contacted'
+  const [inquiriesServiceFilter, setInquiriesServiceFilter] = useState('all');
+  const [selectedInquiryForNotes, setSelectedInquiryForNotes] = useState(null);
+  const [inquiryNotesText, setInquiryNotesText] = useState('');
+  const [inquiryNotesContacted, setInquiryNotesContacted] = useState(false);
+
+  const {
+    data: inquiriesData = null,
+    isLoading: inquiriesLoading,
+    refetch: refetchInquiries
+  } = useQuery({
+    queryKey: ['platform-inquiries', inquiriesSearch, inquiriesStatusFilter, inquiriesServiceFilter],
+    queryFn: () => getPlatformInquiriesApi({
+      search: inquiriesSearch,
+      status: inquiriesStatusFilter,
+      service_interest: inquiriesServiceFilter
+    }),
+    staleTime: 15 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+  const inquiries = inquiriesData?.inquiries || [];
+  const inquiryMetrics = inquiriesData?.metrics || { total: 0, pending: 0, contacted: 0, new_24h: 0 };
+
+  const toggleInquiryContactedMutation = useMutation({
+    mutationFn: togglePlatformInquiryContactedApi,
+    onSuccess: (data) => {
+      showSuccess(data.message || 'Status updated');
+      queryClient.invalidateQueries({ queryKey: ['platform-inquiries'] });
+    },
+    onError: (err) => {
+      showError(err.response?.data?.error || 'Failed to update status');
+    }
+  });
+
+  const updateInquiryNotesMutation = useMutation({
+    mutationFn: ({ id, data }) => updatePlatformInquiryNotesApi(id, data),
+    onSuccess: () => {
+      showSuccess('Notes saved successfully');
+      setSelectedInquiryForNotes(null);
+      queryClient.invalidateQueries({ queryKey: ['platform-inquiries'] });
+    },
+    onError: (err) => {
+      showError(err.response?.data?.error || 'Failed to save notes');
+    }
+  });
+
+  const deleteInquiryMutation = useMutation({
+    mutationFn: deletePlatformInquiryApi,
+    onSuccess: () => {
+      showSuccess('Inquiry record deleted successfully');
+      queryClient.invalidateQueries({ queryKey: ['platform-inquiries'] });
+    },
+    onError: (err) => {
+      showError(err.response?.data?.error || 'Failed to delete inquiry');
+    }
+  });
+
+  const handleDeleteInquiry = (inq) => {
+    showConfirm({
+      title: 'Delete Website Inquiry?',
+      message: `Are you sure you want to permanently delete the inquiry for "${inq.property_name}" (${inq.full_name})? This action cannot be undone.`,
+      confirmText: 'Delete Inquiry',
+      confirmVariant: 'danger',
+      onConfirm: () => deleteInquiryMutation.mutate(inq.id)
+    });
+  };
+
+  const handleOpenInquiryModal = (inq) => {
+    setSelectedInquiryForNotes(inq);
+    setInquiryNotesText(inq.admin_notes || '');
+    setInquiryNotesContacted(Boolean(inq.is_contacted));
+  };
+
+  const handleSaveInquiryNotes = (e) => {
+    if (e) e.preventDefault();
+    if (!selectedInquiryForNotes) return;
+    updateInquiryNotesMutation.mutate({
+      id: selectedInquiryForNotes.id,
+      data: {
+        admin_notes: inquiryNotesText,
+        is_contacted: inquiryNotesContacted
+      }
+    });
+  };
+
+  const getWhatsAppLink = (inq) => {
+    if (!inq?.phone) return '#';
+    let clean = inq.phone.replace(/[^0-9]/g, '');
+    if (clean.length === 10) clean = '91' + clean;
+    const msg = `Hello ${inq.full_name || 'Sir/Madam'}, greetings from LMS (Lodge Management System)! Thank you for contacting us regarding "${inq.property_name || 'your property'}". We would love to give you a live demonstration. When is a convenient time to speak?`;
+    return `https://wa.me/${clean}?text=${encodeURIComponent(msg)}`;
+  };
 
   const loading = propertiesLoading || subscriptionsLoading || healthLoading;
   const [searchQuery, setSearchQuery] = useState('');
@@ -1206,6 +1307,18 @@ const PlatformProperties = ({ initialTab = null }) => {
                 </button>
                 <button
                   type="button"
+                  onClick={() => handleSelectTab('inquiries')}
+                  className={`btn btn-sm rounded-3 px-3.5 py-2 fw-bold transition-all text-nowrap d-flex align-items-center gap-2 ${activeTab === 'inquiries' ? 'btn-primary text-white shadow-2xs' : 'btn-white border text-secondary hover-bg-light'}`}
+                  style={{ fontSize: '0.85rem' }}
+                >
+                  <Mail size={15} />
+                  <span>Website Inquiries</span>
+                  <span className={`badge rounded-pill extra-small px-2 py-0.5 ${activeTab === 'inquiries' ? 'bg-white text-primary' : (inquiryMetrics?.pending > 0 ? 'bg-warning text-dark fw-bold' : 'bg-secondary-subtle text-secondary')}`}>
+                    {inquiryMetrics?.pending > 0 ? `${inquiryMetrics.pending} New` : (inquiryMetrics?.total || 0)}
+                  </span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => handleSelectTab('properties')}
                   className={`btn btn-sm rounded-3 px-3.5 py-2 fw-bold transition-all text-nowrap d-flex align-items-center gap-2 ${activeTab === 'properties' ? 'btn-primary text-white shadow-2xs' : 'btn-white border text-secondary hover-bg-light'}`}
                   style={{ fontSize: '0.85rem' }}
@@ -1244,6 +1357,16 @@ const PlatformProperties = ({ initialTab = null }) => {
 
               {/* Quick Actions in Tab Bar */}
               <div className="d-flex align-items-center gap-2">
+                {activeTab === 'inquiries' && (
+                  <button
+                    type="button"
+                    onClick={() => refetchInquiries()}
+                    className="btn btn-sm btn-white border rounded-3 px-3 py-1.5 fw-semibold text-secondary shadow-xs extra-small d-flex align-items-center gap-1.5 hover-bg-light"
+                  >
+                    <RefreshCw size={13} className={inquiriesLoading ? 'animate-spin' : ''} />
+                    <span>Refresh Leads</span>
+                  </button>
+                )}
                 {activeTab === 'subscriptions' && (
                   <button
                     type="button"
@@ -2361,7 +2484,7 @@ const PlatformProperties = ({ initialTab = null }) => {
                 {/* Top KPI Cards Row */}
                 <div className="row g-3 mb-4">
                   {/* Card 1: Onboarded Properties */}
-                  <div className="col-12 col-sm-6 col-xl-3">
+                  <div className="col-12 col-sm-6 col-xl">
                     <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">ONBOARDED HOTELS</span>
@@ -2381,7 +2504,7 @@ const PlatformProperties = ({ initialTab = null }) => {
                   </div>
 
                   {/* Card 2: Managed Room Capacity */}
-                  <div className="col-12 col-sm-6 col-xl-3">
+                  <div className="col-12 col-sm-6 col-xl">
                     <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">ROOM CAPACITY CAP</span>
@@ -2397,7 +2520,7 @@ const PlatformProperties = ({ initialTab = null }) => {
                   </div>
 
                   {/* Card 3: Live Active Stays */}
-                  <div className="col-12 col-sm-6 col-xl-3">
+                  <div className="col-12 col-sm-6 col-xl">
                     <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">LIVE ACTIVE OCCUPANCY</span>
@@ -2412,8 +2535,37 @@ const PlatformProperties = ({ initialTab = null }) => {
                     </div>
                   </div>
 
-                  {/* Card 4: Estimated ARR / MRR */}
-                  <div className="col-12 col-sm-6 col-xl-3">
+                  {/* Card 4: Website Leads / Inquiries */}
+                  <div className="col-12 col-sm-6 col-xl">
+                    <div
+                      className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden cursor-pointer hover-lift"
+                      style={{ border: '1px solid #E2E8F0', cursor: 'pointer' }}
+                      onClick={() => handleSelectTab('inquiries')}
+                      title="Click to view all website inquiries"
+                    >
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">WEBSITE LEADS</span>
+                        <div className="p-2 rounded-3" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#D97706' }}>
+                          <Mail size={18} />
+                        </div>
+                      </div>
+                      <div className="fs-2 fw-bold text-dark font-monospace mb-1">{inquiryMetrics?.total || 0}</div>
+                      <div className="d-flex align-items-center gap-1.5 extra-small">
+                        <span className={`badge rounded-pill px-2 py-0.5 ${inquiryMetrics?.pending > 0 ? 'bg-warning text-dark fw-bold' : 'bg-secondary-subtle text-secondary'}`}>
+                          {inquiryMetrics?.pending || 0} Pending
+                        </span>
+                        <span className="badge bg-success-subtle text-success rounded-pill px-2 py-0.5">
+                          {inquiryMetrics?.contacted || 0} Done
+                        </span>
+                        {inquiryMetrics?.new_24h > 0 && (
+                          <span className="text-primary fw-bold">+{inquiryMetrics.new_24h} today</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Card 5: Estimated ARR / MRR */}
+                  <div className="col-12 col-sm-6 col-xl">
                     <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                       <div className="d-flex align-items-center justify-content-between mb-2">
                         <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">RECURRING REVENUE (ARR)</span>
@@ -2685,6 +2837,138 @@ const PlatformProperties = ({ initialTab = null }) => {
                       )}
                     </div>
                   </div>
+                </div>
+
+                {/* Recent Website Inquiries & Leads Widget */}
+                <div className="card border-0 shadow-sm rounded-4 p-4 bg-white mb-4" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="d-flex flex-column flex-sm-row justify-content-between align-items-start align-items-sm-center gap-2 mb-3">
+                    <div className="d-flex align-items-center gap-2.5">
+                      <div className="p-2 rounded-3" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#D97706' }}>
+                        <Mail size={18} />
+                      </div>
+                      <div>
+                        <h6 className="fw-bold text-dark m-0">Recent Website Leads &amp; Demo Inquiries</h6>
+                        <span className="text-secondary extra-small">Prospective clients inquiring via website contact and demo forms</span>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2">
+                      <span className={`badge rounded-pill extra-small px-2.5 py-1 ${inquiryMetrics?.pending > 0 ? 'bg-warning text-dark fw-bold' : 'bg-secondary-subtle text-secondary'}`}>
+                        {inquiryMetrics?.pending || 0} Pending Follow-up
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTab('inquiries')}
+                        className="btn btn-sm btn-outline-primary rounded-3 px-3 py-1 extra-small fw-semibold d-flex align-items-center gap-1"
+                      >
+                        <span>View All Leads ({inquiryMetrics?.total || 0})</span>
+                        <ChevronRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {inquiries.length > 0 ? (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.85rem' }}>
+                        <thead className="table-light">
+                          <tr>
+                            <th className="extra-small fw-bold text-secondary">HOTEL / PROPERTY</th>
+                            <th className="extra-small fw-bold text-secondary">CONTACT PERSON</th>
+                            <th className="extra-small fw-bold text-secondary">DIRECT OUTREACH</th>
+                            <th className="extra-small fw-bold text-secondary">SERVICE INTEREST</th>
+                            <th className="extra-small fw-bold text-secondary">STATUS</th>
+                            <th className="extra-small fw-bold text-secondary text-end">ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inquiries.slice(0, 5).map((inq) => (
+                            <tr key={inq.id}>
+                              <td>
+                                <div className="fw-bold text-dark">{inq.property_name || 'General Inquiry'}</div>
+                                <div className="extra-small text-muted d-flex align-items-center gap-1.5">
+                                  {inq.city && <span>{inq.city}</span>}
+                                  {inq.room_count && <span>· {inq.room_count} Rooms</span>}
+                                </div>
+                              </td>
+                              <td>
+                                <div className="fw-semibold text-dark">{inq.full_name}</div>
+                                <div className="extra-small text-muted">{new Date(inq.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                              </td>
+                              <td>
+                                <div className="d-flex align-items-center gap-1.5">
+                                  {inq.phone && (
+                                    <>
+                                      <a
+                                        href={`tel:${inq.phone}`}
+                                        className="btn btn-sm btn-light border p-1 rounded-2 text-secondary"
+                                        title={`Call ${inq.phone}`}
+                                      >
+                                        <Phone size={13} />
+                                      </a>
+                                      <a
+                                        href={getWhatsAppLink(inq)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="btn btn-sm p-1 rounded-2 text-white d-inline-flex align-items-center"
+                                        style={{ backgroundColor: '#25D366' }}
+                                        title="Chat on WhatsApp"
+                                      >
+                                        <MessageCircle size={13} />
+                                      </a>
+                                    </>
+                                  )}
+                                  {inq.email && (
+                                    <a
+                                      href={`mailto:${inq.email}`}
+                                      className="btn btn-sm btn-light border p-1 rounded-2 text-secondary"
+                                      title={`Email ${inq.email}`}
+                                    >
+                                      <Mail size={13} />
+                                    </a>
+                                  )}
+                                </div>
+                              </td>
+                              <td>
+                                <span className="badge bg-light text-dark border extra-small">
+                                  {inq.service_interest || 'General'}
+                                </span>
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleInquiryContactedMutation.mutate(inq.id)}
+                                  className={`btn btn-sm rounded-pill extra-small fw-bold px-2.5 py-0.5 border ${
+                                    inq.is_contacted
+                                      ? 'btn-success-subtle text-success border-success-subtle'
+                                      : 'btn-warning-subtle text-warning-emphasis border-warning-subtle'
+                                  }`}
+                                  title="Click to toggle contacted status"
+                                >
+                                  {inq.is_contacted ? '● Contacted' : '○ Pending'}
+                                </button>
+                              </td>
+                              <td className="text-end">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenInquiryModal(inq)}
+                                  className="btn btn-sm btn-white border rounded-2 px-2.5 py-1 extra-small fw-semibold text-primary hover-bg-light"
+                                >
+                                  Notes &amp; Details
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-4 rounded-3 bg-light border text-center">
+                      <Mail size={28} className="text-muted mx-auto mb-2" />
+                      <div className="fw-bold text-dark small">No Website Inquiries Yet</div>
+                      <p className="text-secondary extra-small m-0 mt-1">
+                        When visitors submit the contact or demo forms on your landing page, leads will automatically populate here.
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -4497,6 +4781,394 @@ const PlatformProperties = ({ initialTab = null }) => {
           </div>
         )}
 
+            {/* ========================================================= */}
+            {/* 📬 TAB 5: WEBSITE INQUIRIES & DEMO LEADS CONSOLE         */}
+            {/* ========================================================= */}
+            {activeTab === 'inquiries' && !selectedHotel && (
+              <div className="animate-fadeIn">
+                {/* Hero Banner */}
+                <div
+                  className="card border-0 shadow-lg rounded-4 p-4 p-md-4 mb-4 text-white overflow-hidden position-relative"
+                  style={{
+                    background: 'linear-gradient(135deg, #0F172A 0%, #1E293B 100%)',
+                    boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.4)'
+                  }}
+                >
+                  <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3">
+                    <div className="d-flex align-items-center gap-3">
+                      <div
+                        className="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0"
+                        style={{
+                          width: '46px',
+                          height: '46px',
+                          background: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)',
+                          boxShadow: '0 6px 18px rgba(245, 158, 11, 0.4)'
+                        }}
+                      >
+                        <Mail size={24} className="text-white" />
+                      </div>
+                      <div>
+                        <div className="d-flex align-items-center gap-2">
+                          <h4 className="fw-bold m-0 text-white" style={{ letterSpacing: '-0.02em' }}>
+                            Website Inquiries &amp; Demo Requests
+                          </h4>
+                          <span className="badge rounded-pill extra-small px-2.5 py-1 fw-bold font-monospace" style={{ backgroundColor: 'rgba(245, 158, 11, 0.2)', color: '#FCD34D', border: '1px solid rgba(245, 158, 11, 0.4)' }}>
+                            {inquiryMetrics?.pending > 0 ? `${inquiryMetrics.pending} Awaiting Outreach` : 'All Caught Up'}
+                          </span>
+                        </div>
+                        <p className="text-white-50 extra-small m-0 mt-1">
+                          Prospective hotel owners and managers who requested product demos or submitted inquiries from the public website.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="d-flex align-items-center gap-2 flex-shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => refetchInquiries()}
+                        disabled={inquiriesLoading}
+                        className="btn btn-sm btn-white border rounded-3 px-3 py-1.5 extra-small fw-semibold d-flex align-items-center gap-1.5 hover-bg-light"
+                      >
+                        <RefreshCw size={13} className={inquiriesLoading ? 'animate-spin' : ''} />
+                        <span>{inquiriesLoading ? 'Syncing...' : 'Refresh Leads'}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4 Metric Cards Row */}
+                <div className="row g-3 mb-4">
+                  {/* Card 1: Total Leads */}
+                  <div className="col-12 col-sm-6 col-xl-3">
+                    <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">TOTAL INQUIRIES</span>
+                        <div className="p-2 rounded-3 bg-primary-subtle text-primary">
+                          <Mail size={18} />
+                        </div>
+                      </div>
+                      <div className="fs-2 fw-bold text-dark font-monospace mb-1">{inquiryMetrics?.total || 0}</div>
+                      <div className="extra-small text-muted">All-time website submissions</div>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Pending Outreach */}
+                  <div className="col-12 col-sm-6 col-xl-3">
+                    <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">PENDING FOLLOW-UP</span>
+                        <div className="p-2 rounded-3 bg-warning-subtle text-warning">
+                          <Clock size={18} />
+                        </div>
+                      </div>
+                      <div className="fs-2 fw-bold text-dark font-monospace mb-1">{inquiryMetrics?.pending || 0}</div>
+                      <div className="extra-small text-muted">Awaiting initial sales call / demo</div>
+                    </div>
+                  </div>
+
+                  {/* Card 3: Contacted & Qualified */}
+                  <div className="col-12 col-sm-6 col-xl-3">
+                    <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">CONTACTED / PROCESSED</span>
+                        <div className="p-2 rounded-3 bg-success-subtle text-success">
+                          <CheckCircle2 size={18} />
+                        </div>
+                      </div>
+                      <div className="fs-2 fw-bold text-success font-monospace mb-1">{inquiryMetrics?.contacted || 0}</div>
+                      <div className="extra-small text-muted">Sales response completed</div>
+                    </div>
+                  </div>
+
+                  {/* Card 4: New in Last 24 Hours */}
+                  <div className="col-12 col-sm-6 col-xl-3">
+                    <div className="card border-0 shadow-sm rounded-4 p-3.5 bg-white h-100 position-relative overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">FRESH LEADS (TODAY)</span>
+                        <div className="p-2 rounded-3 bg-info-subtle text-info">
+                          <Sparkles size={18} />
+                        </div>
+                      </div>
+                      <div className="fs-2 fw-bold text-dark font-monospace mb-1">+{inquiryMetrics?.new_24h || 0}</div>
+                      <div className="extra-small text-muted">Submitted in past 24 hours</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Filter and Search Bar Card */}
+                <div className="card border-0 shadow-sm rounded-4 p-3 mb-4 bg-white" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="d-flex flex-column flex-lg-row align-items-stretch align-items-lg-center justify-content-between gap-3">
+                    {/* Search Field */}
+                    <div className="position-relative flex-grow-1" style={{ maxWidth: '460px' }}>
+                      <Search size={16} className="position-absolute text-muted" style={{ left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                      <input
+                        type="text"
+                        value={inquiriesSearch}
+                        onChange={(e) => setInquiriesSearch(e.target.value)}
+                        placeholder="Search hotel name, contact person, phone, email, or city..."
+                        className="form-control ps-5 py-2 rounded-3 border-0 bg-light"
+                        style={{ fontSize: '0.875rem' }}
+                      />
+                      {inquiriesSearch && (
+                        <button
+                          type="button"
+                          onClick={() => setInquiriesSearch('')}
+                          className="btn btn-link p-0 position-absolute text-muted"
+                          style={{ right: '12px', top: '50%', transform: 'translateY(-50%)', textDecoration: 'none' }}
+                        >
+                          <X size={15} />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Status Filter Tabs & Service Dropdown */}
+                    <div className="d-flex align-items-center flex-wrap gap-2">
+                      <div className="btn-group p-1 bg-light rounded-3" role="group">
+                        <button
+                          type="button"
+                          onClick={() => setInquiriesStatusFilter('all')}
+                          className={`btn btn-sm rounded-2 extra-small fw-semibold ${inquiriesStatusFilter === 'all' ? 'btn-white shadow-2xs text-dark' : 'text-secondary border-0'}`}
+                        >
+                          All ({inquiryMetrics?.total || 0})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInquiriesStatusFilter('pending')}
+                          className={`btn btn-sm rounded-2 extra-small fw-semibold ${inquiriesStatusFilter === 'pending' ? 'btn-white shadow-2xs text-warning-emphasis' : 'text-secondary border-0'}`}
+                        >
+                          Pending ({inquiryMetrics?.pending || 0})
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInquiriesStatusFilter('contacted')}
+                          className={`btn btn-sm rounded-2 extra-small fw-semibold ${inquiriesStatusFilter === 'contacted' ? 'btn-white shadow-2xs text-success' : 'text-secondary border-0'}`}
+                        >
+                          Contacted ({inquiryMetrics?.contacted || 0})
+                        </button>
+                      </div>
+
+                      <select
+                        value={inquiriesServiceFilter}
+                        onChange={(e) => setInquiriesServiceFilter(e.target.value)}
+                        className="form-select form-select-sm rounded-3 py-2 bg-light border-0"
+                        style={{ fontSize: '0.85rem', width: 'auto', minWidth: '170px' }}
+                      >
+                        <option value="all">All Services</option>
+                        <option value="pms">Cloud PMS</option>
+                        <option value="pos">Restaurant POS</option>
+                        <option value="channel">Channel Manager</option>
+                        <option value="suite">Hospitality Suite</option>
+                        <option value="contact">General Inquiry</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Inquiries Table Card */}
+                <div className="card border-0 shadow-sm rounded-4 overflow-hidden bg-white mb-4" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="p-3 border-bottom bg-light d-flex align-items-center justify-content-between flex-wrap gap-2">
+                    <div className="d-flex align-items-center gap-2">
+                      <Mail size={16} className="text-secondary" />
+                      <span className="fw-bold text-dark small">Inquiries Feed ({inquiries.length})</span>
+                    </div>
+                    <span className="extra-small text-muted font-monospace">
+                      Showing {inquiries.length} {inquiries.length === 1 ? 'record' : 'records'}
+                    </span>
+                  </div>
+
+                  {inquiriesLoading ? (
+                    <div className="p-5 text-center">
+                      <div className="spinner-border spinner-border-sm text-primary mb-2" role="status"></div>
+                      <div className="extra-small text-muted">Loading website inquiries...</div>
+                    </div>
+                  ) : inquiries.length > 0 ? (
+                    <div className="table-responsive">
+                      <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.875rem' }}>
+                        <thead className="table-light">
+                          <tr>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '150px' }}>SUBMITTED</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '220px' }}>HOTEL &amp; PROPERTY</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '180px' }}>CONTACT PERSON</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '220px' }}>1-CLICK OUTREACH</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '140px' }}>INTEREST</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '200px' }}>MESSAGE</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase" style={{ minWidth: '130px' }}>STATUS</th>
+                            <th className="extra-small fw-bold text-secondary text-uppercase text-end" style={{ minWidth: '130px' }}>ACTIONS</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {inquiries.map((inq) => {
+                            const isToday = new Date(inq.created_at).toDateString() === new Date().toDateString();
+                            return (
+                              <tr key={inq.id}>
+                                <td>
+                                  <div className="fw-bold text-dark extra-small">
+                                    {new Date(inq.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </div>
+                                  <div className="text-muted extra-small font-monospace">
+                                    {new Date(inq.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                  {isToday && (
+                                    <span className="badge rounded-pill extra-small px-2 py-0.5 mt-1" style={{ backgroundColor: '#EFF6FF', color: '#1D4ED8', border: '1px solid #BFDBFE' }}>
+                                      Today
+                                    </span>
+                                  )}
+                                </td>
+                                <td>
+                                  <div className="fw-bold text-dark">{inq.property_name || 'General Inquiry'}</div>
+                                  <div className="extra-small text-muted d-flex align-items-center gap-2 mt-0.5">
+                                    {inq.city ? (
+                                      <span className="d-inline-flex align-items-center gap-1">
+                                        <MapPin size={11} className="text-secondary" /> {inq.city}
+                                      </span>
+                                    ) : null}
+                                    {inq.room_count ? (
+                                      <span className="badge bg-light text-secondary border font-monospace extra-small">
+                                        {inq.room_count} Rooms
+                                      </span>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>
+                                  <div className="fw-semibold text-dark">{inq.full_name}</div>
+                                  <div className="extra-small text-muted font-monospace">{inq.phone || '–'}</div>
+                                  {inq.email && <div className="extra-small text-secondary text-truncate" style={{ maxWidth: '170px' }}>{inq.email}</div>}
+                                </td>
+                                <td>
+                                  <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                                    {inq.phone ? (
+                                      <>
+                                        <a
+                                          href={`tel:${inq.phone}`}
+                                          className="btn btn-sm btn-light border px-2.5 py-1 extra-small fw-semibold text-primary d-inline-flex align-items-center gap-1 rounded-2 hover-lift"
+                                          title={`Call ${inq.phone}`}
+                                        >
+                                          <Phone size={12} /> Call
+                                        </a>
+                                        <a
+                                          href={getWhatsAppLink(inq)}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="btn btn-sm px-2.5 py-1 extra-small fw-bold text-white d-inline-flex align-items-center gap-1 rounded-2 shadow-xs hover-lift"
+                                          style={{ backgroundColor: '#25D366' }}
+                                          title="Chat on WhatsApp with prefilled greeting"
+                                        >
+                                          <MessageCircle size={12} /> WhatsApp
+                                        </a>
+                                      </>
+                                    ) : null}
+                                    {inq.email ? (
+                                      <a
+                                        href={`mailto:${inq.email}?subject=${encodeURIComponent(`LMS Demo & Inquiry - ${inq.property_name || ''}`)}`}
+                                        className="btn btn-sm btn-light border p-1 rounded-2 text-secondary hover-lift"
+                                        title={`Email ${inq.email}`}
+                                      >
+                                        <Mail size={13} />
+                                      </a>
+                                    ) : null}
+                                  </div>
+                                </td>
+                                <td>
+                                  <span className="badge rounded-pill extra-small px-2.5 py-1 fw-bold bg-light text-dark border">
+                                    {inq.service_interest || 'General'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div
+                                    className="text-secondary extra-small text-truncate cursor-pointer"
+                                    style={{ maxWidth: '220px', cursor: 'pointer' }}
+                                    title={inq.message || 'No message provided'}
+                                    onClick={() => handleOpenInquiryModal(inq)}
+                                  >
+                                    {inq.message ? (
+                                      <span>{inq.message}</span>
+                                    ) : (
+                                      <span className="text-muted fst-italic">No message text</span>
+                                    )}
+                                  </div>
+                                  {inq.admin_notes && (
+                                    <div className="extra-small text-info mt-0.5 d-flex align-items-center gap-1">
+                                      <Edit3 size={10} /> Note added
+                                    </div>
+                                  )}
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleInquiryContactedMutation.mutate(inq.id)}
+                                    disabled={toggleInquiryContactedMutation.isPending}
+                                    className={`btn btn-sm rounded-pill extra-small fw-bold px-2.5 py-1 border d-inline-flex align-items-center gap-1 ${
+                                      inq.is_contacted
+                                        ? 'btn-success-subtle text-success border-success-subtle'
+                                        : 'btn-warning-subtle text-warning-emphasis border-warning-subtle'
+                                    }`}
+                                    title="Click to toggle contacted status"
+                                  >
+                                    {inq.is_contacted ? (
+                                      <>
+                                        <CheckCircle2 size={12} /> Contacted
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Clock size={12} /> Pending
+                                      </>
+                                    )}
+                                  </button>
+                                </td>
+                                <td className="text-end">
+                                  <div className="d-flex align-items-center justify-content-end gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenInquiryModal(inq)}
+                                      className="btn btn-sm btn-light border rounded-2 px-2 py-1 extra-small fw-semibold text-dark hover-bg-light"
+                                      title="View details and edit internal follow-up notes"
+                                    >
+                                      <Edit3 size={13} className="text-primary me-1" /> Notes
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteInquiry(inq)}
+                                      disabled={deleteInquiryMutation.isPending}
+                                      className="btn btn-sm btn-light border rounded-2 p-1 text-danger hover-bg-danger-subtle"
+                                      title="Delete inquiry record"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <div className="p-5 text-center">
+                      <Mail size={36} className="text-muted mx-auto mb-2" />
+                      <h6 className="fw-bold text-dark mb-1">No Inquiries Found</h6>
+                      <p className="text-secondary extra-small mb-3" style={{ maxWidth: '400px', margin: '0 auto' }}>
+                        {inquiriesSearch || inquiriesStatusFilter !== 'all' || inquiriesServiceFilter !== 'all'
+                          ? 'No website inquiries match the filters or search term you entered. Try adjusting the search filters.'
+                          : 'Incoming leads from the public website contact & demo inquiry forms will automatically appear here in real time.'}
+                      </p>
+                      {(inquiriesSearch || inquiriesStatusFilter !== 'all' || inquiriesServiceFilter !== 'all') && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInquiriesSearch('');
+                            setInquiriesStatusFilter('all');
+                            setInquiriesServiceFilter('all');
+                          }}
+                          className="btn btn-sm btn-primary rounded-3 px-3 py-1.5 extra-small fw-semibold"
+                        >
+                          Clear Filters
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -5980,6 +6652,205 @@ const PlatformProperties = ({ initialTab = null }) => {
                         </>
                       )}
                     </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Modal: Website Inquiry Details & Admin Sales Notes */}
+        {selectedInquiryForNotes && (
+          <div className="modal show d-block" tabIndex="-1" style={{ backgroundColor: 'rgba(15, 23, 42, 0.7)', backdropFilter: 'blur(5px)', zIndex: 1060 }}>
+            <div className="modal-dialog modal-dialog-centered" style={{ maxWidth: '620px', width: '100%' }}>
+              <div className="modal-content border-0 shadow-2xl rounded-4 overflow-hidden" style={{ borderRadius: '20px' }}>
+                <div className="modal-header border-bottom px-4 py-3.5 bg-white d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center gap-3">
+                    <div
+                      className="d-flex align-items-center justify-content-center rounded-3 flex-shrink-0"
+                      style={{
+                        width: '42px',
+                        height: '42px',
+                        background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
+                        color: '#D97706',
+                        border: '1px solid #FCD34D'
+                      }}
+                    >
+                      <Mail size={20} />
+                    </div>
+                    <div>
+                      <h5 className="modal-title fw-bold mb-0 text-dark" style={{ fontSize: '1.15rem', letterSpacing: '-0.015em' }}>
+                        Inquiry Details &amp; Sales Notes
+                      </h5>
+                      <span className="extra-small text-muted d-block mt-0.5">
+                        Submitted on {new Date(selectedInquiryForNotes.created_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' })}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn-close shadow-none"
+                    style={{ fontSize: '0.8rem' }}
+                    onClick={() => setSelectedInquiryForNotes(null)}
+                  ></button>
+                </div>
+
+                <form onSubmit={handleSaveInquiryNotes}>
+                  <div className="modal-body px-4 py-3.5" style={{ maxHeight: 'calc(85vh - 140px)', overflowY: 'auto' }}>
+                    {/* Property & Prospect Card */}
+                    <div className="p-3 rounded-3 bg-light border mb-3">
+                      <div className="row g-2">
+                        <div className="col-12 col-sm-6">
+                          <span className="text-secondary extra-small fw-bold text-uppercase d-block">PROSPECT NAME</span>
+                          <span className="fw-bold text-dark fs-6">{selectedInquiryForNotes.full_name}</span>
+                        </div>
+                        <div className="col-12 col-sm-6">
+                          <span className="text-secondary extra-small fw-bold text-uppercase d-block">HOTEL / PROPERTY</span>
+                          <span className="fw-bold text-dark fs-6">{selectedInquiryForNotes.property_name || 'Individual Prospect'}</span>
+                        </div>
+                        <div className="col-6 col-sm-4 mt-2">
+                          <span className="text-secondary extra-small fw-semibold d-block">LOCATION / CITY</span>
+                          <span className="text-dark small fw-medium">{selectedInquiryForNotes.city || 'Not specified'}</span>
+                        </div>
+                        <div className="col-6 col-sm-4 mt-2">
+                          <span className="text-secondary extra-small fw-semibold d-block">ROOM CAPACITY</span>
+                          <span className="text-dark small fw-medium font-monospace">{selectedInquiryForNotes.room_count ? `${selectedInquiryForNotes.room_count} Rooms` : 'Not specified'}</span>
+                        </div>
+                        <div className="col-12 col-sm-4 mt-2">
+                          <span className="text-secondary extra-small fw-semibold d-block">INTERESTED IN</span>
+                          <span className="badge bg-white text-primary border small">{selectedInquiryForNotes.service_interest || 'General'}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Quick Outreach Bar */}
+                    <div className="d-flex align-items-center gap-2 mb-3 flex-wrap">
+                      {selectedInquiryForNotes.phone && (
+                        <>
+                          <a
+                            href={`tel:${selectedInquiryForNotes.phone}`}
+                            className="btn btn-sm btn-outline-primary rounded-3 px-3 py-1.5 extra-small fw-bold d-inline-flex align-items-center gap-1.5 hover-lift flex-grow-1 justify-content-center"
+                          >
+                            <Phone size={14} /> Call: {selectedInquiryForNotes.phone}
+                          </a>
+                          <a
+                            href={getWhatsAppLink(selectedInquiryForNotes)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="btn btn-sm text-white rounded-3 px-3 py-1.5 extra-small fw-bold d-inline-flex align-items-center gap-1.5 shadow-xs hover-lift flex-grow-1 justify-content-center"
+                            style={{ backgroundColor: '#25D366' }}
+                          >
+                            <MessageCircle size={14} /> WhatsApp Outreach
+                          </a>
+                        </>
+                      )}
+                      {selectedInquiryForNotes.email && (
+                        <a
+                          href={`mailto:${selectedInquiryForNotes.email}?subject=${encodeURIComponent(`LMS Inquiry Follow-up - ${selectedInquiryForNotes.property_name || ''}`)}`}
+                          className="btn btn-sm btn-light border rounded-3 px-3 py-1.5 extra-small fw-semibold text-secondary d-inline-flex align-items-center gap-1.5 hover-lift flex-grow-1 justify-content-center"
+                        >
+                          <Mail size={14} /> Email: {selectedInquiryForNotes.email}
+                        </a>
+                      )}
+                    </div>
+
+                    {/* Prospect Message */}
+                    <div className="mb-3">
+                      <label className="form-label extra-small fw-bold text-uppercase text-secondary mb-1">
+                        Prospect's Inquiry Message
+                      </label>
+                      <div
+                        className="p-3 rounded-3 bg-light border text-dark"
+                        style={{ fontSize: '0.875rem', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}
+                      >
+                        {selectedInquiryForNotes.message || <span className="text-muted fst-italic">No message text was provided by the visitor.</span>}
+                      </div>
+                    </div>
+
+                    {/* Follow-up Status Toggle */}
+                    <div className="p-3 rounded-3 border mb-3 bg-light d-flex align-items-center justify-content-between">
+                      <div>
+                        <div className="fw-bold text-dark small">Outreach &amp; Follow-up Status</div>
+                        <span className="extra-small text-muted">
+                          {inquiryNotesContacted ? 'Marked as contacted & followed up' : 'Pending sales team outreach'}
+                        </span>
+                      </div>
+                      <div className="form-check form-switch m-0">
+                        <input
+                          className="form-check-input cursor-pointer"
+                          type="checkbox"
+                          role="switch"
+                          id="inquiryContactedSwitch"
+                          checked={inquiryNotesContacted}
+                          onChange={(e) => setInquiryNotesContacted(e.target.checked)}
+                          style={{ width: '2.5rem', height: '1.25rem', cursor: 'pointer' }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Admin Notes */}
+                    <div className="mb-2">
+                      <label className="form-label extra-small fw-bold text-uppercase text-secondary mb-1 d-flex align-items-center justify-content-between">
+                        <span>Internal Sales / Team Notes</span>
+                        <span className="text-muted font-normal text-lowercase">(visible only to developers &amp; superusers)</span>
+                      </label>
+                      <textarea
+                        className="form-control rounded-3 p-2.5"
+                        rows="4"
+                        style={{ fontSize: '0.875rem' }}
+                        placeholder="Log call discussion, client requirements, agreed quotation, demo date scheduled, or reasons for drop-off..."
+                        value={inquiryNotesText}
+                        onChange={(e) => setInquiryNotesText(e.target.value)}
+                      ></textarea>
+                    </div>
+
+                    {/* IP & Technical metadata */}
+                    {selectedInquiryForNotes.ip_address && (
+                      <div className="extra-small text-muted mt-2">
+                        Submission IP: <code className="text-secondary">{selectedInquiryForNotes.ip_address}</code>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="modal-footer border-top px-4 py-3 bg-light d-flex justify-content-between align-items-center">
+                    <button
+                      type="button"
+                      className="btn btn-outline-danger btn-sm rounded-3 px-3 py-1.5 extra-small fw-semibold d-flex align-items-center gap-1.5"
+                      onClick={() => {
+                        const inq = selectedInquiryForNotes;
+                        setSelectedInquiryForNotes(null);
+                        handleDeleteInquiry(inq);
+                      }}
+                    >
+                      <Trash2 size={13} /> Delete Record
+                    </button>
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-white border rounded-3 px-3 py-1.5 extra-small fw-semibold text-secondary"
+                        onClick={() => setSelectedInquiryForNotes(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={updateInquiryNotesMutation.isPending}
+                        className="btn btn-sm btn-primary rounded-3 px-3.5 py-1.5 extra-small fw-bold text-white d-flex align-items-center gap-1.5 shadow-xs"
+                        style={{ background: 'linear-gradient(135deg, #0284C7 0%, #0369A1 100%)', border: 'none' }}
+                      >
+                        {updateInquiryNotesMutation.isPending ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm" role="status"></span>
+                            <span>Saving...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Save size={14} />
+                            <span>Save Notes &amp; Status</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>

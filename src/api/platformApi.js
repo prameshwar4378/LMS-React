@@ -103,3 +103,29 @@ export const deletePropertySubscriptionPaymentApi = async (propertyId, paymentId
   return response.data;
 };
 
+export const getPlatformInquiriesApi = async (params = {}) => {
+  const response = await api.get('/platform/inquiries/', { params });
+  return response.data;
+};
+
+export const getPlatformInquiryDetailApi = async (id) => {
+  const response = await api.get(`/platform/inquiries/${id}/`);
+  return response.data;
+};
+
+export const togglePlatformInquiryContactedApi = async (id) => {
+  const response = await api.patch(`/platform/inquiries/${id}/toggle_contacted/`);
+  return response.data;
+};
+
+export const updatePlatformInquiryNotesApi = async (id, data) => {
+  const response = await api.patch(`/platform/inquiries/${id}/update_notes/`, data);
+  return response.data;
+};
+
+export const deletePlatformInquiryApi = async (id) => {
+  const response = await api.delete(`/platform/inquiries/${id}/`);
+  return response.data;
+};
+
+

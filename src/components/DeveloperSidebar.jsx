@@ -13,7 +13,8 @@ import {
   Globe,
   Sparkles,
   Zap,
-  CheckCircle2
+  CheckCircle2,
+  Mail
 } from 'lucide-react';
 
 const DeveloperSidebar = ({ activeTab, onSelectTab }) => {
@@ -34,6 +35,18 @@ const DeveloperSidebar = ({ activeTab, onSelectTab }) => {
       border: 'rgba(56, 189, 248, 0.35)',
       glow: '0 6px 20px rgba(56, 189, 248, 0.45)',
       gradient: 'linear-gradient(135deg, #0284C7 0%, #38BDF8 100%)'
+    },
+    {
+      id: 'inquiries',
+      label: 'Website Inquiries',
+      desc: 'Demo Leads & Requests',
+      icon: Mail,
+      badge: 'Leads',
+      color: '#F59E0B',
+      bg: 'rgba(245, 158, 11, 0.14)',
+      border: 'rgba(245, 158, 11, 0.35)',
+      glow: '0 6px 20px rgba(245, 158, 11, 0.45)',
+      gradient: 'linear-gradient(135deg, #D97706 0%, #F59E0B 100%)'
     },
     {
       id: 'properties',

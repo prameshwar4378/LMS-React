@@ -116,6 +116,8 @@ const AppRoutes = () => {
         <Route path="/system-health" element={<PlatformProperties initialTab="health" />} />
         <Route path="/overview" element={<PlatformProperties initialTab="overview" />} />
         <Route path="/hotels" element={<PlatformProperties initialTab="properties" />} />
+        <Route path="/inquiries" element={<PlatformProperties initialTab="inquiries" />} />
+        <Route path="/leads" element={<PlatformProperties initialTab="inquiries" />} />
         <Route path="/developer" element={<Navigate to="/platform" replace />} />
         <Route path="/developer/:tab" element={<PlatformProperties />} />
       </Route>
