@@ -233,7 +233,7 @@ const Dashboard = () => {
   const availableCount = cards.available_rooms || 0;
 
   if (loading) {
-    return <PageLoader fullScreen={false} message="Loading Lodge Management Dashboard..." />;
+    return <PageLoader fullScreen={false} message="Loading InnVetrix Dashboard..." />;
   }
 
   return (

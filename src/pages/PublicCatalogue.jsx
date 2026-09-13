@@ -4093,7 +4093,7 @@ const PublicCatalogue = () => {
 
           <div className="pt-4 mt-4 border-top border-secondary border-opacity-25 d-flex flex-column flex-sm-row align-items-center justify-content-between gap-2 extra-small text-white-50">
             <span>&copy; {new Date().getFullYear()} {hotel.name}. All Rights Reserved.</span>
-            <span>Digital Showcase Powered by Lodge Management System</span>
+            <span>Digital Showcase Powered by InnVetrix &bull; Stay Ahead. Beyond Expectations.</span>
           </div>
         </div>
       </footer>

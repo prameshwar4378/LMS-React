@@ -153,7 +153,7 @@ const SubscriptionExpiryModal = () => {
   })();
 
   const UrgencyIcon = urgency.icon;
-  const whatsappMsg = `Hello LMS Support, our lodge ${hotelName} (${propertyCode}) subscription expires in ${daysRemaining} days (on ${validUntil}). Please assist us with subscription renewal.`;
+  const whatsappMsg = `Hello InnVetrix Support, our lodge ${hotelName} (${propertyCode}) subscription expires in ${daysRemaining} days (on ${validUntil}). Please assist us with subscription renewal.`;
 
   return (
     <div

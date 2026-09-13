@@ -744,7 +744,7 @@ const CatalogueManage = () => {
         // Footer
         doc.setFontSize(8);
         doc.setTextColor(148, 163, 184);
-        doc.text('Powered by Lodge Management System (LMS)', 74, 200, { align: 'center' });
+        doc.text('Powered by InnVetrix • Stay Ahead. Beyond Expectations.', 74, 200, { align: 'center' });
 
         doc.save(`${activePropertyCode || 'hotel'}_table_standee.pdf`);
         showSuccess('Table Standee PDF generated successfully!');

@@ -6122,7 +6122,7 @@ export const exportHotelCataloguePDF = async (
     doc.setDrawColor(226, 232, 240);
     doc.setLineWidth(0.2);
     doc.line(14, pageHeight - 7, pageWidth - 14, pageHeight - 7);
-    doc.text(`${hotelName} • Official Digital Catalogue & Tariff Sheet • Reception: ${hotel.phone || '24/7'}`, 14, pageHeight - 3.8);
+    doc.text(`${hotelName} • Official Digital Catalogue & Tariff Sheet • Powered by InnVetrix • Reception: ${hotel.phone || '24/7'}`, 14, pageHeight - 3.8);
     doc.text(`Page ${i} of ${totalPages}`, pageWidth - 14, pageHeight - 3.8, { align: 'right' });
   }
 

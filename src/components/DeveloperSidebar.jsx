@@ -133,7 +133,7 @@ const DeveloperSidebar = ({ activeTab, onSelectTab }) => {
                   className="fw-bold text-white text-truncate lh-1"
                   style={{ fontSize: '0.95rem', letterSpacing: '-0.02em' }}
                 >
-                  LMS SaaS Engine
+                  InnVetrix SaaS Engine
                 </div>
                 <div className="mt-1.5 d-flex align-items-center gap-1.5">
                   <span

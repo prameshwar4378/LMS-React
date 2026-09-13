@@ -169,7 +169,7 @@ const SubscriptionRenewal = () => {
                   ? 'Account Suspended by Platform Administration'
                   : isExpired
                   ? 'Account Suspended: Subscription Expired'
-                  : 'LMS System Status & Technical Support'}
+                  : 'InnVetrix System Status & Technical Support'}
               </h3>
               <p className="text-white-50 small m-0 mt-1">
                 Property ID: <span className="font-monospace fw-bold text-white">{propertyCode}</span>
@@ -311,7 +311,7 @@ const SubscriptionRenewal = () => {
                   Direct live chat with dedicated technical engineers for instant renewal assistance.
                 </p>
                 <a
-                  href={`https://wa.me/919876543210?text=Hello%20LMS%20Support,%20I%20need%20assistance%20with%20subscription%20renewal%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)}).`}
+                  href={`https://wa.me/919876543210?text=Hello%20InnVetrix%20Support,%20I%20need%20assistance%20with%20subscription%20renewal%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)}).`}
                   target="_blank"
                   rel="noreferrer"
                   className="btn btn-sm btn-success fw-bold py-2 rounded-3 text-white mt-auto d-flex align-items-center justify-content-center gap-1.5"

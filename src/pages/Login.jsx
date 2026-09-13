@@ -37,8 +37,9 @@ const Login = () => {
             <div className="bg-primary text-white rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow" style={{ width: '60px', height: '60px' }}>
               <i className="bi bi-building-check fs-2"></i>
             </div>
-            <h3 className="fw-bold text-dark m-0">Lodge Management</h3>
-            <p className="text-muted small mt-1">Staff Portal Login</p>
+            <h3 className="fw-bold text-dark m-0 tracking-tight">InnVetrix</h3>
+            <p className="text-primary fw-semibold extra-small mt-1 mb-0" style={{ letterSpacing: '0.03em' }}>Stay Ahead. Beyond Expectations.</p>
+            <p className="text-muted extra-small mt-1">Staff Portal Login</p>
           </div>
 
           {error && <div className="alert alert-danger py-2 small">{error}</div>}
@@ -81,7 +82,7 @@ const Login = () => {
                   Signing In...
                 </>
               ) : (
-                'Sign In to LMS'
+                'Sign In to InnVetrix'
               )}
             </button>
           </form>

@@ -611,7 +611,7 @@ const Reports = () => {
           <div>
             <div className="d-flex align-items-center gap-2">
               <h4 className="fw-bold m-0 text-white" style={{ letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
-                LMS Reports &amp; Business Intelligence Hub
+                InnVetrix Reports &amp; Business Intelligence Hub
               </h4>
               <span
                 className="badge rounded-pill px-2.5 py-1 extra-small fw-bold d-inline-flex align-items-center gap-1.5"

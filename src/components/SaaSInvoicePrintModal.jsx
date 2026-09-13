@@ -478,7 +478,7 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                       <td className="text-center fw-bold">1</td>
                       <td>
                         <strong className="text-dark">
-                          LMS Cloud Hotel Management System - Software License
+                          InnVetrix Cloud Hospitality Operating System - Software License
                         </strong>
                         <div className="text-muted extra-small mt-0.5">
                           {description}

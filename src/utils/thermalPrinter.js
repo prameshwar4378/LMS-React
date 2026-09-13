@@ -327,7 +327,7 @@ export const generateShiftThermalHtml = (shift, settings = {}, width = '80mm') =
 
         <div class="text-center" style="font-size: ${is58mm ? '7px' : '9px'}; margin-top: 10px;">
           Printed: ${new Date().toLocaleString('en-IN')}<br>
-          LMS Till Verification System
+          InnVetrix Till Verification System
         </div>
       </body>
     </html>
