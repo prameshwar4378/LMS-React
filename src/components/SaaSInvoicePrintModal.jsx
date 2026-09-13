@@ -244,7 +244,7 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                   Official SaaS Subscription Bill (A4 Print Format)
                 </h5>
                 <p className="text-secondary extra-small m-0">
-                  Untoxy technologies official B2B software license invoice
+                  Ultoxy Technologies official B2B software license invoice
                 </p>
               </div>
             </div>
@@ -348,15 +348,17 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                       className="m-0 fw-bold text-dark"
                       style={{ fontSize: '1.45rem', letterSpacing: '-0.5px' }}
                     >
-                      Untoxy technologies
+                      Ultoxy Technologies
                     </h2>
                     <p className="m-0 text-secondary extra-small fw-semibold mt-0.5">
                       Enterprise Cloud Solutions &amp; PMS SaaS Platform
                     </p>
                     <div className="small text-dark mt-1" style={{ fontSize: '0.8rem' }}>
-                      <span>Phone: <strong>7776824564</strong></span>
+                      <span>Phone: <strong>+91 77768 24564</strong></span>
                       <span className="mx-2 text-muted">|</span>
                       <span>Email: <strong>ultoxy.tech@gmail.com</strong></span>
+                      <span className="mx-2 text-muted">|</span>
+                      <span>Web: <strong>www.ultoxy.com</strong></span>
                     </div>
                   </div>
                 </div>
@@ -565,7 +567,7 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                     <ul className="extra-small text-muted ps-3 mb-0" style={{ lineHeight: '1.45', fontSize: '0.72rem' }}>
                       <li>This invoice certifies the active SaaS software license for the specified property quota and period.</li>
                       <li>Cloud infrastructure, daily data backups, updates, and maintenance are included during valid subscription.</li>
-                      <li>For technical inquiries or custom expansions, contact Untoxy technologies at <strong>7776824564</strong> or <strong>ultoxy.tech@gmail.com</strong>.</li>
+                      <li>For technical inquiries or custom expansions, contact Ultoxy Technologies at <strong>+91 77768 24564</strong>, <strong>ultoxy.tech@gmail.com</strong>, or visit <strong>www.ultoxy.com</strong>.</li>
                     </ul>
                   </div>
 
@@ -575,7 +577,7 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                       className="border-top border-dark mx-auto pt-1 mt-4"
                       style={{ width: '180px', fontSize: '0.75rem', fontWeight: '700' }}
                     >
-                      Untoxy technologies
+                      Ultoxy Technologies
                       <div className="text-muted fw-normal" style={{ fontSize: '0.65rem' }}>
                         Authorized Signatory &amp; Digital Seal
                       </div>
@@ -584,7 +586,7 @@ const SaaSInvoicePrintModal = ({ show, onClose, billData, hotelData }) => {
                 </div>
 
                 <div className="text-center text-muted mt-3 extra-small border-top pt-2" style={{ fontSize: '0.68rem' }}>
-                  This is a computer-generated tax invoice issued by <strong>Untoxy technologies</strong>. All rights reserved.
+                  This is a computer-generated tax invoice issued by <strong>Ultoxy Technologies</strong> (www.ultoxy.com). All rights reserved.
                 </div>
               </div>
             </div>

@@ -311,7 +311,7 @@ const SubscriptionRenewal = () => {
                   Direct live chat with dedicated technical engineers for instant renewal assistance.
                 </p>
                 <a
-                  href={`https://wa.me/919876543210?text=Hello%20InnVetrix%20Support,%20I%20need%20assistance%20with%20subscription%20renewal%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)}).`}
+                  href={`https://wa.me/917776824564?text=Hello%20InnVetrix%20Support,%20I%20need%20assistance%20with%20subscription%20renewal%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)}).`}
                   target="_blank"
                   rel="noreferrer"
                   className="btn btn-sm btn-success fw-bold py-2 rounded-3 text-white mt-auto d-flex align-items-center justify-content-center gap-1.5"
@@ -332,10 +332,10 @@ const SubscriptionRenewal = () => {
                   Send official requests for plan upgrades, validity extensions, and invoices.
                 </p>
                 <a
-                  href={`mailto:support@lodgemanagement.com?subject=Subscription%20Assistance%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)})`}
-                  className="btn btn-sm btn-primary fw-bold py-2 rounded-3 text-white mt-auto d-flex align-items-center justify-content-center gap-1.5"
+                  href={`mailto:ultoxy.tech@gmail.com?subject=Subscription%20Assistance%20for%20${encodeURIComponent(hotelName)}%20(${encodeURIComponent(propertyCode)})`}
+                  className="btn btn-sm btn-primary fw-bold py-2 rounded-3 text-white mt-auto d-flex align-items-center justify-content-center gap-1.5 text-truncate"
                 >
-                  <Mail size={14} /> Email Support
+                  <Mail size={14} /> ultoxy.tech@gmail.com
                 </a>
               </div>
             </div>
@@ -351,13 +351,24 @@ const SubscriptionRenewal = () => {
                   Urgent front-desk phone hotline for quick subscription reactivation.
                 </p>
                 <a
-                  href="tel:+919876543210"
+                  href="tel:+917776824564"
                   className="btn btn-sm btn-light border fw-bold py-2 rounded-3 text-dark mt-auto d-flex align-items-center justify-content-center gap-1.5"
                 >
-                  <PhoneCall size={14} /> +91 98765 43210
+                  <PhoneCall size={14} /> +91 77768 24564
                 </a>
               </div>
             </div>
+          </div>
+
+          {/* Official Website Banner */}
+          <div className="mt-3 p-2.5 rounded-3 bg-light border text-center extra-small text-muted d-flex align-items-center justify-content-center gap-2 flex-wrap">
+            <span>Powered by <strong>Ultoxy Technologies</strong></span>
+            <span>&bull;</span>
+            <span>Helpline: <strong>+91 77768 24564</strong></span>
+            <span>&bull;</span>
+            <span>Email: <strong>ultoxy.tech@gmail.com</strong></span>
+            <span>&bull;</span>
+            <a href="https://www.ultoxy.com" target="_blank" rel="noreferrer" className="text-primary fw-bold text-decoration-none">www.ultoxy.com &rarr;</a>
           </div>
 
           {!isExpired && (

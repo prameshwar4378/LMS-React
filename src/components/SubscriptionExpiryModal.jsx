@@ -273,7 +273,7 @@ const SubscriptionExpiryModal = () => {
             </button>
 
             <a
-              href={`https://wa.me/919876543210?text=${encodeURIComponent(whatsappMsg)}`}
+              href={`https://wa.me/917776824564?text=${encodeURIComponent(whatsappMsg)}`}
               target="_blank"
               rel="noreferrer"
               onClick={handleDismissForToday}
@@ -298,10 +298,10 @@ const SubscriptionExpiryModal = () => {
         </div>
 
         {/* Footer info strip */}
-        <div className="px-4 py-2.5 bg-light border-top d-flex align-items-center justify-content-between extra-small text-muted">
+        <div className="px-4 py-2.5 bg-light border-top d-flex align-items-center justify-content-between extra-small text-muted flex-wrap gap-1">
           <span className="d-flex align-items-center gap-1">
             <Clock size={12} className="text-secondary" />
-            <span>Daily notice &bull; Reappears once tomorrow</span>
+            <span>Daily notice &bull; Helpline: <strong>+91 77768 24564</strong> &bull; <strong>ultoxy.tech@gmail.com</strong></span>
           </span>
           <span className="font-monospace fw-semibold">{todayDateStr}</span>
         </div>

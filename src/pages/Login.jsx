@@ -93,6 +93,14 @@ const Login = () => {
               Admin: <code>admin</code> / <code>admin123</code><br />
               Reception: <code>receptionist</code> / <code>receptionist123</code>
             </div>
+            <div className="mt-3 pt-2.5 border-top extra-small text-muted">
+              <div>Helpline: <a href="tel:+917776824564" className="text-dark fw-bold text-decoration-none">+91 77768 24564</a></div>
+              <div className="mt-0.5">
+                <a href="mailto:ultoxy.tech@gmail.com" className="text-secondary text-decoration-none">ultoxy.tech@gmail.com</a>
+                <span className="mx-1.5">&bull;</span>
+                <a href="https://www.ultoxy.com" target="_blank" rel="noreferrer" className="text-primary fw-semibold text-decoration-none">www.ultoxy.com</a>
+              </div>
+            </div>
           </div>
         </div>
       </div>
