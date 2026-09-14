@@ -104,8 +104,30 @@ import {
   Printer,
   MessageSquare,
   MessageCircle,
+  User,
   X
 } from 'lucide-react';
+
+const formatServiceInterest = (val) => {
+  if (!val) return 'General Inquiry';
+  const clean = String(val).toLowerCase().trim();
+  if (clean === 'all' || clean === 'suite' || clean === 'complete' || clean === 'all-in-one suite') {
+    return 'All-in-One Hotel Suite';
+  }
+  if (clean === 'pms' || clean === 'cloud pms') {
+    return 'Cloud PMS & Front Desk';
+  }
+  if (clean === 'pos' || clean === 'restaurant pos') {
+    return 'Restaurant & Bar POS';
+  }
+  if (clean === 'channel' || clean === 'channel manager') {
+    return 'Channel Manager & OTA Sync';
+  }
+  if (clean === 'contact' || clean === 'general') {
+    return 'General Inquiry';
+  }
+  return val.charAt(0).toUpperCase() + val.slice(1);
+};
 
 const getSubscriptionDaysLeft = (sub) => {
   if (!sub) return 0;
@@ -2928,8 +2950,8 @@ const PlatformProperties = ({ initialTab = null }) => {
                                 </div>
                               </td>
                               <td>
-                                <span className="badge bg-light text-dark border extra-small">
-                                  {inq.service_interest || 'General'}
+                                <span className="badge rounded-pill extra-small px-2.5 py-1 fw-bold bg-primary-subtle text-primary border border-primary-subtle">
+                                  {formatServiceInterest(inq.service_interest)}
                                 </span>
                               </td>
                               <td>
@@ -5068,8 +5090,8 @@ const PlatformProperties = ({ initialTab = null }) => {
                                   </div>
                                 </td>
                                 <td>
-                                  <span className="badge rounded-pill extra-small px-2.5 py-1 fw-bold bg-light text-dark border">
-                                    {inq.service_interest || 'General'}
+                                  <span className="badge rounded-pill extra-small px-2.5 py-1 fw-bold bg-primary-subtle text-primary border border-primary-subtle">
+                                    {formatServiceInterest(inq.service_interest)}
                                   </span>
                                 </td>
                                 <td>
@@ -6697,28 +6719,145 @@ const PlatformProperties = ({ initialTab = null }) => {
 
                 <form onSubmit={handleSaveInquiryNotes}>
                   <div className="modal-body px-4 py-3.5" style={{ maxHeight: 'calc(85vh - 140px)', overflowY: 'auto' }}>
-                    {/* Property & Prospect Card */}
-                    <div className="p-3 rounded-3 bg-light border mb-3">
+                    {/* Property & Prospect Hero Card */}
+                    <div
+                      className="rounded-4 p-3.5 mb-3.5 border shadow-2xs position-relative overflow-hidden"
+                      style={{
+                        background: 'linear-gradient(135deg, #F8FAFC 0%, #FFFFFF 100%)',
+                        borderColor: '#E2E8F0'
+                      }}
+                    >
+                      {/* Top Row: Prospect Contact + Hotel Entity Cards */}
+                      <div className="row g-2.5 mb-2.5">
+                        {/* Prospect Contact Card */}
+                        <div className="col-12 col-sm-6">
+                          <div
+                            className="p-3 rounded-3 h-100 border d-flex align-items-center gap-3 bg-white"
+                            style={{ borderColor: '#E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
+                          >
+                            <div
+                              className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                              style={{
+                                width: '40px',
+                                height: '40px',
+                                background: 'linear-gradient(135deg, #E0F2FE 0%, #BAE6FD 100%)',
+                                color: '#0284C7',
+                                border: '1px solid #BAE6FD'
+                              }}
+                            >
+                              <User size={19} />
+                            </div>
+                            <div className="overflow-hidden">
+                              <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider d-block mb-0.5" style={{ fontSize: '0.67rem', letterSpacing: '0.05em' }}>
+                                PROSPECT NAME
+                              </span>
+                              <div className="fw-bold text-dark text-truncate" style={{ fontSize: '0.95rem' }}>
+                                {selectedInquiryForNotes.full_name}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Hotel / Property Entity Card */}
+                        <div className="col-12 col-sm-6">
+                          <div
+                            className="p-3 rounded-3 h-100 border d-flex align-items-center gap-3 bg-white"
+                            style={{ borderColor: '#E2E8F0', boxShadow: '0 1px 3px rgba(0,0,0,0.02)' }}
+                          >
+                            <div
+                              className="rounded-circle d-flex align-items-center justify-content-center flex-shrink-0"
+                              style={{
+                                width: '40px',
+                                height: '40px',
+                                background: 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
+                                color: '#D97706',
+                                border: '1px solid #FCD34D'
+                              }}
+                            >
+                              <Building2 size={19} />
+                            </div>
+                            <div className="overflow-hidden">
+                              <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider d-block mb-0.5" style={{ fontSize: '0.67rem', letterSpacing: '0.05em' }}>
+                                HOTEL / PROPERTY
+                              </span>
+                              <div className="fw-bold text-dark text-truncate" style={{ fontSize: '0.95rem' }}>
+                                {selectedInquiryForNotes.property_name || 'Individual Prospect'}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: 3 Distinct Specification Badges */}
                       <div className="row g-2">
-                        <div className="col-12 col-sm-6">
-                          <span className="text-secondary extra-small fw-bold text-uppercase d-block">PROSPECT NAME</span>
-                          <span className="fw-bold text-dark fs-6">{selectedInquiryForNotes.full_name}</span>
+                        {/* Location / City */}
+                        <div className="col-12 col-sm-4">
+                          <div
+                            className="p-2.5 rounded-3 border bg-white d-flex align-items-center gap-2"
+                            style={{ borderColor: '#E2E8F0' }}
+                          >
+                            <div className="p-1.5 rounded-2 bg-danger-subtle text-danger flex-shrink-0">
+                              <MapPin size={14} />
+                            </div>
+                            <div className="overflow-hidden">
+                              <span className="text-secondary d-block" style={{ fontSize: '0.67rem', fontWeight: 600, letterSpacing: '0.03em' }}>
+                                LOCATION / CITY
+                              </span>
+                              <span className="text-dark small fw-semibold text-truncate d-block">
+                                {selectedInquiryForNotes.city || 'Not specified'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="col-12 col-sm-6">
-                          <span className="text-secondary extra-small fw-bold text-uppercase d-block">HOTEL / PROPERTY</span>
-                          <span className="fw-bold text-dark fs-6">{selectedInquiryForNotes.property_name || 'Individual Prospect'}</span>
+
+                        {/* Room Capacity */}
+                        <div className="col-6 col-sm-4">
+                          <div
+                            className="p-2.5 rounded-3 border bg-white d-flex align-items-center gap-2"
+                            style={{ borderColor: '#E2E8F0' }}
+                          >
+                            <div className="p-1.5 rounded-2 bg-primary-subtle text-primary flex-shrink-0">
+                              <DoorOpen size={14} />
+                            </div>
+                            <div className="overflow-hidden">
+                              <span className="text-secondary d-block" style={{ fontSize: '0.67rem', fontWeight: 600, letterSpacing: '0.03em' }}>
+                                ROOM CAPACITY
+                              </span>
+                              <span className="text-dark small fw-bold font-monospace text-truncate d-block">
+                                {selectedInquiryForNotes.room_count ? `${selectedInquiryForNotes.room_count} Rooms` : 'Not specified'}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="col-6 col-sm-4 mt-2">
-                          <span className="text-secondary extra-small fw-semibold d-block">LOCATION / CITY</span>
-                          <span className="text-dark small fw-medium">{selectedInquiryForNotes.city || 'Not specified'}</span>
-                        </div>
-                        <div className="col-6 col-sm-4 mt-2">
-                          <span className="text-secondary extra-small fw-semibold d-block">ROOM CAPACITY</span>
-                          <span className="text-dark small fw-medium font-monospace">{selectedInquiryForNotes.room_count ? `${selectedInquiryForNotes.room_count} Rooms` : 'Not specified'}</span>
-                        </div>
-                        <div className="col-12 col-sm-4 mt-2">
-                          <span className="text-secondary extra-small fw-semibold d-block">INTERESTED IN</span>
-                          <span className="badge bg-white text-primary border small">{selectedInquiryForNotes.service_interest || 'General'}</span>
+
+                        {/* Interested In */}
+                        <div className="col-6 col-sm-4">
+                          <div
+                            className="p-2.5 rounded-3 border bg-white d-flex align-items-center gap-2"
+                            style={{ borderColor: '#E2E8F0' }}
+                          >
+                            <div className="p-1.5 rounded-2 bg-warning-subtle text-warning flex-shrink-0">
+                              <Sparkles size={14} />
+                            </div>
+                            <div className="overflow-hidden">
+                              <span className="text-secondary d-block" style={{ fontSize: '0.67rem', fontWeight: 600, letterSpacing: '0.03em' }}>
+                                INTERESTED IN
+                              </span>
+                              <span
+                                className="badge rounded-pill extra-small px-2 py-0.5 fw-bold text-truncate d-inline-block text-start"
+                                style={{
+                                  backgroundColor: '#EFF6FF',
+                                  color: '#1D4ED8',
+                                  border: '1px solid #BFDBFE',
+                                  maxWidth: '100%',
+                                  fontSize: '0.73rem'
+                                }}
+                                title={formatServiceInterest(selectedInquiryForNotes.service_interest)}
+                              >
+                                {formatServiceInterest(selectedInquiryForNotes.service_interest)}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     </div>
