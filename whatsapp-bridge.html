@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opening WhatsApp...</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>💬</text></svg>">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: #0f172a;
+      color: #f8fafc;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      user-select: none;
+    }
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1.25rem;
+      padding: 2.25rem 2rem;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.4);
+      animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    @keyframes popIn {
+      from { transform: scale(0.95); opacity: 0; }
+      to { transform: scale(1); opacity: 1; }
+    }
+    .icon-wrap {
+      width: 72px;
+      height: 72px;
+      background: rgba(34, 197, 94, 0.15);
+      border: 2px solid rgba(34, 197, 94, 0.4);
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1.25rem;
+      position: relative;
+    }
+    .icon-wrap svg {
+      width: 38px;
+      height: 38px;
+      fill: #22c55e;
+    }
+    .pulse-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 2px solid #22c55e;
+      animation: pulse 1.8s infinite cubic-bezier(0.25, 0, 0, 1);
+    }
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 0.8; }
+      100% { transform: scale(1.45); opacity: 0; }
+    }
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      color: #ffffff;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.01em;
+    }
+    p {
+      color: #94a3b8;
+      font-size: 0.9rem;
+      line-height: 1.45;
+      margin-bottom: 1.25rem;
+    }
+    .countdown-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: #0f172a;
+      border: 1px solid #334155;
+      padding: 0.45rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      color: #22c55e;
+      margin-bottom: 1.25rem;
+    }
+    .progress-bar-container {
+      width: 100%;
+      height: 4px;
+      background: #334155;
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+    .progress-bar {
+      height: 100%;
+      background: #22c55e;
+      width: 100%;
+      transition: width linear;
+    }
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+    button, a.btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      width: 100%;
+      padding: 0.75rem 1.25rem;
+      border-radius: 0.65rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      border: none;
+    }
+    .btn-close-now {
+      background: #334155;
+      color: #f8fafc;
+    }
+    .btn-close-now:hover {
+      background: #475569;
+      color: #ffffff;
+    }
+    .btn-fallback {
+      background: transparent;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+    .btn-fallback:hover {
+      background: rgba(56, 189, 248, 0.1);
+      color: #7dd3fc;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="icon-wrap">
+      <div class="pulse-ring"></div>
+      <svg viewBox="0 0 24 24">
+        <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
+      </svg>
+    </div>
+
+    <h1>Opening WhatsApp...</h1>
+    <p>Launching the WhatsApp application on your computer with your message.</p>
+
+    <div class="countdown-badge" id="badgeContainer">
+      <span>Auto-closing in <strong id="countdownText">2</strong>s</span>
+    </div>
+
+    <div class="progress-bar-container" id="pBarContainer">
+      <div id="pBar" class="progress-bar"></div>
+    </div>
+
+    <div class="btn-group">
+      <button type="button" class="btn-close-now" onclick="closeNow()">
+        Close Tab Now
+      </button>
+      <a id="webFallbackBtn" href="#" class="btn btn-fallback" onclick="openWeb(event)">
+        Didn't open? Open WhatsApp Web
+      </a>
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const phone = params.get('phone') || '';
+    const text = params.get('text') || '';
+    const delay = parseInt(params.get('delay') || '2', 10);
+    const shouldClose = params.get('autoclose') !== '0';
+    const rawWebUrl = params.get('web_url') || `https://web.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(text)}`;
+    const appUrl = `whatsapp://send?phone=${phone}&text=${encodeURIComponent(text)}`;
+
+    const fallbackLink = document.getElementById('webFallbackBtn');
+    if (fallbackLink) {
+      fallbackLink.href = rawWebUrl;
+    }
+
+    // 1. Immediately trigger the WhatsApp Desktop application protocol
+    try {
+      window.location.href = appUrl;
+    } catch (err) {
+      console.warn('Protocol trigger exception:', err);
+    }
+
+    if (!shouldClose) {
+      document.getElementById('badgeContainer').style.display = 'none';
+      document.getElementById('pBarContainer').style.display = 'none';
+    } else {
+      // 2. Visual countdown and progress bar animation
+      const pBar = document.getElementById('pBar');
+      const cdText = document.getElementById('countdownText');
+      const totalMs = Math.max(800, delay * 1000);
+      const startTime = Date.now();
+      let finished = false;
+
+      if (pBar) {
+        pBar.style.transition = `width ${totalMs}ms linear`;
+        requestAnimationFrame(() => {
+          pBar.style.width = '0%';
+        });
+      }
+
+      const timer = setInterval(() => {
+        if (finished) return;
+        const elapsed = Date.now() - startTime;
+        const remainingMs = Math.max(0, totalMs - elapsed);
+        const remainingSec = Math.ceil(remainingMs / 1000);
+        if (cdText) cdText.textContent = remainingSec;
+
+        if (remainingMs <= 0) {
+          finished = true;
+          clearInterval(timer);
+          closeNow();
+        }
+      }, 100);
+    }
+
+    function closeNow() {
+      try {
+        window.close();
+      } catch (e) {
+        console.warn('window.close() caught:', e);
+      }
+      // If browser security prevented immediate self-close without gesture,
+      // update UI to indicate completion and offer direct one-click close
+      setTimeout(() => {
+        const h1 = document.querySelector('h1');
+        if (h1) h1.textContent = 'WhatsApp App Opened!';
+        const p = document.querySelector('p');
+        if (p) p.textContent = 'Message loaded into WhatsApp. You can now close this tab.';
+        const badge = document.getElementById('badgeContainer');
+        if (badge) badge.style.display = 'none';
+        const pbar = document.getElementById('pBarContainer');
+        if (pbar) pbar.style.display = 'none';
+      }, 300);
+    }
+
+    function openWeb(e) {
+      if (e) e.preventDefault();
+      window.location.href = rawWebUrl;
+    }
+  </script>
+</body>
+</html>
