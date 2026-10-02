@@ -61,7 +61,7 @@ const NightAuditModal = ({ show, onClose }) => {
     setEmailSent(true);
     setTimeout(() => {
       setEmailSent(false);
-    }, 4000);
+    }, 2000);
   };
 
   const handleDownloadPdf = () => {

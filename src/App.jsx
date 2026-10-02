@@ -3,10 +3,13 @@ import { HashRouter } from 'react-router-dom';
 import { QueryClientProvider } from '@tanstack/react-query';
 import queryClient from './queryClient';
 import { AuthProvider } from './context/AuthContext';
+import { ShiftProvider } from './context/ShiftContext';
 import { LoadingProvider } from './context/LoadingContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { SpotlightGuideProvider } from './context/SpotlightGuideContext';
 import AppRoutes from './routes/AppRoutes';
 import ScrollToTop from './components/ScrollToTop';
+import SpotlightOverlay from './components/SpotlightOverlay';
 
 class ErrorBoundary extends Component {
   constructor(props) {
@@ -65,11 +68,16 @@ function App() {
         <HashRouter>
           <ScrollToTop />
           <AuthProvider>
-            <LoadingProvider>
-              <NotificationProvider>
-                <AppRoutes />
-              </NotificationProvider>
-            </LoadingProvider>
+            <ShiftProvider>
+              <LoadingProvider>
+                <NotificationProvider>
+                  <SpotlightGuideProvider>
+                    <AppRoutes />
+                    <SpotlightOverlay />
+                  </SpotlightGuideProvider>
+                </NotificationProvider>
+              </LoadingProvider>
+            </ShiftProvider>
           </AuthProvider>
         </HashRouter>
       </QueryClientProvider>

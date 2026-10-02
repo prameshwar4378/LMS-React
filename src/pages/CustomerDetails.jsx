@@ -14,6 +14,7 @@ import { exportTransactionsToExcel, exportTransactionsToPDF } from '../utils/exp
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { compressImage } from '../utils/imageCompressor';
+import DocumentViewerModal from '../components/DocumentViewerModal';
 
 const CustomerDetails = () => {
   const { id } = useParams();
@@ -144,7 +145,28 @@ const CustomerDetails = () => {
           await cancelBookingApi(booking.id);
           setConfirmModal({ show: false, loading: false });
           setSelectedBooking(null);
-          showSuccess(`Reservation #${booking.booking_number} cancelled successfully.`, 'Reservation Cancelled');
+          showSuccess(
+            `Reservation #${booking.booking_number} cancelled successfully.`,
+            'Reservation Cancelled',
+            {
+              whatsappAction: {
+                eventType: 'CANCELLATION',
+                customerMobile: customer?.mobile,
+                customerName: customer?.full_name,
+                bookingId: booking.id,
+                customerId: customer?.id,
+                data: {
+                  guest_name: customer?.full_name || 'Guest',
+                  booking_number: booking.booking_number,
+                  room_number: booking.room_number || 'To be Assigned',
+                  check_in_date: formatDate(booking.check_in_date),
+                  check_out_date: formatDate(booking.expected_checkout_date),
+                  advance_paid: booking.advance_amount || 0,
+                },
+                customLabel: 'Send WhatsApp Cancellation Notice',
+              },
+            }
+          );
           queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
           queryClient.invalidateQueries({ queryKey: ['bookings'] });
         } catch (err) {
@@ -249,49 +271,77 @@ const CustomerDetails = () => {
 
     setSubmitting(true);
     const formData = new FormData();
-    formData.append('first_name', firstName);
-    if (middleName) formData.append('middle_name', middleName);
-    if (lastName) formData.append('last_name', lastName);
-    formData.append('mobile', mobile);
-    if (altMobile) formData.append('alternate_mobile', altMobile);
-    if (email) formData.append('email', email);
-    formData.append('gender', gender);
-    if (address) formData.append('address', address);
-    if (city) formData.append('city', city);
-    if (state) formData.append('state', state);
-    formData.append('id_type', idType);
-    if (idNumber) formData.append('id_number', idNumber);
+    formData.append('first_name', (firstName || '').trim());
+    formData.append('middle_name', (middleName || '').trim());
+    formData.append('last_name', (lastName || '').trim());
+    formData.append('mobile', (mobile || '').trim());
+    formData.append('alternate_mobile', (altMobile || '').trim());
+    formData.append('email', (email || '').trim());
+    formData.append('gender', gender || 'Male');
+    formData.append('address', (address || '').trim());
+    formData.append('city', (city || '').trim());
+    formData.append('state', (state || '').trim());
+    formData.append('id_type', idType || 'Aadhaar');
+    formData.append('id_number', (idNumber || '').trim());
 
     try {
       // Compress photos/documents for fast upload
       if (photoFile) {
         const compressedPhoto = await compressImage(photoFile);
         formData.append('photo', compressedPhoto);
+      } else if (!photoPreview && customer.photo) {
+        formData.append('clear_photo', 'true');
       }
+
       if (docFile) {
         const compressedDoc = await compressImage(docFile);
         formData.append('id_document', compressedDoc);
+      } else if (!docPreview && customer.id_document) {
+        formData.append('clear_id_document', 'true');
       }
+
       if (docBackFile) {
         const compressedDocBack = await compressImage(docBackFile);
         formData.append('id_document_back', compressedDocBack);
+      } else if (!docBackPreview && customer.id_document_back) {
+        formData.append('clear_id_document_back', 'true');
       }
 
       const updatedCustomer = await updateCustomerApi(customer.id, formData);
       setShowEditModal(false);
+      setPhotoError(false);
       showSuccess(`Customer profile updated successfully.`, 'Profile Updated');
 
-      // Direct cache updates for instant refresh without re-download
+      // Direct cache updates for instant refresh
       queryClient.setQueryData(['customer-details', id], (old) => (old ? { ...old, ...updatedCustomer } : updatedCustomer));
       queryClient.setQueriesData({ queryKey: ['customers'] }, (old) => {
         if (!Array.isArray(old)) return old;
         return old.map((c) => (c.id === updatedCustomer.id ? { ...c, ...updatedCustomer } : c));
       });
+      await loadHistory();
       queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
       queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
+      let msg = 'Error saving customer profile.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.detail) {
+          msg = data.detail;
+        } else if (data.error) {
+          msg = data.error;
+        } else if (data.message) {
+          msg = data.message;
+        } else {
+          const firstKey = Object.keys(data)[0];
+          if (firstKey) {
+            const val = data[firstKey];
+            msg = Array.isArray(val) ? `${firstKey}: ${val[0]}` : `${firstKey}: ${val}`;
+          }
+        }
+      }
       setFormError(msg);
     } finally {
       setSubmitting(false);
@@ -589,13 +639,36 @@ const CustomerDetails = () => {
           <div className="card border-0 shadow-sm text-center p-4 rounded-3">
             <div className="position-relative d-inline-block mx-auto mb-3">
               {customer.photo && !photoError ? (
-                <img
-                  src={getMediaUrl(customer.photo)}
-                  alt={customer.full_name}
-                  onError={() => setPhotoError(true)}
-                  className="rounded-circle border border-3 border-primary shadow"
-                  style={{ width: '120px', height: '120px', objectFit: 'cover' }}
-                />
+                <div
+                  onClick={() => setPreviewModalDoc({
+                    show: true,
+                    title: `${customer.full_name} - Photo Snapshot`,
+                    url: getMediaUrl(customer.photo)
+                  })}
+                  className="position-relative d-inline-block rounded-circle cursor-pointer"
+                  style={{ cursor: 'pointer' }}
+                  title="Click to view photo full size"
+                >
+                  <img
+                    src={getMediaUrl(customer.photo)}
+                    alt={customer.full_name}
+                    onError={() => setPhotoError(true)}
+                    className="rounded-circle border border-3 border-primary shadow"
+                    style={{ width: '120px', height: '120px', objectFit: 'cover' }}
+                  />
+                  <div
+                    className="position-absolute top-0 start-0 w-100 h-100 rounded-circle d-flex align-items-center justify-content-center text-white"
+                    style={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.4)',
+                      opacity: 0,
+                      transition: 'opacity 0.2s',
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                    onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
+                  >
+                    <i className="bi bi-zoom-in fs-4"></i>
+                  </div>
+                </div>
               ) : (
                 <div className="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center fw-bold fs-1 mx-auto shadow" style={{ width: '120px', height: '120px' }}>
                   {customer.first_name ? customer.first_name[0].toUpperCase() : 'G'}
@@ -634,11 +707,96 @@ const CustomerDetails = () => {
               <div className="mb-2"><strong>Address:</strong> {customer.address || 'N/A'}{customer.city ? `, ${customer.city}` : ''} {customer.state ? `, ${customer.state}` : ''}</div>
             </div>
 
-            {customer.id_document && (
+            {(customer.id_document || customer.id_document_back) && (
               <div className="mt-3">
-                <a href={getMediaUrl(customer.id_document)} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary w-100 fw-bold">
-                  <i className="bi bi-file-earmark-medical me-1"></i> View Uploaded ID Document
-                </a>
+                <div className="d-flex gap-2 mb-2">
+                  {customer.id_document && (
+                    <div
+                      onClick={() => setPreviewModalDoc({
+                        show: true,
+                        title: `${customer.id_type || 'ID Proof'} (Front Side) - Full View`,
+                        url: getMediaUrl(customer.id_document)
+                      })}
+                      className="border rounded p-1 bg-light flex-fill text-center position-relative cursor-pointer shadow-xs"
+                      style={{ cursor: 'pointer', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+                      title="Click to view front ID"
+                    >
+                      <img
+                        src={getMediaUrl(customer.id_document)}
+                        alt="Front ID"
+                        className="img-fluid"
+                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.style.display = 'none';
+                          const fb = e.target.nextElementSibling;
+                          if (fb) fb.style.display = 'block';
+                        }}
+                      />
+                      <div style={{ display: 'none' }}>
+                        <i className="bi bi-file-earmark-medical text-primary fs-3 d-block"></i>
+                        <span className="extra-small text-muted">ID Front</span>
+                      </div>
+                    </div>
+                  )}
+                  {customer.id_document_back && (
+                    <div
+                      onClick={() => setPreviewModalDoc({
+                        show: true,
+                        title: `${customer.id_type || 'ID Proof'} (Back Side) - Full View`,
+                        url: getMediaUrl(customer.id_document_back)
+                      })}
+                      className="border rounded p-1 bg-light flex-fill text-center position-relative cursor-pointer shadow-xs"
+                      style={{ cursor: 'pointer', height: '90px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}
+                      title="Click to view back ID"
+                    >
+                      <img
+                        src={getMediaUrl(customer.id_document_back)}
+                        alt="Back ID"
+                        className="img-fluid"
+                        style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        onError={(e) => {
+                          e.target.onerror = null;
+                          e.target.style.display = 'none';
+                          const fb = e.target.nextElementSibling;
+                          if (fb) fb.style.display = 'block';
+                        }}
+                      />
+                      <div style={{ display: 'none' }}>
+                        <i className="bi bi-file-earmark-medical text-primary fs-3 d-block"></i>
+                        <span className="extra-small text-muted">ID Back</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <div className="d-flex gap-2">
+                  {customer.id_document && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewModalDoc({
+                        show: true,
+                        title: `${customer.id_type || 'ID Proof'} (Front Side) - Full View`,
+                        url: getMediaUrl(customer.id_document)
+                      })}
+                      className="btn btn-sm btn-outline-primary flex-fill fw-bold"
+                    >
+                      <i className="bi bi-eye me-1"></i> ID Front
+                    </button>
+                  )}
+                  {customer.id_document_back && (
+                    <button
+                      type="button"
+                      onClick={() => setPreviewModalDoc({
+                        show: true,
+                        title: `${customer.id_type || 'ID Proof'} (Back Side) - Full View`,
+                        url: getMediaUrl(customer.id_document_back)
+                      })}
+                      className="btn btn-sm btn-outline-primary flex-fill fw-bold"
+                    >
+                      <i className="bi bi-eye me-1"></i> ID Back
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1021,7 +1179,7 @@ const CustomerDetails = () => {
                         {(photoFile || photoPreview) && (
                           <div className="d-flex align-items-center gap-2 bg-light p-1 rounded-3 border ms-auto">
                             <img
-                              src={photoPreview}
+                              src={getMediaUrl(photoPreview)}
                               alt="Preview"
                               className="rounded-circle object-fit-cover cursor-pointer border"
                               style={{ height: '40px', width: '40px' }}
@@ -1063,7 +1221,7 @@ const CustomerDetails = () => {
                             <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
                               {((docFile && docFile.type && docFile.type.startsWith('image/')) || (typeof docPreview === 'string' && (docPreview.startsWith('blob:') || docPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
                                 <img
-                                  src={docPreview}
+                                  src={getMediaUrl(docPreview)}
                                   alt="Front ID"
                                   className="rounded border object-fit-cover flex-shrink-0 cursor-pointer"
                                   style={{ width: '48px', height: '36px' }}
@@ -1151,7 +1309,7 @@ const CustomerDetails = () => {
                             <div className="d-flex align-items-center gap-2 overflow-hidden text-start">
                               {((docBackFile && docBackFile.type && docBackFile.type.startsWith('image/')) || (typeof docBackPreview === 'string' && (docBackPreview.startsWith('blob:') || docBackPreview.match(/\.(jpeg|jpg|png|webp|gif)/i)))) ? (
                                 <img
-                                  src={docBackPreview}
+                                  src={getMediaUrl(docBackPreview)}
                                   alt="Back ID"
                                   className="rounded border object-fit-cover flex-shrink-0 cursor-pointer"
                                   style={{ width: '48px', height: '36px' }}
@@ -2238,45 +2396,13 @@ const CustomerDetails = () => {
         </div>
       )}
 
-      {/* Document & Photo Fullscreen Preview Modal */}
-      {previewModalDoc && previewModalDoc.show && (
-        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1080 }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-animated">
-            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
-              <div className="modal-header bg-dark text-white py-3 px-4 d-flex align-items-center justify-content-between">
-                <h5 className="modal-title fw-bold fs-6 d-flex align-items-center gap-2 m-0">
-                  <i className="bi bi-file-earmark-text text-primary"></i> {previewModalDoc.title}
-                </h5>
-                <div className="d-flex align-items-center gap-2">
-                  {previewModalDoc.url && (
-                    <a
-                      href={previewModalDoc.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-sm btn-outline-light py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1"
-                    >
-                      <i className="bi bi-box-arrow-up-right"></i> Open in New Tab
-                    </a>
-                  )}
-                  <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPreviewModalDoc(null)}></button>
-                </div>
-              </div>
-              <div className="modal-body p-3 bg-light text-center" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
-                {previewModalDoc.isPdf ? (
-                  <iframe src={previewModalDoc.url} title={previewModalDoc.title} className="w-100 rounded border bg-white" style={{ height: '600px' }}></iframe>
-                ) : (
-                  <img
-                    src={previewModalDoc.url}
-                    alt={previewModalDoc.title}
-                    className="img-fluid rounded border shadow-sm"
-                    style={{ maxHeight: '65vh', objectFit: 'contain' }}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* High-Resolution Document & Photo Viewer Modal with Zoom, Rotation & Download */}
+      <DocumentViewerModal
+        isOpen={Boolean(previewModalDoc && previewModalDoc.show)}
+        onClose={() => setPreviewModalDoc(null)}
+        title={previewModalDoc?.title || 'Document Full View'}
+        fileUrl={previewModalDoc?.url}
+      />
     </div>
   );
 };

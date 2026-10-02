@@ -1,4 +1,5 @@
 import api from './axios';
+import { triggerShiftRefresh } from '../utils/shiftEvents';
 
 export const getStaysApi = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
@@ -19,6 +20,7 @@ export const updateStayApi = async (id, data) => {
 export const createWalkInStayApi = async (data) => {
   const headers = data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {};
   const res = await api.post('/stays/walk_in/', data, { headers });
+  triggerShiftRefresh();
   return res.data;
 };
 
@@ -29,11 +31,13 @@ export const getStayBillApi = async (id) => {
 
 export const extendStayApi = async (id, newCheckoutDate) => {
   const res = await api.post(`/stays/${id}/extend/`, { new_checkout_date: newCheckoutDate });
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const checkoutStayApi = async (id, checkoutData) => {
   const res = await api.post(`/stays/${id}/checkout/`, checkoutData);
+  triggerShiftRefresh();
   return res.data;
 };
 

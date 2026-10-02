@@ -27,6 +27,11 @@ export const AuthProvider = ({ children }) => {
     if (token) {
       getProfileApi()
         .then((data) => {
+          if (data && data.is_active === false) {
+            sessionStorage.setItem('lms_auth_notice', 'Your account has been deactivated. You are unable to use the software. Please contact your administrator.');
+            logout();
+            return;
+          }
           setUser(data);
           localStorage.setItem('user', JSON.stringify(data));
         })

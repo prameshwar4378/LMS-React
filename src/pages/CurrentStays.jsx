@@ -6,12 +6,14 @@ import { createExtraChargeApi, createPaymentApi } from '../api/billingApi';
 import GuestFormModal from '../components/GuestFormModal';
 import ChargeFormModal from '../components/ChargeFormModal';
 import PaymentFormModal from '../components/PaymentFormModal';
+import WhatsAppButton from '../components/WhatsAppButton';
 import PageLoader from '../components/PageLoader';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { exportStaysToExcel, exportStaysToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import {
   KeyRound,
   Search,
@@ -40,6 +42,37 @@ import {
   BedDouble
 } from 'lucide-react';
 
+// Animated Dotted Border Overlay for Active Grid Filter Cards
+const AnimatedDottedBorder = ({ color = '#2563eb' }) => (
+  <svg
+    className="animated-dotted-border-svg"
+    viewBox="0 0 100 100"
+    preserveAspectRatio="none"
+  >
+    <rect
+      x="1"
+      y="1"
+      width="98"
+      height="98"
+      rx="6"
+      ry="6"
+      fill="none"
+      stroke={color}
+      strokeWidth="2.5"
+      strokeDasharray="4 4"
+      strokeLinecap="round"
+      vectorEffect="non-scaling-stroke"
+    />
+  </svg>
+);
+
+const getLocalDateStr = (d = new Date()) => {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const CurrentStays = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -48,6 +81,14 @@ const CurrentStays = () => {
 
   // View Mode: 'cards' | 'table'
   const [viewMode, setViewMode] = useState('cards');
+
+  // Top Grid Card Filter: null | 'ACTIVE' | 'OVERDUE' | 'CHECKOUT_TODAY' | 'PENDING_BALANCE'
+  const [activeCardFilter, setActiveCardFilter] = useState(null);
+
+  const handleCardFilterClick = (filterKey) => {
+    setActiveCardFilter((prev) => (prev === filterKey ? null : filterKey));
+    setCurrentPage(1);
+  };
 
   // Search & Filter States
   const [searchQuery, setSearchQuery] = useState('');
@@ -92,24 +133,30 @@ const CurrentStays = () => {
 
   // Helper: Datetime-based Stay Status Analysis
   const analyzeStayStatus = (s) => {
-    const todayStr = new Date().toISOString().split('T')[0];
-    const tomStr = new Date(Date.now() + 86400000).toISOString().split('T')[0];
+    const localNow = new Date();
+    const todayStr = getLocalDateStr(localNow);
+    const tomDate = new Date(localNow);
+    tomDate.setDate(tomDate.getDate() + 1);
+    const tomStr = getLocalDateStr(tomDate);
+
+    const isCheckedOut = s.status === 'CHECKED_OUT' || s.status === 'COMPLETED';
+    const actualDateStr = s.actual_checkout_date || (s.updated_at ? s.updated_at.split('T')[0] : null);
+    const isCheckedOutToday = isCheckedOut && (actualDateStr === todayStr || s.expected_checkout_date === todayStr);
 
     const expDateStr = s.expected_checkout_date || s.check_in_date;
     const expTimeStr = s.expected_checkout_time || '11:00';
 
     const expDateTimeStr = `${expDateStr}T${expTimeStr.length === 5 ? expTimeStr + ':00' : expTimeStr}`;
     const expDt = new Date(expDateTimeStr);
-    const now = new Date();
 
-    const isOverdue = now > expDt && s.status !== 'CHECKED_OUT';
-    const isDueToday = expDateStr === todayStr && !isOverdue;
-    const isDueTomorrow = expDateStr === tomStr;
+    const isOverdue = !isCheckedOut && localNow > expDt;
+    const isDueToday = !isCheckedOut && expDateStr === todayStr && !isOverdue;
+    const isDueTomorrow = !isCheckedOut && expDateStr === tomStr;
 
     // Overdue Duration calculation
     let overdueText = '';
     if (isOverdue) {
-      const diffMs = now - expDt;
+      const diffMs = localNow - expDt;
       const diffHrs = Math.floor(diffMs / (1000 * 60 * 60));
       const diffDays = Math.floor(diffHrs / 24);
       const remHrs = diffHrs % 24;
@@ -122,11 +169,14 @@ const CurrentStays = () => {
     }
 
     return {
+      isCheckedOut,
+      isCheckedOutToday,
       isOverdue,
       isDueToday,
       isDueTomorrow,
       expDateStr,
       expTimeStr,
+      actualDateStr,
       overdueText
     };
   };
@@ -136,24 +186,44 @@ const CurrentStays = () => {
     let activeCount = 0;
     let overdueCount = 0;
     let dueTodayCount = 0;
+    let checkedOutTodayCount = 0;
     let pendingBalanceCount = 0;
     let totalPendingAmount = 0;
 
     stays.forEach((s) => {
-      activeCount++;
-      const { isOverdue, isDueToday } = analyzeStayStatus(s);
-      if (isOverdue) overdueCount++;
-      if (isDueToday) dueTodayCount++;
+      const { isCheckedOut, isCheckedOutToday, isOverdue, isDueToday } = analyzeStayStatus(s);
+      if (!isCheckedOut && s.status === 'CHECKED_IN') {
+        activeCount++;
+      }
+      if (isOverdue) {
+        overdueCount++;
+      }
+      if (isDueToday) {
+        dueTodayCount++;
+      }
+      if (isCheckedOutToday) {
+        checkedOutTodayCount++;
+      }
 
       const bill = s.bill_summary || {};
       const bal = parseFloat(bill.balance || 0);
-      if (bal > 0) {
+      if (bal > 0.01) {
         pendingBalanceCount++;
         totalPendingAmount += bal;
       }
     });
 
-    return { activeCount, overdueCount, dueTodayCount, pendingBalanceCount, totalPendingAmount };
+    const checkoutTodayCount = dueTodayCount + checkedOutTodayCount;
+
+    return {
+      activeCount,
+      overdueCount,
+      dueTodayCount,
+      checkedOutTodayCount,
+      checkoutTodayCount,
+      pendingBalanceCount,
+      totalPendingAmount
+    };
   }, [stays]);
 
   // Extract unique room list for Room Filter dropdown
@@ -168,9 +238,20 @@ const CurrentStays = () => {
   // Filtered Stays List
   const filteredStays = useMemo(() => {
     return stays.filter((s) => {
-      const { isOverdue, isDueToday, isDueTomorrow, expDateStr } = analyzeStayStatus(s);
+      const { isCheckedOut, isCheckedOutToday, isOverdue, isDueToday, isDueTomorrow } = analyzeStayStatus(s);
       const bill = s.bill_summary || {};
       const balance = parseFloat(bill.balance || 0);
+
+      // 0. Top Grid Interactive Filter Card
+      if (activeCardFilter === 'ACTIVE') {
+        if (isCheckedOut || s.status !== 'CHECKED_IN') return false;
+      } else if (activeCardFilter === 'OVERDUE') {
+        if (!isOverdue) return false;
+      } else if (activeCardFilter === 'CHECKOUT_TODAY') {
+        if (!isDueToday && !isCheckedOutToday) return false;
+      } else if (activeCardFilter === 'PENDING_BALANCE') {
+        if (balance <= 0.01) return false;
+      }
 
       // Search Query
       if (searchQuery.trim()) {
@@ -186,38 +267,40 @@ const CurrentStays = () => {
       }
 
       // Status Filter
-      if (statusFilter === 'ACTIVE' && isOverdue) return false;
-      if (statusFilter === 'DUE_TODAY' && !isDueToday) return false;
+      if (statusFilter === 'ACTIVE' && (isOverdue || isCheckedOut)) return false;
+      if (statusFilter === 'DUE_TODAY' && !isDueToday && !isCheckedOutToday) return false;
       if (statusFilter === 'OVERDUE' && !isOverdue) return false;
 
       // Checkout Filter
-      if (checkoutFilter === 'TODAY' && !isDueToday) return false;
+      if (checkoutFilter === 'TODAY' && !isDueToday && !isCheckedOutToday) return false;
       if (checkoutFilter === 'TOMORROW' && !isDueTomorrow) return false;
       if (checkoutFilter === 'OVERDUE' && !isOverdue) return false;
 
       // Payment Filter
-      if (paymentFilter === 'PENDING' && balance <= 0) return false;
-      if (paymentFilter === 'PAID' && balance > 0) return false;
+      if (paymentFilter === 'PENDING' && balance <= 0.01) return false;
+      if (paymentFilter === 'PAID' && balance > 0.01) return false;
 
       // Room Filter
       if (roomFilter !== 'ALL' && String(s.room_detail?.room_number) !== String(roomFilter)) return false;
 
       return true;
     });
-  }, [stays, searchQuery, statusFilter, checkoutFilter, paymentFilter, roomFilter]);
+  }, [stays, activeCardFilter, searchQuery, statusFilter, checkoutFilter, paymentFilter, roomFilter]);
 
   // Count active applied filters
   const activeFiltersCount = useMemo(() => {
     let count = 0;
+    if (activeCardFilter) count++;
     if (searchQuery.trim()) count++;
     if (statusFilter !== 'ALL') count++;
     if (checkoutFilter !== 'ALL') count++;
     if (paymentFilter !== 'ALL') count++;
     if (roomFilter !== 'ALL') count++;
     return count;
-  }, [searchQuery, statusFilter, checkoutFilter, paymentFilter, roomFilter]);
+  }, [activeCardFilter, searchQuery, statusFilter, checkoutFilter, paymentFilter, roomFilter]);
 
   const handleClearFilters = () => {
+    setActiveCardFilter(null);
     setSearchQuery('');
     setStatusFilter('ALL');
     setCheckoutFilter('ALL');
@@ -243,7 +326,7 @@ const CurrentStays = () => {
     { key: 'actions', label: 'Actions' },
   ];
 
-  const [columnVisibility, setColumnVisibility] = useState({
+  const DEFAULT_STAYS_COLUMNS = {
     stay_number: true,
     room: true,
     status: true,
@@ -255,7 +338,16 @@ const CurrentStays = () => {
     paid: true,
     balance: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+    visibleColumnCount
+  } = usePersistentColumns('lms_current_stays_column_visibility', DEFAULT_STAYS_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -268,26 +360,6 @@ const CurrentStays = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const resetColumnVisibility = () => {
-    setColumnVisibility({
-      stay_number: true,
-      room: true,
-      status: true,
-      primary_guest: true,
-      mobile: true,
-      check_in: true,
-      expected_checkout: true,
-      total: true,
-      paid: true,
-      balance: true,
-      actions: true,
-    });
-  };
 
   // -------------------------------------------------------------
   // Sorting State & Logic
@@ -430,8 +502,42 @@ const CurrentStays = () => {
   const handleAddChargeSubmit = async (data) => {
     try {
       await createExtraChargeApi(data);
-      showSuccess('Extra charge added to bill.', 'Charge Added');
       setShowChargeModal(false);
+
+      const targetStay = stays?.find((s) => s.id === activeStayId);
+      const chargeAmt = parseFloat(data?.amount || 0);
+      const currentBill = targetStay?.bill_summary || {};
+      const currentCust = targetStay?.primary_customer_detail || targetStay?.customer || {};
+      const newExtraTotal = parseFloat(currentBill?.total_extra_charges || targetStay?.extra_charges || 0) + chargeAmt;
+      const newGrandTotal = parseFloat(currentBill?.grand_total || targetStay?.grand_total || 0) + chargeAmt;
+      const newBalance = parseFloat(currentBill?.balance || targetStay?.balance || 0) + chargeAmt;
+      const totalPaid = parseFloat(currentBill?.total_paid || targetStay?.total_paid || 0);
+
+      showSuccess(
+        `Extra charge of ${formatCurrency(chargeAmt)} added to bill successfully.`,
+        'Charge Added',
+        {
+          whatsappAction: {
+            eventType: 'EXTRA_CHARGE',
+            customerMobile: currentCust?.mobile,
+            customerName: currentCust?.full_name || 'Guest',
+            bookingId: targetStay?.booking_id || targetStay?.booking?.id || targetStay?.booking,
+            customerId: currentCust?.id,
+            data: {
+              guest_name: currentCust?.full_name || 'Guest',
+              booking_number: targetStay?.booking_number || targetStay?.stay_number,
+              room_number: targetStay?.room_detail?.room_number || targetStay?.room,
+              charge_description: data?.charge_type || data?.description || 'Extra Service / Amenity',
+              charge_amount: chargeAmt,
+              total_extra_charges: newExtraTotal,
+              grand_total: newGrandTotal,
+              total_paid: totalPaid,
+              balance_amount: newBalance,
+            },
+            customLabel: 'Send Extra Charge Notice on WhatsApp',
+          },
+        }
+      );
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
     } catch (err) {
       showError('Error adding charge.', 'Failed');
@@ -444,6 +550,7 @@ const CurrentStays = () => {
       showSuccess('Payment recorded successfully.', 'Payment Recorded');
       setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       showError('Error adding payment.', 'Failed');
     }
@@ -474,7 +581,7 @@ const CurrentStays = () => {
               <KeyRound size={22} />
             </div>
             <div>
-              <h3 className="fw-bold text-dark m-0 tracking-tight">Current Stays</h3>
+              <h3 data-spotlight-id="current-stays" className="fw-bold text-dark m-0 tracking-tight">Current Stays</h3>
               <p className="text-muted small m-0">Monitor active guests, room occupancy and checkout status in real-time</p>
             </div>
           </div>
@@ -485,12 +592,29 @@ const CurrentStays = () => {
         </Link>
       </div>
 
-      {/* COMPACT SUMMARY METRICS BAR */}
+      {/* COMPACT SUMMARY METRICS BAR WITH INTERACTIVE FILTERS */}
       <div className="row g-3 mb-4">
+        {/* 1. Active Stays */}
         <div className="col-6 col-md-3">
-          <div className="saas-card-static p-3 d-flex align-items-center justify-content-between border-start border-4 border-primary">
+          <div
+            onClick={() => handleCardFilterClick('ACTIVE')}
+            role="button"
+            tabIndex={0}
+            title={activeCardFilter === 'ACTIVE' ? "Click to clear filter" : "Click to filter Active Stays"}
+            className={`saas-card-static filter-grid-card p-3 d-flex align-items-center justify-content-between border-start border-4 border-primary ${
+              activeCardFilter === 'ACTIVE' ? 'is-filtered border-primary-active' : ''
+            }`}
+          >
+            {activeCardFilter === 'ACTIVE' && <AnimatedDottedBorder color="#2563eb" />}
             <div>
-              <div className="text-muted small fw-semibold">Active Stays</div>
+              <div className="d-flex align-items-center gap-1.5">
+                <span className="text-muted small fw-semibold">Active Stays</span>
+                {activeCardFilter === 'ACTIVE' && (
+                  <span className="badge bg-primary text-white rounded-pill px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
+                    Active ✕
+                  </span>
+                )}
+              </div>
               <div className="fs-3 fw-bold text-dark">{metrics.activeCount}</div>
             </div>
             <div className="p-2.5 bg-primary-subtle text-primary rounded-circle">
@@ -499,10 +623,27 @@ const CurrentStays = () => {
           </div>
         </div>
 
+        {/* 2. Overdue Stays */}
         <div className="col-6 col-md-3">
-          <div className="saas-card-static p-3 d-flex align-items-center justify-content-between border-start border-4 border-danger">
+          <div
+            onClick={() => handleCardFilterClick('OVERDUE')}
+            role="button"
+            tabIndex={0}
+            title={activeCardFilter === 'OVERDUE' ? "Click to clear filter" : "Click to filter Overdue Stays"}
+            className={`saas-card-static filter-grid-card p-3 d-flex align-items-center justify-content-between border-start border-4 border-danger ${
+              activeCardFilter === 'OVERDUE' ? 'is-filtered border-danger-active' : ''
+            }`}
+          >
+            {activeCardFilter === 'OVERDUE' && <AnimatedDottedBorder color="#dc2626" />}
             <div>
-              <div className="text-muted small fw-semibold">Overdue Stays</div>
+              <div className="d-flex align-items-center gap-1.5">
+                <span className="text-muted small fw-semibold">Overdue Stays</span>
+                {activeCardFilter === 'OVERDUE' && (
+                  <span className="badge bg-danger text-white rounded-pill px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
+                    Active ✕
+                  </span>
+                )}
+              </div>
               <div className="fs-3 fw-bold text-danger">{metrics.overdueCount}</div>
             </div>
             <div className="p-2.5 bg-danger-subtle text-danger rounded-circle">
@@ -511,11 +652,35 @@ const CurrentStays = () => {
           </div>
         </div>
 
+        {/* 3. Checkout Today */}
         <div className="col-6 col-md-3">
-          <div className="saas-card-static p-3 d-flex align-items-center justify-content-between border-start border-4 border-warning">
+          <div
+            onClick={() => handleCardFilterClick('CHECKOUT_TODAY')}
+            role="button"
+            tabIndex={0}
+            title={activeCardFilter === 'CHECKOUT_TODAY' ? "Click to clear filter" : "Click to filter Checkouts Today"}
+            className={`saas-card-static filter-grid-card p-3 d-flex align-items-center justify-content-between border-start border-4 border-warning ${
+              activeCardFilter === 'CHECKOUT_TODAY' ? 'is-filtered border-warning-active' : ''
+            }`}
+          >
+            {activeCardFilter === 'CHECKOUT_TODAY' && <AnimatedDottedBorder color="#d97706" />}
             <div>
-              <div className="text-muted small fw-semibold">Checkout Today</div>
-              <div className="fs-3 fw-bold text-warning">{metrics.dueTodayCount}</div>
+              <div className="d-flex align-items-center gap-1.5">
+                <span className="text-muted small fw-semibold">Checkout Today</span>
+                {activeCardFilter === 'CHECKOUT_TODAY' && (
+                  <span className="badge bg-warning text-dark rounded-pill px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
+                    Active ✕
+                  </span>
+                )}
+              </div>
+              <div className="fs-3 fw-bold text-warning">
+                {metrics.checkoutTodayCount}
+                {metrics.checkedOutTodayCount > 0 && (
+                  <span className="fs-6 text-muted font-normal ms-1" style={{ fontSize: '0.75rem' }}>
+                    ({metrics.checkedOutTodayCount} done{metrics.dueTodayCount > 0 ? `, ${metrics.dueTodayCount} due` : ''})
+                  </span>
+                )}
+              </div>
             </div>
             <div className="p-2.5 bg-warning-subtle text-warning rounded-circle">
               <Clock size={20} />
@@ -523,10 +688,27 @@ const CurrentStays = () => {
           </div>
         </div>
 
+        {/* 4. Pending Balance */}
         <div className="col-6 col-md-3">
-          <div className="saas-card-static p-3 d-flex align-items-center justify-content-between border-start border-4 border-success">
+          <div
+            onClick={() => handleCardFilterClick('PENDING_BALANCE')}
+            role="button"
+            tabIndex={0}
+            title={activeCardFilter === 'PENDING_BALANCE' ? "Click to clear filter" : "Click to filter Stays with Pending Balance"}
+            className={`saas-card-static filter-grid-card p-3 d-flex align-items-center justify-content-between border-start border-4 border-success ${
+              activeCardFilter === 'PENDING_BALANCE' ? 'is-filtered border-success-active' : ''
+            }`}
+          >
+            {activeCardFilter === 'PENDING_BALANCE' && <AnimatedDottedBorder color="#16a34a" />}
             <div>
-              <div className="text-muted small fw-semibold">Pending Balance</div>
+              <div className="d-flex align-items-center gap-1.5">
+                <span className="text-muted small fw-semibold">Pending Balance</span>
+                {activeCardFilter === 'PENDING_BALANCE' && (
+                  <span className="badge bg-success text-white rounded-pill px-1.5 py-0.5" style={{ fontSize: '0.62rem' }}>
+                    Active ✕
+                  </span>
+                )}
+              </div>
               <div className="fs-3 fw-bold text-dark">
                 {metrics.pendingBalanceCount} <span className="fs-6 text-muted font-normal">({formatCurrency(metrics.totalPendingAmount)})</span>
               </div>
@@ -615,7 +797,7 @@ const CurrentStays = () => {
 
         {/* Filter Action Bar & View Mode Toggle */}
         <div className="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
-          <div className="d-flex align-items-center gap-2">
+          <div className="d-flex flex-wrap align-items-center gap-2">
             {activeFiltersCount > 0 && (
               <button
                 className="btn btn-sm btn-outline-danger d-flex align-items-center gap-1.5 py-1 px-2.5 rounded-pill"
@@ -624,8 +806,25 @@ const CurrentStays = () => {
                 <X size={14} /> Clear Filters <span className="badge bg-danger text-white ms-1">{activeFiltersCount}</span>
               </button>
             )}
+            {activeCardFilter && (
+              <span className="badge bg-primary-subtle text-primary border border-primary-subtle px-2.5 py-1.5 rounded-pill d-inline-flex align-items-center gap-1.5 small">
+                Filtered: {
+                  activeCardFilter === 'ACTIVE' ? 'Active Stays' :
+                  activeCardFilter === 'OVERDUE' ? 'Overdue Stays' :
+                  activeCardFilter === 'CHECKOUT_TODAY' ? 'Checkout Today' :
+                  'Pending Balance'
+                }
+                <button
+                  type="button"
+                  onClick={() => handleCardFilterClick(activeCardFilter)}
+                  className="btn-close btn-close-sm ms-1 p-0"
+                  style={{ fontSize: '0.6rem' }}
+                  aria-label="Remove filter"
+                />
+              </span>
+            )}
             <span className="text-muted small">
-              Showing <strong className="text-dark">{filteredStays.length}</strong> active guest stays
+              Showing <strong className="text-dark">{filteredStays.length}</strong> guest stays
             </span>
           </div>
 
@@ -677,7 +876,7 @@ const CurrentStays = () => {
         /* 4 & 5. STAY CARDS GRID (PRIMARY DEFAULT VIEW) */
         <div className="row g-4">
           {paginatedStays.map((s) => {
-            const { isOverdue, isDueToday, expDateStr, expTimeStr, overdueText } = analyzeStayStatus(s);
+            const { isCheckedOut, isOverdue, isDueToday, expDateStr, expTimeStr, actualDateStr, overdueText } = analyzeStayStatus(s);
             const bill = s.bill_summary || {};
             const grossSubtotal = parseFloat(bill.grand_total || bill.subtotal || 0);
             const totalPaid = parseFloat(bill.total_paid || 0);
@@ -690,7 +889,7 @@ const CurrentStays = () => {
                   className="saas-card-static h-100 p-4 d-flex flex-column justify-content-between position-relative bg-white shadow-sm border transition-all"
                   style={{
                     borderRadius: '16px',
-                    borderColor: isOverdue ? '#fca5a5' : '#e2e8f0',
+                    borderColor: isOverdue ? '#fca5a5' : isCheckedOut ? '#cbd5e1' : '#e2e8f0',
                     boxShadow: isOverdue ? '0 8px 24px rgba(220, 38, 38, 0.08)' : '0 4px 20px rgba(15, 23, 42, 0.04)'
                   }}
                 >
@@ -715,6 +914,10 @@ const CurrentStays = () => {
                       ) : isDueToday ? (
                         <span className="badge bg-warning-subtle text-warning border border-warning-subtle fw-bold px-3 py-1.5 rounded-pill">
                           DUE TODAY
+                        </span>
+                      ) : isCheckedOut ? (
+                        <span className="badge bg-secondary-subtle text-secondary border border-secondary fw-bold px-3 py-1.5 rounded-pill d-flex align-items-center gap-1">
+                          <CheckCircle2 size={13} className="text-secondary" /> CHECKED OUT
                         </span>
                       ) : (
                         <span className="badge bg-success-subtle text-success border border-success-subtle fw-bold px-3 py-1.5 rounded-pill">
@@ -751,14 +954,25 @@ const CurrentStays = () => {
                         <strong className="text-dark font-semibold">{formatDate(s.check_in_date)} @ {s.check_in_time?.substring(0, 5) || '12:00'}</strong>
                       </div>
 
-                      <div className="d-flex justify-content-between align-items-center text-muted small pt-2">
-                        <span className="d-flex align-items-center gap-1.5 font-medium">
-                          <Clock size={14} className={isOverdue ? 'text-danger' : 'text-primary'} /> Expected Checkout
-                        </span>
-                        <strong className={isOverdue ? 'text-danger fw-bold' : 'text-dark font-semibold'}>
-                          {formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}
-                        </strong>
-                      </div>
+                      {isCheckedOut ? (
+                        <div className="d-flex justify-content-between align-items-center text-muted small pt-2">
+                          <span className="d-flex align-items-center gap-1.5 font-medium text-secondary">
+                            <CheckCircle2 size={14} className="text-success" /> Checked Out
+                          </span>
+                          <strong className="text-dark font-semibold">
+                            {formatDate(actualDateStr || expDateStr)} @ {(s.actual_checkout_time || expTimeStr).substring(0, 5)}
+                          </strong>
+                        </div>
+                      ) : (
+                        <div className="d-flex justify-content-between align-items-center text-muted small pt-2">
+                          <span className="d-flex align-items-center gap-1.5 font-medium">
+                            <Clock size={14} className={isOverdue ? 'text-danger' : 'text-primary'} /> Expected Checkout
+                          </span>
+                          <strong className={isOverdue ? 'text-danger fw-bold' : 'text-dark font-semibold'}>
+                            {formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}
+                          </strong>
+                        </div>
+                      )}
 
                       {/* OVERDUE CALLOUT BANNER */}
                       {isOverdue && (
@@ -798,15 +1012,52 @@ const CurrentStays = () => {
                       <Link to={`/stays/${s.id}`} className="btn btn-sm btn-light border rounded-3 fw-semibold px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs">
                         <Eye size={15} /> View Details
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => handleCheckoutClick(s)}
-                        className={`btn btn-sm rounded-3 fw-bold px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs ${
-                          isOverdue ? 'btn-danger' : 'btn-success'
-                        }`}
-                      >
-                        <LogOut size={15} /> Process Checkout
-                      </button>
+                      {isCheckedOut ? (
+                        <div className="d-flex align-items-center gap-1.5">
+                          <Link
+                            to={`/stays/${s.id}`}
+                            className="btn btn-sm btn-outline-secondary rounded-3 fw-semibold px-2.5 py-1.5 d-flex align-items-center gap-1 shadow-xs"
+                          >
+                            <CheckCircle2 size={15} className="text-success" /> Settled
+                          </Link>
+                          <WhatsAppButton
+                            eventType="CHECK_OUT"
+                            customerMobile={cust.mobile}
+                            customerName={cust.full_name}
+                            bookingId={s.booking_id || s.booking?.id || s.booking}
+                            customerId={cust.id}
+                            data={{
+                              guest_name: cust.full_name || 'Guest',
+                              booking_number: s.booking_number || s.stay_number,
+                              room_number: s.room_detail?.room_number || s.room,
+                              check_in_date: formatDate(s.check_in_date),
+                              check_out_date: formatDate(s.actual_checkout_date || s.expected_checkout_date),
+                              total_nights: s.total_nights || 1,
+                              room_charges: bill.room_charges || 0,
+                              extra_charges: bill.extra_charges || 0,
+                              discount: bill.discount || 0,
+                              tax: bill.tax || 0,
+                              grand_total: grossSubtotal || bill.grand_total || 0,
+                              total_paid: totalPaid || bill.total_paid || 0,
+                              balance_amount: balance || 0,
+                              payment_status: balance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                            }}
+                            variant="icon-only"
+                            size="sm"
+                            title="Send WhatsApp Thank You Message"
+                          />
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleCheckoutClick(s)}
+                          className={`btn btn-sm rounded-3 fw-bold px-3 py-1.5 d-flex align-items-center gap-1.5 shadow-xs ${
+                            isOverdue ? 'btn-danger' : 'btn-success'
+                          }`}
+                        >
+                          <LogOut size={15} /> Process Checkout
+                        </button>
+                      )}
                     </div>
 
                     {/* 3-Dots Action Dropdown */}
@@ -825,32 +1076,77 @@ const CurrentStays = () => {
                             <Eye size={15} className="text-primary" /> View Full Details
                           </Link>
                         </li>
-                        <li>
-                          <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
-                            <UserPlus size={15} className="text-info" /> Add Additional Guest
-                          </button>
-                        </li>
-                        <li>
-                          <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
-                            <ShoppingCart size={15} className="text-warning" /> Add Extra Charge
-                          </button>
-                        </li>
-                        <li>
-                          <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
-                            <DollarSign size={15} className="text-success" /> Add Payment
-                          </button>
-                        </li>
-                        <li>
-                          <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
-                            <CalendarPlus size={15} className="text-primary" /> Extend Stay
-                          </button>
-                        </li>
+                        {!isCheckedOut && (
+                          <>
+                            <li>
+                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
+                                <UserPlus size={15} className="text-info" /> Add Additional Guest
+                              </button>
+                            </li>
+                            <li>
+                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
+                                <ShoppingCart size={15} className="text-warning" /> Add Extra Charge
+                              </button>
+                            </li>
+                            <li>
+                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
+                                <DollarSign size={15} className="text-success" /> Add Payment
+                              </button>
+                            </li>
+                            <li>
+                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
+                                <CalendarPlus size={15} className="text-primary" /> Extend Stay
+                              </button>
+                            </li>
+                          </>
+                        )}
                         <li><hr className="dropdown-divider" /></li>
-                        <li>
-                          <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 px-3 text-danger fw-semibold d-flex align-items-center gap-2">
-                            <LogOut size={15} /> Checkout
-                          </button>
-                        </li>
+                        {isCheckedOut ? (
+                          <>
+                            <li>
+                              <Link to={`/stays/${s.id}`} className="dropdown-item py-2 px-3 text-secondary fw-semibold d-flex align-items-center gap-2">
+                                <CheckCircle2 size={15} className="text-success" /> View Bill / Summary
+                              </Link>
+                            </li>
+                            <li>
+                              <div className="px-3 py-1">
+                                <WhatsAppButton
+                                  eventType="CHECK_OUT"
+                                  customerMobile={cust.mobile}
+                                  customerName={cust.full_name}
+                                  bookingId={s.booking_id || s.booking?.id || s.booking}
+                                  customerId={cust.id}
+                                  data={{
+                                    guest_name: cust.full_name || 'Guest',
+                                    booking_number: s.booking_number || s.stay_number,
+                                    room_number: s.room_detail?.room_number || s.room,
+                                    check_in_date: formatDate(s.check_in_date),
+                                    check_out_date: formatDate(s.actual_checkout_date || s.expected_checkout_date),
+                                    total_nights: s.total_nights || 1,
+                                    room_charges: bill.room_charges || 0,
+                                    extra_charges: bill.extra_charges || 0,
+                                    discount: bill.discount || 0,
+                                    tax: bill.tax || 0,
+                                    grand_total: grossSubtotal || bill.grand_total || 0,
+                                    total_paid: totalPaid || bill.total_paid || 0,
+                                    balance_amount: balance || 0,
+                                    payment_status: balance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                                  }}
+                                  customLabel="Send WhatsApp Bill"
+                                  size="sm"
+                                  variant="subtle"
+                                  className="w-100 justify-content-start"
+                                />
+                              </div>
+                            </li>
+                          </>
+                        ) : (
+                          <li>
+                            <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 px-3 text-danger fw-semibold d-flex align-items-center gap-2">
+                              <LogOut size={15} /> Checkout
+                            </button>
+                          </li>
+                        )}
                       </ul>
                     </div>
                   </div>
@@ -997,7 +1293,7 @@ const CurrentStays = () => {
                     </tr>
                   ) : (
                     paginatedStays.map((s) => {
-                      const { isOverdue, isDueToday, expDateStr, expTimeStr } = analyzeStayStatus(s);
+                      const { isCheckedOut, isOverdue, isDueToday, expDateStr, expTimeStr, actualDateStr } = analyzeStayStatus(s);
                       const bill = s.bill_summary || {};
                       const grossSubtotal = parseFloat(bill.grand_total || bill.subtotal || 0);
                       const totalPaid = parseFloat(bill.total_paid || 0);
@@ -1022,6 +1318,8 @@ const CurrentStays = () => {
                                 <span className="badge bg-danger text-white">OVERDUE</span>
                               ) : isDueToday ? (
                                 <span className="badge bg-warning text-dark">DUE TODAY</span>
+                              ) : isCheckedOut ? (
+                                <span className="badge bg-secondary text-white">CHECKED OUT</span>
                               ) : (
                                 <span className="badge bg-success text-white">ACTIVE</span>
                               )}
@@ -1038,7 +1336,11 @@ const CurrentStays = () => {
                           )}
                           {columnVisibility.expected_checkout && (
                             <td className={`small ${isOverdue ? 'text-danger fw-bold' : ''}`}>
-                              {formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}
+                              {isCheckedOut ? (
+                                <span>{formatDate(actualDateStr || expDateStr)} @ {(s.actual_checkout_time || expTimeStr).substring(0, 5)}</span>
+                              ) : (
+                                <span>{formatDate(expDateStr)} @ {expTimeStr.substring(0, 5)}</span>
+                              )}
                             </td>
                           )}
                           {columnVisibility.total && (
@@ -1054,43 +1356,116 @@ const CurrentStays = () => {
                           )}
                           {columnVisibility.actions && (
                             <td className="text-center pe-3">
-                              <div className="dropdown">
-                                <button className="btn btn-xs btn-light border dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
-                                  Actions
-                                </button>
-                                <ul className="dropdown-menu dropdown-menu-end shadow border-0">
-                                  <li>
-                                    <Link to={`/stays/${s.id}`} className="dropdown-item py-2 d-flex align-items-center gap-2">
-                                      <Eye size={15} className="text-primary" /> View Details
-                                    </Link>
-                                  </li>
-                                  <li>
-                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
-                                      <UserPlus size={15} className="text-info" /> Add Guest
-                                    </button>
-                                  </li>
-                                  <li>
-                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
-                                      <ShoppingCart size={15} className="text-warning" /> Add Charge
-                                    </button>
-                                  </li>
-                                  <li>
-                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
-                                      <DollarSign size={15} className="text-success" /> Add Payment
-                                    </button>
-                                  </li>
-                                  <li>
-                                    <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
-                                      <CalendarPlus size={15} className="text-primary" /> Extend Stay
-                                    </button>
-                                  </li>
-                                  <li><hr className="dropdown-divider" /></li>
-                                  <li>
-                                    <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
-                                      <LogOut size={15} /> Checkout
-                                    </button>
-                                  </li>
-                                </ul>
+                              <div className="d-inline-flex align-items-center gap-1.5">
+                                <WhatsAppButton
+                                  eventType={isCheckedOut ? 'CHECK_OUT' : 'CHECK_IN'}
+                                  customerMobile={cust.mobile}
+                                  customerName={cust.full_name}
+                                  bookingId={s.booking_id || s.booking?.id || s.booking}
+                                  customerId={cust.id}
+                                  data={{
+                                    guest_name: cust.full_name || 'Guest',
+                                    booking_number: s.booking_number || s.stay_number,
+                                    room_number: s.room_detail?.room_number || s.room,
+                                    check_in_date: formatDate(s.check_in_date),
+                                    check_out_date: formatDate(s.actual_checkout_date || s.expected_checkout_date),
+                                    total_nights: s.total_nights || 1,
+                                    room_charges: bill.room_charges || 0,
+                                    extra_charges: bill.extra_charges || 0,
+                                    discount: bill.discount || 0,
+                                    tax: bill.tax || 0,
+                                    grand_total: grossSubtotal || bill.grand_total || 0,
+                                    total_paid: totalPaid || bill.total_paid || 0,
+                                    balance_amount: balance || 0,
+                                    payment_status: balance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                                  }}
+                                  variant="icon-only"
+                                  size="sm"
+                                  title={isCheckedOut ? "Send WhatsApp Thank You Message" : "Send WhatsApp Welcome Message"}
+                                />
+                                <div className="dropdown">
+                                  <button className="btn btn-xs btn-light border dropdown-toggle fw-semibold" type="button" data-bs-toggle="dropdown">
+                                    Actions
+                                  </button>
+                                  <ul className="dropdown-menu dropdown-menu-end shadow border-0">
+                                    <li>
+                                      <Link to={`/stays/${s.id}`} className="dropdown-item py-2 d-flex align-items-center gap-2">
+                                        <Eye size={15} className="text-primary" /> View Details
+                                      </Link>
+                                    </li>
+                                    {!isCheckedOut && (
+                                      <>
+                                        <li>
+                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowGuestModal(true); }}>
+                                            <UserPlus size={15} className="text-info" /> Add Guest
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setShowChargeModal(true); }}>
+                                            <ShoppingCart size={15} className="text-warning" /> Add Charge
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
+                                            <DollarSign size={15} className="text-success" /> Add Payment
+                                          </button>
+                                        </li>
+                                        <li>
+                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setNewExtendCheckout(s.expected_checkout_date); setShowExtendModal(true); }}>
+                                            <CalendarPlus size={15} className="text-primary" /> Extend Stay
+                                          </button>
+                                        </li>
+                                      </>
+                                    )}
+                                    <li><hr className="dropdown-divider" /></li>
+                                    {isCheckedOut ? (
+                                      <>
+                                        <li>
+                                          <Link to={`/stays/${s.id}`} className="dropdown-item py-2 text-secondary fw-semibold d-flex align-items-center gap-2">
+                                            <CheckCircle2 size={15} className="text-success" /> View Bill
+                                          </Link>
+                                        </li>
+                                        <li>
+                                          <div className="px-3 py-1">
+                                            <WhatsAppButton
+                                              eventType="CHECK_OUT"
+                                              customerMobile={cust.mobile}
+                                              customerName={cust.full_name}
+                                              bookingId={s.booking_id || s.booking?.id || s.booking}
+                                              customerId={cust.id}
+                                              data={{
+                                                guest_name: cust.full_name || 'Guest',
+                                                booking_number: s.booking_number || s.stay_number,
+                                                room_number: s.room_detail?.room_number || s.room,
+                                                check_in_date: formatDate(s.check_in_date),
+                                                check_out_date: formatDate(s.actual_checkout_date || s.expected_checkout_date),
+                                                total_nights: s.total_nights || 1,
+                                                room_charges: bill.room_charges || 0,
+                                                extra_charges: bill.extra_charges || 0,
+                                                discount: bill.discount || 0,
+                                                tax: bill.tax || 0,
+                                                grand_total: grossSubtotal || bill.grand_total || 0,
+                                                total_paid: totalPaid || bill.total_paid || 0,
+                                                balance_amount: balance || 0,
+                                                payment_status: balance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                                              }}
+                                              customLabel="Send WhatsApp Bill"
+                                              size="sm"
+                                              variant="subtle"
+                                              className="w-100 justify-content-start"
+                                            />
+                                          </div>
+                                        </li>
+                                      </>
+                                    ) : (
+                                      <li>
+                                        <button type="button" onClick={() => handleCheckoutClick(s)} className="dropdown-item py-2 text-danger fw-semibold d-flex align-items-center gap-2">
+                                          <LogOut size={15} /> Checkout
+                                        </button>
+                                      </li>
+                                    )}
+                                  </ul>
+                                </div>
                               </div>
                             </td>
                           )}

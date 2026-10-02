@@ -7,12 +7,16 @@ import {
   createUserApi,
   deleteUserApi,
   resetUserPasswordApi,
-  toggleUserActiveApi
+  toggleUserActiveApi,
+  toggleUserMobileAccessApi,
+  updateUserPermissionsApi
 } from '../api/authApi';
 import { getHotelBranchesApi } from '../api/settingsApi';
 import PageLoader from '../components/PageLoader';
 import RolePermissionMatrixModal from '../components/RolePermissionMatrixModal';
+import UserPermissionsModal from '../components/UserPermissionsModal';
 import { exportStaffToExcel, exportStaffToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import {
   Users,
   UserPlus,
@@ -34,7 +38,8 @@ import {
   AlertCircle,
   Lock,
   ChevronRight,
-  Info
+  Info,
+  Smartphone
 } from 'lucide-react';
 
 const StaffManagement = () => {
@@ -84,6 +89,8 @@ const StaffManagement = () => {
   // Modals
   const [showAddModal, setShowAddModal] = useState(false);
   const [showPermModal, setShowPermModal] = useState(false);
+  const [showUserPermsModal, setShowUserPermsModal] = useState(false);
+  const [userForPerms, setUserForPerms] = useState(null);
   const [showResetModal, setShowResetModal] = useState(false);
   const [showCredentialsModal, setShowCredentialsModal] = useState(false);
   const [createdCredentials, setCreatedCredentials] = useState(null);
@@ -96,7 +103,8 @@ const StaffManagement = () => {
     last_name: '',
     role: 'RECEPTIONIST',
     password: '',
-    property: ''
+    property: '',
+    can_use_mobile_app: true,
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -108,6 +116,34 @@ const StaffManagement = () => {
   // Action Loading
   const [actionUserId, setActionUserId] = useState(null);
 
+  const handleOpenUserPermsModal = (targetUser) => {
+    setUserForPerms(targetUser);
+    setShowUserPermsModal(true);
+  };
+
+  const handleToggleMobileAccess = async (targetUser) => {
+    const willEnable = targetUser.can_use_mobile_app === false ? true : false;
+    setActionUserId(targetUser.id);
+    const prevStaff = queryClient.getQueryData(['staff']);
+    queryClient.setQueriesData({ queryKey: ['staff'] }, (old) => {
+      if (!Array.isArray(old)) return old;
+      return old.map((u) => (u.id === targetUser.id ? { ...u, can_use_mobile_app: willEnable } : u));
+    });
+
+    try {
+      const res = await toggleUserMobileAccessApi(targetUser.id, willEnable);
+      showSuccess(res.message, 'Mobile Access Updated');
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
+    } catch (err) {
+      if (prevStaff) {
+        queryClient.setQueryData(['staff'], prevStaff);
+      }
+      showError(err.response?.data?.error || 'Failed to toggle mobile app access.', 'Error');
+    } finally {
+      setActionUserId(null);
+    }
+  };
+
   const handleOpenAddModal = (defaultPropertyId = null) => {
     const defaultProp = defaultPropertyId || (branchesList.length > 0 ? branchesList[0].id : '');
     setFormData({
@@ -117,7 +153,8 @@ const StaffManagement = () => {
       last_name: '',
       role: 'RECEPTIONIST',
       password: '',
-      property: defaultProp
+      property: defaultProp,
+      can_use_mobile_app: true,
     });
     setShowAddModal(true);
   };
@@ -136,7 +173,8 @@ const StaffManagement = () => {
         first_name: formData.first_name.trim(),
         last_name: formData.last_name.trim(),
         role: formData.role,
-        property: formData.property ? parseInt(formData.property) : undefined
+        property: formData.property ? parseInt(formData.property) : undefined,
+        can_use_mobile_app: formData.role === 'MANAGER' ? Boolean(formData.can_use_mobile_app) : false,
       };
       if (formData.password && formData.password.trim()) {
         payload.password = formData.password.trim();
@@ -182,6 +220,20 @@ const StaffManagement = () => {
       showError('You cannot deactivate your own account.', 'Action Forbidden');
       return;
     }
+    if (targetUser.role === 'HOTEL_OWNER' && user?.role !== 'HOTEL_OWNER' && !user?.is_superuser) {
+      showError('Only the Hotel Owner or Platform Admin can change this account status.', 'Action Forbidden');
+      return;
+    }
+
+    const willDeactivate = Boolean(targetUser.is_active);
+    const confirmMsg = willDeactivate
+      ? `Are you sure you want to deactivate "${targetUser.username}"? They will be immediately blocked from logging in or using the software.`
+      : `Are you sure you want to activate "${targetUser.username}"? Their software access will be immediately restored.`;
+
+    if (!window.confirm(confirmMsg)) {
+      return;
+    }
+
     setActionUserId(targetUser.id);
     const prevStaff = queryClient.getQueryData(['staff']);
     // Optimistic toggle active status (0.0s)
@@ -198,7 +250,7 @@ const StaffManagement = () => {
       if (prevStaff) {
         queryClient.setQueryData(['staff'], prevStaff);
       }
-      showError('Failed to change user status.', 'Error');
+      showError(err.response?.data?.error || 'Failed to change user status.', 'Error');
     } finally {
       setActionUserId(null);
     }
@@ -301,20 +353,30 @@ const StaffManagement = () => {
     { key: 'full_name', label: 'Full Name' },
     { key: 'location', label: 'Assigned Location' },
     { key: 'role', label: 'Role' },
+    { key: 'mobile_access', label: 'Mobile App' },
     { key: 'contact', label: 'Contact' },
     { key: 'status', label: 'Status' },
     { key: 'actions', label: 'Security Actions' },
   ];
 
-  const [columnVisibility, setColumnVisibility] = useState({
+  const DEFAULT_STAFF_COLUMNS = {
     user_info: true,
     full_name: true,
     location: true,
     role: true,
+    mobile_access: true,
     contact: true,
     status: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+  } = usePersistentColumns('lms_staff_column_visibility', DEFAULT_STAFF_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -327,22 +389,6 @@ const StaffManagement = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const resetColumnVisibility = () => {
-    setColumnVisibility({
-      user_info: true,
-      full_name: true,
-      location: true,
-      role: true,
-      contact: true,
-      status: true,
-      actions: true,
-    });
-  };
 
   // -------------------------------------------------------------
   // Sorting State & Logic
@@ -475,7 +521,7 @@ const StaffManagement = () => {
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center gap-3 mb-4">
         <div>
           <div className="d-flex align-items-center gap-2">
-            <h4 className="fw-bold m-0 text-dark">Staff &amp; Branch Accounts</h4>
+            <h4 data-spotlight-id="staff" className="fw-bold m-0 text-dark">Staff &amp; Branch Accounts</h4>
             <span className="badge bg-primary-subtle text-primary border rounded-pill px-2.5 py-1 extra-small fw-bold">
               Multi-Branch Access
             </span>
@@ -817,6 +863,7 @@ const StaffManagement = () => {
                 {columnVisibility.full_name && renderSortHeader('Full Name', 'full_name')}
                 {columnVisibility.location && renderSortHeader('Assigned Location', 'location')}
                 {columnVisibility.role && renderSortHeader('Role', 'role')}
+                {columnVisibility.mobile_access && <th className="py-3">Mobile App</th>}
                 {columnVisibility.contact && renderSortHeader('Contact', 'contact')}
                 {columnVisibility.status && renderSortHeader('Status', 'status')}
                 {columnVisibility.actions && <th className="text-end pe-3.5">Security Actions</th>}
@@ -825,7 +872,7 @@ const StaffManagement = () => {
             <tbody>
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-5 text-muted">
+                  <td colSpan="8" className="text-center py-5 text-muted">
                     <Users size={36} className="text-muted mb-2 opacity-50" />
                     <p className="small mb-1 fw-bold text-dark">No staff members found.</p>
                     <span className="extra-small text-muted">
@@ -898,6 +945,35 @@ const StaffManagement = () => {
                         </td>
                       )}
 
+                      {columnVisibility.mobile_access && (
+                        <td>
+                          {u.role === 'MANAGER' || u.role === 'HOTEL_OWNER' ? (
+                            <button
+                              type="button"
+                              className={`badge border-0 rounded-pill px-2.5 py-1 extra-small fw-bold d-inline-flex align-items-center gap-1.5 shadow-2xs ${
+                                u.can_use_mobile_app !== false ? 'bg-success text-white' : 'bg-warning-subtle text-dark border border-warning'
+                              }`}
+                              onClick={() => handleToggleMobileAccess(u)}
+                              disabled={actionUserId === u.id}
+                              title={
+                                u.can_use_mobile_app !== false
+                                  ? 'Mobile App Access: ALLOWED (Click to revoke)'
+                                  : 'Mobile App Access: BLOCKED (Click to allow)'
+                              }
+                              style={{ cursor: 'pointer' }}
+                            >
+                              <Smartphone size={11} />
+                              <span>{u.can_use_mobile_app !== false ? 'ALLOWED' : 'BLOCKED'}</span>
+                            </button>
+                          ) : (
+                            <span className="badge bg-light text-muted border extra-small d-inline-flex align-items-center gap-1">
+                              <Smartphone size={10} className="opacity-50" />
+                              <span>Desktop Only</span>
+                            </span>
+                          )}
+                        </td>
+                      )}
+
                       {columnVisibility.contact && (
                         <td>
                           <div className="text-muted extra-small text-truncate" style={{ maxWidth: '180px' }}>
@@ -910,12 +986,28 @@ const StaffManagement = () => {
                         <td>
                           <button
                             type="button"
-                            className={`badge border-0 rounded-pill px-2.5 py-1 extra-small fw-bold ${u.is_active ? 'bg-success text-white' : 'bg-danger text-white'}`}
+                            className={`badge border-0 rounded-pill px-2.5 py-1 extra-small fw-bold d-inline-flex align-items-center gap-1.5 shadow-2xs ${
+                              u.is_active ? 'bg-success text-white' : 'bg-danger text-white'
+                            }`}
                             onClick={() => handleToggleActive(u)}
                             disabled={actionUserId === u.id || u.id === user?.id}
-                            title="Click to toggle status"
+                            title={
+                              u.id === user?.id
+                                ? 'You cannot deactivate your own account'
+                                : u.is_active
+                                ? 'Active — Click to deactivate'
+                                : 'Inactive — Click to activate'
+                            }
+                            style={{ cursor: u.id === user?.id ? 'not-allowed' : 'pointer' }}
                           >
-                            {u.is_active ? 'ACTIVE' : 'SUSPENDED'}
+                            {actionUserId === u.id ? (
+                              <span className="spinner-border spinner-border-sm" style={{ width: '10px', height: '10px' }}></span>
+                            ) : u.is_active ? (
+                              <CheckCircle2 size={11} />
+                            ) : (
+                              <Lock size={11} />
+                            )}
+                            <span>{u.is_active ? 'ACTIVE' : 'INACTIVE'}</span>
                           </button>
                         </td>
                       )}
@@ -923,6 +1015,43 @@ const StaffManagement = () => {
                       {columnVisibility.actions && (
                         <td className="text-end pe-3.5">
                           <div className="d-flex align-items-center justify-content-end gap-1.5">
+                            <button
+                              type="button"
+                              className={`btn btn-sm py-0.5 px-2 extra-small rounded-2 d-flex align-items-center gap-1 ${
+                                u.is_active ? 'btn-outline-warning text-dark' : 'btn-outline-success'
+                              }`}
+                              onClick={() => handleToggleActive(u)}
+                              disabled={actionUserId === u.id || u.id === user?.id}
+                              title={
+                                u.id === user?.id
+                                  ? 'Cannot change own status'
+                                  : u.is_active
+                                  ? 'Deactivate User (Block software access)'
+                                  : 'Activate User (Grant software access)'
+                              }
+                            >
+                              {actionUserId === u.id ? (
+                                <span className="spinner-border spinner-border-sm" style={{ width: '10px', height: '10px' }}></span>
+                              ) : u.is_active ? (
+                                <Lock size={12} />
+                              ) : (
+                                <CheckCircle2 size={12} />
+                              )}
+                              <span>{u.is_active ? 'Deactivate' : 'Activate'}</span>
+                            </button>
+
+                            {u.role === 'MANAGER' && (
+                              <button
+                                type="button"
+                                className="btn btn-outline-primary btn-sm px-2 py-1 extra-small rounded-2 d-flex align-items-center gap-1"
+                                onClick={() => handleOpenUserPermsModal(u)}
+                                title="Configure custom permissions & limits for this manager"
+                              >
+                                <Sliders size={13} />
+                                <span>Permissions</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
                               className="btn btn-outline-secondary btn-sm px-2 py-1 extra-small rounded-2 d-flex align-items-center gap-1"
@@ -1066,6 +1195,32 @@ const StaffManagement = () => {
                       <option value="MANAGER">Branch Manager (Operations Supervisor)</option>
                     </select>
                   </div>
+
+                  {/* Mobile App Access for Managers */}
+                  {formData.role === 'MANAGER' && (
+                    <div className="p-3 mb-3 rounded-3 bg-light border d-flex align-items-center justify-content-between">
+                      <div>
+                        <div className="fw-bold small text-dark d-flex align-items-center gap-1.5">
+                          <Smartphone size={15} className="text-primary" />
+                          <span>Mobile App Access</span>
+                        </div>
+                        <div className="extra-small text-muted">
+                          Allow this manager to log in to InnVetrix Android Mobile App
+                        </div>
+                      </div>
+                      <div className="form-check form-switch mb-0">
+                        <input
+                          className="form-check-input"
+                          type="checkbox"
+                          role="switch"
+                          id="canUseMobileSwitch"
+                          checked={formData.can_use_mobile_app}
+                          onChange={(e) => setFormData({ ...formData, can_use_mobile_app: e.target.checked })}
+                          style={{ cursor: 'pointer', width: '2.5rem', height: '1.3rem' }}
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   {/* Username & Password */}
                   <div className="row g-3 mb-3">
@@ -1276,6 +1431,25 @@ const StaffManagement = () => {
         <RolePermissionMatrixModal
           isOpen={showPermModal}
           onClose={() => setShowPermModal(false)}
+        />
+      )}
+
+      {/* INDIVIDUAL USER CUSTOM PERMISSIONS MODAL */}
+      {showUserPermsModal && userForPerms && (
+        <UserPermissionsModal
+          isOpen={showUserPermsModal}
+          targetUser={userForPerms}
+          onClose={() => {
+            setShowUserPermsModal(false);
+            setUserForPerms(null);
+          }}
+          onSuccess={(updatedUser) => {
+            queryClient.setQueriesData({ queryKey: ['staff'] }, (old) => {
+              if (!Array.isArray(old)) return old;
+              return old.map((u) => (u.id === updatedUser.id ? { ...u, ...updatedUser } : u));
+            });
+            queryClient.invalidateQueries({ queryKey: ['staff'] });
+          }}
         />
       )}
     </div>

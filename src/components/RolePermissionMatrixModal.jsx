@@ -153,7 +153,7 @@ const RolePermissionMatrixModal = ({ isOpen, onClose }) => {
       await updateRolePermissionsApi(selectedRole, currentRolePerms);
       try { await refreshProfile?.(); } catch {}
       setToast(`Permissions for ${selectedRole} saved successfully!`);
-      setTimeout(() => setToast(null), 4000);
+      setTimeout(() => setToast(null), 2000);
     } catch (err) {
       console.error('Failed to save permissions:', err);
       alert('Failed to save permission matrix. Please try again.');
@@ -170,7 +170,7 @@ const RolePermissionMatrixModal = ({ isOpen, onClose }) => {
       await loadPermissions();
       try { await refreshProfile?.(); } catch {}
       setToast(`Permissions for ${selectedRole} reset to defaults.`);
-      setTimeout(() => setToast(null), 4000);
+      setTimeout(() => setToast(null), 2000);
     } catch (err) {
       console.error('Failed to reset permissions:', err);
     } finally {

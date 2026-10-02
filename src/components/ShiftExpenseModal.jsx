@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { addShiftExpenseApi } from '../api/shiftApi';
+import { addShiftExpenseApi, updateShiftExpenseApi } from '../api/shiftApi';
 import { getSettingsApi } from '../api/settingsApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { generateExpenseThermalHtml, printThermalContent } from '../utils/thermalPrinter';
@@ -26,12 +26,13 @@ const CATEGORIES = [
   { value: 'OTHER', label: 'Other Operational Expense' }
 ];
 
-const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
+const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift, expenseToEdit = null }) => {
   const { hasRole, hasPermission, getPermissionLimit } = useAuth();
   const isManager = hasRole(['SUPER_ADMIN', 'MANAGER']);
   const canRecordExpense = hasPermission('counter_till', 'can_record_expense');
   const matrixExpenseLimit = getPermissionLimit('counter_till', 'max_expense_limit', 500);
 
+  const isEditMode = Boolean(expenseToEdit);
   const [category, setCategory] = useState('CLEANING_SUPPLIES');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
@@ -44,15 +45,21 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
 
   useEffect(() => {
     if (isOpen) {
-      setCategory('CLEANING_SUPPLIES');
-      setAmount('');
-      setDescription('');
+      if (expenseToEdit) {
+        setCategory(expenseToEdit.category || 'CLEANING_SUPPLIES');
+        setAmount(expenseToEdit.amount !== undefined && expenseToEdit.amount !== null ? String(expenseToEdit.amount) : '');
+        setDescription(expenseToEdit.description || '');
+      } else {
+        setCategory('CLEANING_SUPPLIES');
+        setAmount('');
+        setDescription('');
+      }
       setReceiptFile(null);
       setManagerPin('');
       setError(null);
       getSettingsApi().then(setSettings).catch(console.error);
     }
-  }, [isOpen]);
+  }, [isOpen, expenseToEdit]);
 
   // Spending calculations
   const defaultSettingLimit = parseFloat(settings?.max_cash_expense_without_approval ?? 500);
@@ -62,8 +69,9 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
   );
   const dailyCap = parseFloat(settings?.daily_petty_cash_cap ?? 2000);
   const currentSpent = parseFloat(shift?.cash_expenses || 0);
+  const prevAmount = isEditMode ? parseFloat(expenseToEdit?.amount || 0) : 0;
   const val = parseFloat(amount || 0);
-  const newTotal = currentSpent + val;
+  const newTotal = currentSpent - prevAmount + val;
   const percentUsed = Math.min(100, Math.round((newTotal / (dailyCap || 1)) * 100));
 
   const isSingleOperator = settings?.shift_operation_mode === 'SINGLE_OPERATOR';
@@ -75,7 +83,7 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!canRecordExpense) {
+    if (!isEditMode && !canRecordExpense) {
       setError('Permission Denied: Your staff role is not authorized to record cash expenses.');
       return;
     }
@@ -108,10 +116,15 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
         formData.append('receipt', receiptFile);
       }
 
-      const res = await addShiftExpenseApi(shift.id, formData);
+      let res;
+      if (isEditMode) {
+        res = await updateShiftExpenseApi(shift.id, expenseToEdit.id, formData);
+      } else {
+        res = await addShiftExpenseApi(shift.id, formData);
+      }
       
       // Auto-print thermal voucher if option was enabled
-      if (autoPrintVoucher && res.data) {
+      if (autoPrintVoucher && res?.data) {
         try {
           const html = generateExpenseThermalHtml(res.data, shift, settings, '80mm');
           printThermalContent(html, `Voucher_EXP_${res.data.id}`);
@@ -121,12 +134,12 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
       }
 
       if (onSuccess) {
-        onSuccess(res.data);
+        onSuccess(res?.data);
       }
       onClose();
     } catch (err) {
-      console.error('Failed to add shift expense:', err);
-      const errMsg = err.response?.data?.message || 'Failed to record expense. Please check inputs.';
+      console.error('Failed to save shift expense:', err);
+      const errMsg = err.response?.data?.message || 'Failed to save expense. Please check inputs.';
       setError(errMsg);
     } finally {
       setLoading(false);
@@ -148,10 +161,10 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
               </div>
               <div>
                 <h5 className="modal-title fw-bold text-white mb-0" style={{ letterSpacing: '-0.02em' }}>
-                  Record Petty Cash Expense
+                  {isEditMode ? `Edit Petty Cash Expense #${expenseToEdit.id}` : 'Record Petty Cash Expense'}
                 </h5>
                 <span className="text-white-50 small" style={{ fontSize: '0.8rem' }}>
-                  Shift #{shift.shift_number} &bull; Reduces expected drawer cash
+                  {isEditMode ? `Updating expense for Shift #${shift.shift_number}` : `Shift #${shift.shift_number} • Reduces expected drawer cash`}
                 </span>
               </div>
             </div>
@@ -290,9 +303,16 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
 
               {/* Optional Receipt Attachment */}
               <div className="mb-3">
-                <label className="form-label fw-semibold text-secondary extra-small mb-1">
-                  Bill / Voucher Receipt Scan (Optional)
-                </label>
+                <div className="d-flex justify-content-between align-items-center mb-1">
+                  <label className="form-label fw-semibold text-secondary extra-small mb-0">
+                    Bill / Voucher Receipt Scan (Optional)
+                  </label>
+                  {isEditMode && expenseToEdit?.receipt && (
+                    <span className="badge bg-success-subtle text-success border border-success-subtle extra-small">
+                      Receipt Attached
+                    </span>
+                  )}
+                </div>
                 <input
                   type="file"
                   className="form-control form-control-sm rounded-3"
@@ -301,6 +321,11 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
                   onChange={(e) => setReceiptFile(e.target.files[0] || null)}
                   disabled={loading}
                 />
+                {isEditMode && expenseToEdit?.receipt && (
+                  <div className="text-muted extra-small mt-1" style={{ fontSize: '0.72rem' }}>
+                    Leave blank to keep existing receipt file.
+                  </div>
+                )}
               </div>
 
               {/* Auto Thermal Print Checkbox */}
@@ -336,17 +361,17 @@ const ShiftExpenseModal = ({ isOpen, onClose, onSuccess, shift }) => {
               </button>
               <button
                 type="submit"
-                className="btn btn-danger px-4 py-2 rounded-3 small fw-bold shadow-xs d-flex align-items-center gap-1.5"
+                className={`btn ${isEditMode ? 'btn-primary' : 'btn-danger'} px-4 py-2 rounded-3 small fw-bold shadow-xs d-flex align-items-center gap-1.5`}
                 disabled={loading}
               >
                 {loading ? (
                   <>
                     <span className="spinner-border spinner-border-sm" role="status"></span>
-                    Recording...
+                    {isEditMode ? 'Saving Changes...' : 'Recording...'}
                   </>
                 ) : (
                   <>
-                    <CheckCircle2 size={16} /> Record Cash Expense
+                    <CheckCircle2 size={16} /> {isEditMode ? 'Save & Update Expense' : 'Record Cash Expense'}
                   </>
                 )}
               </button>

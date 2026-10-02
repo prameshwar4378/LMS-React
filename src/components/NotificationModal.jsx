@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertTriangle, CheckCircle2, XCircle, Info, HelpCircle } from 'lucide-react';
+import WhatsAppButton from './WhatsAppButton';
 
 const NotificationModal = ({
   show,
@@ -9,10 +10,22 @@ const NotificationModal = ({
   confirmText = 'OK',
   cancelText = 'Cancel',
   confirmVariant,
+  whatsappAction = null,
+  autoDismiss = true,
   onConfirm,
   onCancel,
   onClose,
 }) => {
+  // Auto-dismiss success notification modals after 2 seconds (only if autoDismiss is true and no interactive whatsapp action)
+  React.useEffect(() => {
+    if (show && type === 'success' && autoDismiss && !whatsappAction) {
+      const timer = setTimeout(() => {
+        if (onClose) onClose();
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [show, type, autoDismiss, whatsappAction, onClose]);
+
   if (!show) return null;
 
   // Determine icon & styling based on status type
@@ -87,9 +100,27 @@ const NotificationModal = ({
           </h4>
 
           {/* Dynamic Message */}
-          <p className="text-secondary mb-4 px-2" style={{ fontSize: '0.95rem', lineHeight: '1.5', color: '#64748b' }}>
+          <p className="text-secondary mb-3 px-2" style={{ fontSize: '0.95rem', lineHeight: '1.5', color: '#64748b' }}>
             {message}
           </p>
+
+          {/* Optional WhatsApp Customer Action Button */}
+          {whatsappAction && (
+            <div className="mb-3 px-2">
+              <WhatsAppButton
+                eventType={whatsappAction.eventType}
+                customerMobile={whatsappAction.customerMobile}
+                customerName={whatsappAction.customerName}
+                data={whatsappAction.data}
+                bookingId={whatsappAction.bookingId}
+                customerId={whatsappAction.customerId}
+                customLabel={whatsappAction.customLabel}
+                size="md"
+                variant="solid"
+                className="w-100 py-2.5 rounded-3 shadow-sm"
+              />
+            </div>
+          )}
 
           {/* Action Buttons */}
           <div className="d-flex justify-content-center gap-2.5">

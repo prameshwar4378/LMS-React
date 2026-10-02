@@ -2,12 +2,15 @@ import React, { useEffect, useState } from 'react';
 import { getInvoiceByStayApi } from '../api/billingApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
-import { Printer, X, Receipt, CheckCircle, FileText } from 'lucide-react';
+import { Printer, X, Receipt, CheckCircle, FileText, Sliders, Eye, EyeOff } from 'lucide-react';
+import WhatsAppButton from './WhatsAppButton';
 
 const InvoicePreviewModal = ({ show, onClose, stayId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState('');
+  const [showPayments, setShowPayments] = useState(true);
+  const [itemizeExtraCharges, setItemizeExtraCharges] = useState(true);
 
   useEffect(() => {
     if (show && stayId) {
@@ -111,192 +114,364 @@ const InvoicePreviewModal = ({ show, onClose, stayId }) => {
               </div>
             ) : !data ? (
               <div className="alert alert-danger">Unable to load invoice data.</div>
-            ) : (
-              <div className="printable-invoice bg-white">
-                {/* 1. Lodge Branding & Invoice Header */}
-                <div className="invoice-header d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
-                  <div>
-                    <h3 className="fw-bold text-dark m-0" style={{ letterSpacing: '-0.5px' }}>
-                      {data.settings.lodge_name}
-                    </h3>
-                    <div className="text-secondary small">{data.settings.address}</div>
-                    <div className="text-secondary small">Phone: {data.settings.phone} | Email: {data.settings.email}</div>
-                    {data.settings.gst_number && (
-                      <div className="fw-bold text-dark small mt-1">GSTIN: {data.settings.gst_number}</div>
-                    )}
-                  </div>
-                  <div className="text-end">
-                    <div className="border border-dark rounded-3 px-3 py-2 bg-light shadow-xs">
-                      <div className="text-uppercase text-muted fw-bold" style={{ fontSize: '0.7rem', letterSpacing: '1px' }}>
-                        TAX INVOICE
-                      </div>
-                      <div className="fw-bold text-primary fs-5">{data.invoice.invoice_number}</div>
-                      <div className="small text-muted">
-                        Date: <strong>{formatDate(data.invoice.generated_at)}</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+            ) : (() => {
+              const extraChargesList = data.stay_details.extra_charges || [];
+              const totalExtraChargesAmount = extraChargesList.reduce(
+                (acc, item) => acc + parseFloat(item.amount || 0),
+                0
+              );
+              const paymentsList = data.stay_details.payments || [];
 
-                {/* 2. Guest & Stay Details Grid */}
-                <div className="row g-3 mb-3">
-                  <div className="col-6">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <div className="fw-bold text-dark border-bottom pb-1 mb-2 small text-uppercase" style={{ letterSpacing: '0.5px' }}>
-                        <i className="bi bi-person-fill me-1 text-primary"></i>Guest Information
-                      </div>
-                      <div className="fw-bold fs-6 text-dark">{data.stay_details.customer_name}</div>
-                      <div className="small text-muted">Mobile: {data.stay_details.customer_mobile}</div>
-                      <div className="small text-muted">Address: {data.stay_details.customer_address || 'N/A'}</div>
-                      <div className="small text-muted">
-                        ID: {data.stay_details.customer_id_type} {data.stay_details.customer_id_number ? `- ${data.stay_details.customer_id_number}` : ''}
-                      </div>
+              return (
+                <>
+                  {/* Print Customization Controls (On-Screen Only, not included in printed A4 output) */}
+                  <div className="no-print bg-light p-3 rounded-3 border mb-3 shadow-xs">
+                    <div className="d-flex align-items-center justify-content-between mb-2">
+                      <span className="fw-bold text-dark small d-flex align-items-center gap-1.5">
+                        <Sliders size={16} className="text-primary" /> Invoice Print &amp; Display Options
+                      </span>
+                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle extra-small" style={{ fontSize: '0.7rem' }}>
+                        Live Preview &amp; Print Customization
+                      </span>
                     </div>
-                  </div>
-                  <div className="col-6">
-                    <div className="p-3 bg-light rounded-3 border h-100">
-                      <div className="fw-bold text-dark border-bottom pb-1 mb-2 small text-uppercase" style={{ letterSpacing: '0.5px' }}>
-                        <i className="bi bi-door-open-fill me-1 text-primary"></i>Stay Details
-                      </div>
-                      <div className="d-flex justify-content-between small mb-1">
-                        <span className="text-muted">Stay Number:</span>
-                        <strong className="text-dark">{data.stay_details.stay_number}</strong>
-                      </div>
-                      <div className="d-flex justify-content-between small mb-1">
-                        <span className="text-muted">Assigned Room:</span>
-                        <strong className="text-primary">Room {data.stay_details.room_number} ({data.stay_details.room_type})</strong>
-                      </div>
-                      <div className="d-flex justify-content-between small mb-1">
-                        <span className="text-muted">Check-In:</span>
-                        <span>{formatDate(data.stay_details.check_in_date)} @ {data.stay_details.check_in_time}</span>
-                      </div>
-                      <div className="d-flex justify-content-between small mb-1">
-                        <span className="text-muted">Check-Out:</span>
-                        <span>{formatDate(data.stay_details.checkout_date)} @ {data.stay_details.checkout_time}</span>
-                      </div>
-                      <div className="d-flex justify-content-between small">
-                        <span className="text-muted">Stay Duration:</span>
-                        <strong className="text-dark">{data.bill.room_days} Night(s)</strong>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 3. Itemized Charges Table */}
-                <table className="table table-bordered align-middle mb-3 invoice-table">
-                  <thead className="table-secondary text-dark fw-bold">
-                    <tr>
-                      <th style={{ width: '40px' }} className="text-center">#</th>
-                      <th>Item Description / Service</th>
-                      <th className="text-center" style={{ width: '90px' }}>Qty / Days</th>
-                      <th className="text-end" style={{ width: '120px' }}>Rate (₹)</th>
-                      <th className="text-end" style={{ width: '130px' }}>Amount (₹)</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td className="text-center">1</td>
-                      <td>
-                        <strong className="text-dark">Room Rent - Room {data.stay_details.room_number}</strong>
-                        <div className="text-muted small">{data.stay_details.room_type} ({data.bill.room_days} Nights @ {formatCurrency(data.bill.room_rate)}/night)</div>
-                      </td>
-                      <td className="text-center fw-semibold">{data.bill.room_days}</td>
-                      <td className="text-end">{formatCurrency(data.bill.room_rate)}</td>
-                      <td className="text-end fw-bold text-dark">{formatCurrency(data.bill.room_amount)}</td>
-                    </tr>
-                    {data.stay_details.extra_charges.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="text-center">{idx + 2}</td>
-                        <td>{item.description}</td>
-                        <td className="text-center fw-semibold">{item.quantity}</td>
-                        <td className="text-end">{formatCurrency(item.price)}</td>
-                        <td className="text-end fw-bold text-dark">{formatCurrency(item.amount)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* 4. Financial Summary & Ledger */}
-                <div className="row justify-content-end mb-3">
-                  <div className="col-6">
-                    <div className="border rounded-3 p-3 bg-light">
-                      <div className="d-flex justify-content-between py-1 border-bottom small">
-                        <span className="text-muted">Subtotal:</span>
-                        <strong className="text-dark">{formatCurrency(data.bill.subtotal)}</strong>
-                      </div>
-                      {data.bill.discount_amount > 0 && (
-                        <div className="d-flex justify-content-between py-1 border-bottom small text-danger">
-                          <span>Discount {data.bill.discount_reason ? `(${data.bill.discount_reason})` : ''}:</span>
-                          <strong className="text-danger">-{formatCurrency(data.bill.discount_amount)}</strong>
+                    <div className="row g-2">
+                      {/* Toggle Payment Transactions */}
+                      <div className="col-sm-6">
+                        <div
+                          onClick={() => paymentsList.length > 0 && setShowPayments(!showPayments)}
+                          className={`p-2.5 rounded-3 border transition-all ${
+                            showPayments ? 'bg-white border-primary-subtle shadow-xs' : 'bg-white bg-opacity-75 border-secondary border-opacity-25'
+                          }`}
+                          style={{ cursor: paymentsList.length > 0 ? 'pointer' : 'default' }}
+                        >
+                          <div className="form-check form-switch m-0 d-flex align-items-center gap-2">
+                            <input
+                              type="checkbox"
+                              className="form-check-input mt-0 flex-shrink-0 cursor-pointer"
+                              role="switch"
+                              id="togglePayments"
+                              checked={showPayments}
+                              onChange={(e) => setShowPayments(e.target.checked)}
+                              disabled={paymentsList.length === 0}
+                            />
+                            <label className="form-check-label overflow-hidden cursor-pointer" htmlFor="togglePayments">
+                              <span className="fw-bold text-dark small d-block">
+                                {showPayments ? 'Show' : 'Hide'} Payment Transactions History
+                              </span>
+                              <span className="text-muted extra-small d-block text-truncate" style={{ fontSize: '0.725rem' }}>
+                                {paymentsList.length === 0
+                                  ? 'No payment transactions recorded'
+                                  : showPayments
+                                  ? `Showing ledger table (${paymentsList.length} transactions)`
+                                  : 'Hidden from invoice preview & printout'}
+                              </span>
+                            </label>
+                          </div>
                         </div>
-                      )}
-                      {data.bill.tax_amount > 0 && (
-                        <div className="d-flex justify-content-between py-1 border-bottom small">
-                          <span className="text-muted">GST Tax ({data.bill.tax_percentage}%):</span>
-                          <strong className="text-dark">{formatCurrency(data.bill.tax_amount)}</strong>
+                      </div>
+
+                      {/* Toggle Extra Charges Itemized vs Consolidated */}
+                      <div className="col-sm-6">
+                        <div
+                          onClick={() => extraChargesList.length > 0 && setItemizeExtraCharges(!itemizeExtraCharges)}
+                          className={`p-2.5 rounded-3 border transition-all ${
+                            itemizeExtraCharges ? 'bg-white border-primary-subtle shadow-xs' : 'bg-white bg-opacity-75 border-secondary border-opacity-25'
+                          }`}
+                          style={{ cursor: extraChargesList.length > 0 ? 'pointer' : 'default' }}
+                        >
+                          <div className="form-check form-switch m-0 d-flex align-items-center gap-2">
+                            <input
+                              type="checkbox"
+                              className="form-check-input mt-0 flex-shrink-0 cursor-pointer"
+                              role="switch"
+                              id="toggleExtraCharges"
+                              checked={itemizeExtraCharges}
+                              onChange={(e) => setItemizeExtraCharges(e.target.checked)}
+                              disabled={extraChargesList.length === 0}
+                            />
+                            <label className="form-check-label overflow-hidden cursor-pointer" htmlFor="toggleExtraCharges">
+                              <span className="fw-bold text-dark small d-block">
+                                {itemizeExtraCharges ? 'Itemize Extra Charges' : 'Consolidate Extra Charges'}
+                              </span>
+                              <span className="text-muted extra-small d-block text-truncate" style={{ fontSize: '0.725rem' }}>
+                                {extraChargesList.length === 0
+                                  ? 'No extra charges for this stay'
+                                  : itemizeExtraCharges
+                                  ? `Showing item names (${extraChargesList.length} items)`
+                                  : `Hidden item names — showing single total (${formatCurrency(totalExtraChargesAmount)})`}
+                              </span>
+                            </label>
+                          </div>
                         </div>
-                      )}
-                      <div className="d-flex justify-content-between py-2 border-bottom fw-bold fs-6">
-                        <span className="text-dark">Grand Total:</span>
-                        <strong className="text-primary">{formatCurrency(data.bill.grand_total)}</strong>
-                      </div>
-                      <div className="d-flex justify-content-between py-1 border-bottom small text-success">
-                        <span className="fw-semibold">Total Paid Amount:</span>
-                        <strong className="text-success">{formatCurrency(data.bill.total_paid)}</strong>
-                      </div>
-                      <div className="d-flex justify-content-between py-2 pt-2 fw-bold">
-                        <span className="text-dark">Balance Due:</span>
-                        <strong className={data.bill.balance > 0 ? 'text-danger fs-6' : 'text-success fs-6'}>
-                          {formatCurrency(data.bill.balance)}
-                        </strong>
                       </div>
                     </div>
                   </div>
-                </div>
 
-                {/* 5. Payment Ledger Transactions */}
-                {data.stay_details.payments.length > 0 && (
-                  <div className="mb-3">
-                    <div className="fw-bold text-dark small text-uppercase mb-2 border-bottom pb-1" style={{ letterSpacing: '0.5px' }}>
-                      <i className="bi bi-wallet2 me-1 text-success"></i>Payment Transactions History
+                  <div className="printable-invoice bg-white">
+                    {/* 1. Lodge Branding & Invoice Header */}
+                    <div className="invoice-header d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
+                      <div>
+                        <h3 className="fw-bold text-dark m-0" style={{ letterSpacing: '-0.5px' }}>
+                          {data.settings.lodge_name}
+                        </h3>
+                        <div className="text-secondary small">{data.settings.address}</div>
+                        <div className="text-secondary small">Phone: {data.settings.phone} | Email: {data.settings.email}</div>
+                        {data.settings.gst_number && (
+                          <div className="fw-bold text-dark small mt-1">GSTIN: {data.settings.gst_number}</div>
+                        )}
+                      </div>
+                      <div className="text-end">
+                        <div className="border border-dark rounded-3 px-3 py-2 bg-light shadow-xs">
+                          <div className="text-uppercase text-muted fw-bold" style={{ fontSize: '0.7rem', letterSpacing: '1px' }}>
+                            TAX INVOICE
+                          </div>
+                          <div className="fw-bold text-primary fs-5">{data.invoice.invoice_number}</div>
+                          <div className="small text-muted">
+                            Date: <strong>{formatDate(data.invoice.generated_at)}</strong>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <table className="table table-sm table-bordered align-middle small invoice-table mb-0">
-                      <thead className="table-light">
+
+                    {/* 2. Guest & Stay Details Grid */}
+                    <div className="row g-3 mb-3">
+                      <div className="col-6">
+                        <div className="p-3 bg-light rounded-3 border h-100">
+                          <div className="fw-bold text-dark border-bottom pb-1 mb-2 small text-uppercase" style={{ letterSpacing: '0.5px' }}>
+                            <i className="bi bi-person-fill me-1 text-primary"></i>Guest Information
+                          </div>
+                          <div className="fw-bold fs-6 text-dark">{data.stay_details.customer_name}</div>
+                          <div className="small text-muted">Mobile: {data.stay_details.customer_mobile}</div>
+                          <div className="small text-muted">Address: {data.stay_details.customer_address || 'N/A'}</div>
+                          <div className="small text-muted">
+                            ID: {data.stay_details.customer_id_type} {data.stay_details.customer_id_number ? `- ${data.stay_details.customer_id_number}` : ''}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="col-6">
+                        <div className="p-3 bg-light rounded-3 border h-100">
+                          <div className="fw-bold text-dark border-bottom pb-1 mb-2 small text-uppercase" style={{ letterSpacing: '0.5px' }}>
+                            <i className="bi bi-door-open-fill me-1 text-primary"></i>Stay Details
+                          </div>
+                          <div className="d-flex justify-content-between small mb-1">
+                            <span className="text-muted">Stay Number:</span>
+                            <strong className="text-dark">{data.stay_details.stay_number}</strong>
+                          </div>
+                          <div className="d-flex justify-content-between small mb-1">
+                            <span className="text-muted">Assigned Room:</span>
+                            <strong className="text-primary">Room {data.stay_details.room_number} ({data.stay_details.room_type})</strong>
+                          </div>
+                          <div className="d-flex justify-content-between small mb-1">
+                            <span className="text-muted">Check-In:</span>
+                            <span>{formatDate(data.stay_details.check_in_date)} @ {data.stay_details.check_in_time}</span>
+                          </div>
+                          <div className="d-flex justify-content-between small mb-1">
+                            <span className="text-muted">Check-Out:</span>
+                            <span>{formatDate(data.stay_details.checkout_date)} @ {data.stay_details.checkout_time}</span>
+                          </div>
+                          <div className="d-flex justify-content-between small">
+                            <span className="text-muted">Stay Duration:</span>
+                            <strong className="text-dark">{data.bill.room_days} Night(s)</strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 3. Charges Table */}
+                    <table className="table table-bordered align-middle mb-3 invoice-table">
+                      <thead className="table-secondary text-dark fw-bold">
                         <tr>
-                          <th>Payment #</th>
-                          <th>Date & Time</th>
-                          <th>Method</th>
-                          <th className="text-end">Amount Paid</th>
+                          <th style={{ width: '40px' }} className="text-center">#</th>
+                          <th>Item Description / Service</th>
+                          <th className="text-center" style={{ width: '90px' }}>Qty / Days</th>
+                          <th className="text-end" style={{ width: '120px' }}>Rate (₹)</th>
+                          <th className="text-end" style={{ width: '130px' }}>Amount (₹)</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {data.stay_details.payments.map((p, idx) => (
-                          <tr key={idx}>
-                            <td className="fw-bold">{p.payment_number}</td>
-                            <td>{p.date}</td>
-                            <td><span className="badge bg-light text-dark border">{p.method}</span></td>
-                            <td className="text-end fw-bold text-success">{formatCurrency(p.amount)}</td>
-                          </tr>
-                        ))}
+                        <tr>
+                          <td className="text-center">1</td>
+                          <td>
+                            <strong className="text-dark">Room Rent - Room {data.stay_details.room_number}</strong>
+                            <div className="text-muted small">{data.stay_details.room_type} ({data.bill.room_days} Nights @ {formatCurrency(data.bill.room_rate)}/night)</div>
+                          </td>
+                          <td className="text-center fw-semibold">{data.bill.room_days}</td>
+                          <td className="text-end">{formatCurrency(data.bill.room_rate)}</td>
+                          <td className="text-end fw-bold text-dark">{formatCurrency(data.bill.room_amount)}</td>
+                        </tr>
+                        {extraChargesList.length > 0 && (
+                          itemizeExtraCharges ? (
+                            extraChargesList.map((item, idx) => (
+                              <tr key={idx}>
+                                <td className="text-center">{idx + 2}</td>
+                                <td>{item.description}</td>
+                                <td className="text-center fw-semibold">{item.quantity}</td>
+                                <td className="text-end">{formatCurrency(item.price)}</td>
+                                <td className="text-end fw-bold text-dark">{formatCurrency(item.amount)}</td>
+                              </tr>
+                            ))
+                          ) : (
+                            <tr>
+                              <td className="text-center">2</td>
+                              <td>
+                                <strong className="text-dark">Extra Charges &amp; Services</strong>
+                                <div className="text-muted small">Total additional food, amenities &amp; services</div>
+                              </td>
+                              <td className="text-center fw-semibold">1</td>
+                              <td className="text-end">{formatCurrency(totalExtraChargesAmount)}</td>
+                              <td className="text-end fw-bold text-dark">{formatCurrency(totalExtraChargesAmount)}</td>
+                            </tr>
+                          )
+                        )}
                       </tbody>
                     </table>
-                  </div>
-                )}
 
-                {/* 6. Professional Footer */}
-                <div className="pt-3 border-top text-center text-muted small mt-3">
-                  <div className="fw-semibold text-dark">Thank you for staying with us! Have a safe and pleasant journey.</div>
-                  <div className="text-secondary" style={{ fontSize: '0.75rem' }}>This is a computer-generated official lodge invoice.</div>
-                </div>
-              </div>
-            )}
+                    {/* 4. Financial Summary & Ledger */}
+                    <div className="row justify-content-end mb-3">
+                      <div className="col-6">
+                        <div className="border rounded-3 p-3 bg-light">
+                          <div className="d-flex justify-content-between py-1 border-bottom small">
+                            <span className="text-muted">Subtotal:</span>
+                            <strong className="text-dark">{formatCurrency(data.bill.subtotal)}</strong>
+                          </div>
+                          {data.bill.discount_amount > 0 && (
+                            <div className="d-flex justify-content-between py-1 border-bottom small text-danger">
+                              <span>Discount {data.bill.discount_reason ? `(${data.bill.discount_reason})` : ''}:</span>
+                              <strong className="text-danger">-{formatCurrency(data.bill.discount_amount)}</strong>
+                            </div>
+                          )}
+                          {data.bill.tax_amount > 0 && (
+                            <div className="d-flex justify-content-between py-1 border-bottom small">
+                              <span className="text-muted">GST Tax ({data.bill.tax_percentage}%):</span>
+                              <strong className="text-dark">{formatCurrency(data.bill.tax_amount)}</strong>
+                            </div>
+                          )}
+                          <div className="d-flex justify-content-between py-2 border-bottom fw-bold fs-6">
+                            <span className="text-dark">Grand Total:</span>
+                            <strong className="text-primary">{formatCurrency(data.bill.grand_total)}</strong>
+                          </div>
+                          <div className="d-flex justify-content-between py-1 border-bottom small text-success">
+                            <span className="fw-semibold">Total Paid Amount:</span>
+                            <strong className="text-success">{formatCurrency(data.bill.total_paid)}</strong>
+                          </div>
+                          <div className="d-flex justify-content-between py-2 pt-2 fw-bold">
+                            <span className="text-dark">Balance Due:</span>
+                            <strong className={data.bill.balance > 0 ? 'text-danger fs-6' : 'text-success fs-6'}>
+                              {formatCurrency(data.bill.balance)}
+                            </strong>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 5. Payment Ledger Transactions */}
+                    {showPayments && paymentsList.length > 0 && (
+                      <div className="mb-3">
+                        <div className="fw-bold text-dark small text-uppercase mb-2 border-bottom pb-1" style={{ letterSpacing: '0.5px' }}>
+                          <i className="bi bi-wallet2 me-1 text-success"></i>Payment Transactions History
+                        </div>
+                        <table className="table table-sm table-bordered align-middle small invoice-table mb-0">
+                          <thead className="table-light">
+                            <tr>
+                              <th>Payment #</th>
+                              <th>Date & Time</th>
+                              <th>Method</th>
+                              <th className="text-end">Amount Paid</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paymentsList.map((p, idx) => (
+                              <tr key={idx}>
+                                <td className="fw-bold">{p.payment_number}</td>
+                                <td>{p.date}</td>
+                                <td><span className="badge bg-light text-dark border">{p.method}</span></td>
+                                <td className="text-end fw-bold text-success">{formatCurrency(p.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* 6. Professional Footer */}
+                    <div className="pt-3 border-top text-center text-muted small mt-3">
+                      <div className="fw-semibold text-dark">Thank you for staying with us! Have a safe and pleasant journey.</div>
+                      <div className="text-secondary" style={{ fontSize: '0.75rem' }}>This is a computer-generated official lodge invoice.</div>
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
           </div>
 
           <div className="modal-footer bg-light no-print justify-content-between border-top">
             <button className="btn btn-light border fw-semibold" onClick={onClose}>Close</button>
-            <button className="btn btn-primary fw-bold px-4 shadow-sm d-flex align-items-center gap-2" onClick={handlePrint} disabled={!data}>
-              <Printer size={18} /> Print Invoice (A4 Page)
-            </button>
+            <div className="d-flex align-items-center gap-2">
+              {data && (
+                <WhatsAppButton
+                  eventType="CHECK_OUT"
+                  customerMobile={
+                    data?.stay_details?.customer_mobile ||
+                    data?.customer?.mobile ||
+                    data?.stay?.primary_customer_detail?.mobile ||
+                    data?.stay?.customer_detail?.mobile ||
+                    data?.guest?.phone
+                  }
+                  customerName={
+                    data?.stay_details?.customer_name ||
+                    data?.customer?.full_name ||
+                    data?.stay?.primary_customer_detail?.full_name ||
+                    data?.stay?.customer_detail?.full_name ||
+                    data?.guest?.name
+                  }
+                  bookingId={data?.stay?.booking_id || data?.stay?.booking?.id || data?.invoice?.stay}
+                  customerId={data?.stay?.primary_customer_detail?.id || data?.customer?.id || data?.stay?.customer_detail?.id}
+                  data={{
+                    guest_name:
+                      data?.stay_details?.customer_name ||
+                      data?.customer?.full_name ||
+                      data?.stay?.primary_customer_detail?.full_name ||
+                      data?.guest?.name ||
+                      'Guest',
+                    booking_number:
+                      data?.stay_details?.stay_number ||
+                      data?.stay?.booking_number ||
+                      data?.stay?.stay_number ||
+                      data?.invoice?.invoice_number ||
+                      '',
+                    room_number:
+                      data?.stay_details?.room_number ||
+                      data?.stay?.room_number ||
+                      data?.room?.room_number ||
+                      data?.invoice?.room_number ||
+                      '',
+                    check_in_date: data?.stay_details?.check_in_date ? formatDate(data.stay_details.check_in_date) : (data?.stay?.check_in_date || ''),
+                    check_out_date: data?.stay_details?.checkout_date ? formatDate(data.stay_details.checkout_date) : (data?.stay?.actual_checkout_date || data?.stay?.expected_checkout_date || ''),
+                    total_nights:
+                      data?.bill?.chargeable_nights ||
+                      data?.bill?.calendar_nights ||
+                      data?.stay?.chargeable_nights ||
+                      data?.stay?.total_nights ||
+                      1,
+                    room_charges: data?.invoice?.room_charges || data?.bill?.room_charges || 0,
+                    extra_charges: data?.invoice?.extra_charges || data?.bill?.total_extra_charges || 0,
+                    discount: data?.invoice?.discount || data?.bill?.discount_amount || 0,
+                    tax: data?.invoice?.tax_amount || data?.bill?.gst_amount || 0,
+                    grand_total: data?.invoice?.total_amount || data?.bill?.grand_total || 0,
+                    total_paid: data?.invoice?.total_paid || data?.bill?.total_paid || 0,
+                    balance_amount: data?.invoice?.balance_amount || data?.bill?.balance || 0,
+                    payment_status: parseFloat(data?.invoice?.balance_amount || data?.bill?.balance || 0) <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                  }}
+                  customLabel="Send Thank You on WhatsApp"
+                  size="md"
+                  variant="solid"
+                  className="px-3"
+                />
+              )}
+              <button className="btn btn-primary fw-bold px-4 shadow-sm d-flex align-items-center gap-2" onClick={handlePrint} disabled={!data}>
+                <Printer size={18} /> Print Invoice (A4 Page)
+              </button>
+            </div>
           </div>
         </div>
       </div>

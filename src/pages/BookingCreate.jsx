@@ -37,6 +37,7 @@ import {
   Percent
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import ShiftRequiredGate from '../components/ShiftRequiredGate';
 
 const BookingCreate = () => {
   const navigate = useNavigate();
@@ -442,6 +443,7 @@ const BookingCreate = () => {
         }
       }
 
+      let firstCreatedBooking = null;
       for (let i = 0; i < selectedRoomIds.length; i++) {
         const rId = selectedRoomIds[i];
         const roomObj = availableRooms.find((rm) => rm.id === rId);
@@ -459,7 +461,7 @@ const BookingCreate = () => {
           }
         }
 
-        await createBookingApi({
+        const bRes = await createBookingApi({
           customer: customerIdToUse,
           room: rId,
           check_in_date: checkInDate,
@@ -477,6 +479,10 @@ const BookingCreate = () => {
           notes: groupNote,
           status: 'CONFIRMED'
         });
+
+        if (!firstCreatedBooking) {
+          firstCreatedBooking = bRes;
+        }
       }
 
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
@@ -486,7 +492,39 @@ const BookingCreate = () => {
       queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
       queryClient.invalidateQueries({ queryKey: ['current-shift'] });
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
-      showSuccess('Advance reservation created successfully!', 'Reservation Created');
+
+      const customerMobile = isNewCustomer ? custMobile : (selectedCustObj?.mobile || '');
+      const customerName = isNewCustomer ? `${custFirstName} ${custLastName}`.trim() : (selectedCustObj?.full_name || 'Guest');
+      const roomNumbers = selectedRoomsObjs.map((r) => r.room_number).filter(Boolean).join(', ');
+
+      showSuccess(
+        'Advance reservation created successfully!',
+        'Reservation Created',
+        {
+          whatsappAction: {
+            eventType: 'BOOKING',
+            customerMobile: customerMobile,
+            customerName: customerName,
+            bookingId: firstCreatedBooking?.id || firstCreatedBooking?.data?.id,
+            customerId: customerIdToUse,
+            data: {
+              guest_name: customerName,
+              booking_number: firstCreatedBooking?.booking_number || firstCreatedBooking?.data?.booking_number || 'Confirmed',
+              room_number: roomNumbers || 'To be Assigned',
+              check_in_date: formatDate(checkInDate),
+              check_in_time: finalCheckInTime || '12:00 PM',
+              check_out_date: formatDate(checkoutDate),
+              check_out_time: checkoutTime || '11:00 AM',
+              guest_count: parseInt(adults || 1) + parseInt(children || 0),
+              number_of_nights: nights,
+              booking_amount: grandTotalEstimate || 0,
+              advance_paid: numericAdvance || 0,
+              balance_amount: remainingBalance || 0,
+            },
+            customLabel: 'Send Booking Confirmation on WhatsApp',
+          },
+        }
+      );
       navigate('/bookings');
     } catch (err) {
       console.error(err);
@@ -502,7 +540,8 @@ const BookingCreate = () => {
   const isStep2Valid = isNewCustomer ? (!!custFirstName && !!custMobile) : !!selectedCustomerId;
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto' }} className="pb-5">
+    <ShiftRequiredGate actionName="create reservations or accept advance deposits">
+      <div style={{ maxWidth: '1400px', margin: '0 auto' }} className="pb-5">
       {/* Header Banner */}
       <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3 mb-4 pb-2 border-bottom">
         <div>
@@ -586,7 +625,7 @@ const BookingCreate = () => {
               <div className="saas-card p-4 border-0 bg-white shadow-sm mb-4 step-animated-card" key="step-1">
                 <div className="d-flex justify-content-between align-items-center mb-3">
                   <div>
-                    <h5 className="fw-bold text-dark m-0 d-flex align-items-center gap-2">
+                    <h5 data-spotlight-id="booking-create" className="fw-bold text-dark m-0 d-flex align-items-center gap-2">
                       <DoorOpen size={20} className="text-primary" /> Step 1 — Select Stay Dates & Rooms
                     </h5>
                     <span className="text-muted small">Choose stay period and select single or multiple rooms</span>
@@ -1447,7 +1486,8 @@ const BookingCreate = () => {
           </div>
         </div>
       </form>
-    </div>
+      </div>
+    </ShiftRequiredGate>
   );
 };
 

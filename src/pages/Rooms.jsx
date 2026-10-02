@@ -12,6 +12,7 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { exportRoomsToExcel, exportRoomsToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import { Trash2, ShieldAlert, Bell } from 'lucide-react';
 
 const Rooms = () => {
@@ -291,7 +292,7 @@ const Rooms = () => {
     { key: 'actions', label: 'Action' },
   ];
 
-  const [columnVisibility, setColumnVisibility] = useState({
+  const DEFAULT_ROOMS_COLUMNS = {
     room_number: true,
     room_type: true,
     floor: true,
@@ -299,7 +300,15 @@ const Rooms = () => {
     capacity: true,
     status: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+  } = usePersistentColumns('lms_rooms_column_visibility', DEFAULT_ROOMS_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -312,22 +321,6 @@ const Rooms = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const resetColumnVisibility = () => {
-    setColumnVisibility({
-      room_number: true,
-      room_type: true,
-      floor: true,
-      base_price: true,
-      capacity: true,
-      status: true,
-      actions: true,
-    });
-  };
 
   // -------------------------------------------------------------
   // Sorting State & Logic
@@ -456,7 +449,7 @@ const Rooms = () => {
       {/* Header */}
       <div className="d-flex justify-content-between align-items-center mb-3">
         <div>
-          <h4 className="fw-bold m-0 text-dark">Room Management</h4>
+          <h4 data-spotlight-id="rooms" className="fw-bold m-0 text-dark">Room Management</h4>
           <span className="text-muted small">Manage room inventory, floor layout, status, and subscription quota</span>
         </div>
         <div className="d-flex gap-2">
@@ -662,6 +655,31 @@ const Rooms = () => {
                     </div>
                   </div>
 
+                  {/* Reserved Booking Alert Pill */}
+                  {room.status === 'RESERVED' && (
+                    <div
+                      className="p-2 rounded mb-2 extra-small"
+                      style={{
+                        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                        border: '1px solid rgba(99, 102, 241, 0.25)',
+                        color: '#4338ca'
+                      }}
+                    >
+                      <div className="fw-bold d-flex align-items-center gap-1.5 text-truncate">
+                        <i className="bi bi-bookmark-check-fill" style={{ color: '#6366f1' }}></i>
+                        <span className="text-truncate">
+                          Reserved: {room.today_reservation?.customer_name || "Today's Booking"}
+                        </span>
+                      </div>
+                      <div className="d-flex justify-content-between text-muted mt-1" style={{ fontSize: '0.72rem' }}>
+                        <span>#{room.today_reservation?.booking_number || 'Reserved'}</span>
+                        <span>
+                          Arrival: <strong>{room.today_reservation?.check_in_time || 'Scheduled'}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Status Dropdown */}
                   <div className="d-flex justify-content-between align-items-center mt-3 pt-2 border-top">
                     <div className="d-flex align-items-center gap-2">
@@ -844,7 +862,21 @@ const Rooms = () => {
                           <td className="small text-muted">{room.max_adults} Adults, {room.max_children} Children</td>
                         )}
                         {columnVisibility.status && (
-                          <td><StatusBadge status={room.status} /></td>
+                          <td>
+                            <div className="d-flex flex-column align-items-start gap-1">
+                              <StatusBadge status={room.status} />
+                              {room.status === 'RESERVED' && room.today_reservation && (
+                                <span
+                                  className="extra-small text-muted text-nowrap"
+                                  style={{ fontSize: '0.72rem' }}
+                                  title={`Booking #${room.today_reservation.booking_number} (${room.today_reservation.customer_name})`}
+                                >
+                                  <i className="bi bi-clock me-1 text-primary"></i>
+                                  {room.today_reservation.customer_name} ({room.today_reservation.check_in_time})
+                                </span>
+                              )}
+                            </div>
+                          </td>
                         )}
                         {columnVisibility.actions && (
                           <td className="text-end pe-3">

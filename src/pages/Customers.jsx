@@ -10,6 +10,7 @@ import { getMediaUrl } from '../utils/mediaUtils';
 import { useNotification } from '../context/NotificationContext';
 import { compressImage } from '../utils/imageCompressor';
 import { exportCustomersToExcel, exportCustomersToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 
 const Customers = () => {
   const { user, selectedProperty } = useAuth();
@@ -18,6 +19,12 @@ const Customers = () => {
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
 
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL' | 'IN_HOUSE' | 'CREDIT' | 'DUES' | 'CHECKED_OUT'
+  const [idTypeFilter, setIdTypeFilter] = useState('');
+  const [genderFilter, setGenderFilter] = useState('');
+  const [cityFilter, setCityFilter] = useState('');
+  const [hasDocFilter, setHasDocFilter] = useState(''); // '' | 'true' | 'false'
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const { data: customers = [], isLoading: loading, refetch: loadCustomers } = useQuery({
     queryKey: ['customers', search],
@@ -45,7 +52,9 @@ const Customers = () => {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [docFile, setDocFile] = useState(null);
+  const [docPreview, setDocPreview] = useState('');
   const [docBackFile, setDocBackFile] = useState(null);
+  const [docBackPreview, setDocBackPreview] = useState('');
   const [showCamera, setShowCamera] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -74,7 +83,7 @@ const Customers = () => {
     { key: 'actions', label: 'Actions' },
   ];
 
-  const [columnVisibility, setColumnVisibility] = useState({
+  const DEFAULT_CUSTOMERS_COLUMNS = {
     photo: true,
     full_name: true,
     mobile: true,
@@ -82,7 +91,16 @@ const Customers = () => {
     id_proof: true,
     stay_history: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+    visibleColumnCount
+  } = usePersistentColumns('lms_customers_column_visibility', DEFAULT_CUSTOMERS_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -96,27 +114,6 @@ const Customers = () => {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
-  const resetColumnVisibility = () => {
-    setColumnVisibility({
-      photo: true,
-      full_name: true,
-      mobile: true,
-      city_address: true,
-      id_proof: true,
-      stay_history: true,
-      actions: true,
-    });
-  };
-
-  const visibleColumnCount = Object.values(columnVisibility).filter(Boolean).length || 1;
 
   // -------------------------------------------------------------
   // Column-wise Sorting State & Logic
@@ -134,9 +131,110 @@ const Customers = () => {
     setCurrentPage(1);
   };
 
-  const sortedCustomers = useMemo(() => {
+  const counts = useMemo(() => {
+    if (!customers || !Array.isArray(customers)) {
+      return { all: 0, inHouse: 0, credit: 0, dues: 0, checkedOut: 0 };
+    }
+    let inHouse = 0;
+    let credit = 0;
+    let dues = 0;
+    let checkedOut = 0;
+    for (const c of customers) {
+      if (c.is_checked_in) inHouse++;
+      if (c.has_checked_out || (!c.is_checked_in && (c.stay_count > 0))) checkedOut++;
+      const wallet = parseFloat(c.total_wallet_credit || c.advance_credit || c.wallet_balance || 0);
+      if (wallet > 0.01) credit++;
+      const pendingDue = parseFloat(c.pending_dues || c.overall_pending_balance || 0);
+      if (pendingDue > 0.01) dues++;
+    }
+    return {
+      all: customers.length,
+      inHouse,
+      credit,
+      dues,
+      checkedOut,
+    };
+  }, [customers]);
+
+  const availableCities = useMemo(() => {
+    if (!customers || !Array.isArray(customers)) return [];
+    const set = new Set();
+    customers.forEach((c) => {
+      if (c.city && c.city.trim()) {
+        set.add(c.city.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [customers]);
+
+  const activeFiltersCount = useMemo(() => {
+    let count = 0;
+    if (statusFilter !== 'ALL') count++;
+    if (idTypeFilter) count++;
+    if (genderFilter) count++;
+    if (cityFilter) count++;
+    if (hasDocFilter) count++;
+    return count;
+  }, [statusFilter, idTypeFilter, genderFilter, cityFilter, hasDocFilter]);
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setStatusFilter('ALL');
+    setIdTypeFilter('');
+    setGenderFilter('');
+    setCityFilter('');
+    setHasDocFilter('');
+    setCurrentPage(1);
+  };
+
+  const filteredCustomers = useMemo(() => {
     if (!customers || !customers.length) return [];
-    const list = [...customers];
+    return customers.filter((c) => {
+      // 1. Status Filter
+      if (statusFilter === 'IN_HOUSE') {
+        if (!c.is_checked_in) return false;
+      } else if (statusFilter === 'CREDIT') {
+        const wallet = parseFloat(c.total_wallet_credit || c.advance_credit || c.wallet_balance || 0);
+        if (wallet <= 0.01) return false;
+      } else if (statusFilter === 'DUES') {
+        const due = parseFloat(c.pending_dues || c.overall_pending_balance || 0);
+        if (due <= 0.01) return false;
+      } else if (statusFilter === 'CHECKED_OUT') {
+        const isCheckedOut = Boolean(c.has_checked_out || (!c.is_checked_in && (c.stay_count > 0)));
+        if (!isCheckedOut) return false;
+      }
+
+      // 2. ID Type Filter
+      if (idTypeFilter && c.id_type?.toLowerCase() !== idTypeFilter.toLowerCase()) {
+        return false;
+      }
+
+      // 3. Gender Filter
+      if (genderFilter && c.gender?.toLowerCase() !== genderFilter.toLowerCase()) {
+        return false;
+      }
+
+      // 4. City Filter
+      if (cityFilter && !(c.city?.toLowerCase().includes(cityFilter.toLowerCase()))) {
+        return false;
+      }
+
+      // 5. Document Filter
+      if (hasDocFilter === 'true') {
+        const hasDoc = Boolean(c.id_document || c.id_document_back || (c.documents && c.documents.length > 0));
+        if (!hasDoc) return false;
+      } else if (hasDocFilter === 'false') {
+        const hasDoc = Boolean(c.id_document || c.id_document_back || (c.documents && c.documents.length > 0));
+        if (hasDoc) return false;
+      }
+
+      return true;
+    });
+  }, [customers, statusFilter, idTypeFilter, genderFilter, cityFilter, hasDocFilter]);
+
+  const sortedCustomers = useMemo(() => {
+    if (!filteredCustomers || !filteredCustomers.length) return [];
+    const list = [...filteredCustomers];
 
     return list.sort((a, b) => {
       let valA, valB;
@@ -175,7 +273,7 @@ const Customers = () => {
       valB = String(valB);
       return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
     });
-  }, [customers, sortColumn, sortDirection]);
+  }, [filteredCustomers, sortColumn, sortDirection]);
 
   // -------------------------------------------------------------
   // Pagination State & Calculations
@@ -185,7 +283,7 @@ const Customers = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search]);
+  }, [search, statusFilter, idTypeFilter, genderFilter, cityFilter, hasDocFilter]);
 
   const totalItems = sortedCustomers.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -442,7 +540,9 @@ const Customers = () => {
     setPhotoFile(null);
     setPhotoPreview('');
     setDocFile(null);
+    setDocPreview('');
     setDocBackFile(null);
+    setDocBackPreview('');
     setEditingCustomer(null);
     setFormError('');
   };
@@ -469,7 +569,9 @@ const Customers = () => {
     setPhotoFile(null);
     setPhotoPreview(c.photo || '');
     setDocFile(null);
+    setDocPreview(c.id_document || '');
     setDocBackFile(null);
+    setDocBackPreview(c.id_document_back || '');
     setShowModal(true);
   };
 
@@ -484,32 +586,40 @@ const Customers = () => {
 
     setSubmitting(true);
     const formData = new FormData();
-    formData.append('first_name', firstName);
-    if (middleName) formData.append('middle_name', middleName);
-    if (lastName) formData.append('last_name', lastName);
-    formData.append('mobile', mobile);
-    if (altMobile) formData.append('alternate_mobile', altMobile);
-    if (email) formData.append('email', email);
-    formData.append('gender', gender);
-    if (address) formData.append('address', address);
-    if (city) formData.append('city', city);
-    if (state) formData.append('state', state);
-    formData.append('id_type', idType);
-    if (idNumber) formData.append('id_number', idNumber);
+    formData.append('first_name', (firstName || '').trim());
+    formData.append('middle_name', (middleName || '').trim());
+    formData.append('last_name', (lastName || '').trim());
+    formData.append('mobile', (mobile || '').trim());
+    formData.append('alternate_mobile', (altMobile || '').trim());
+    formData.append('email', (email || '').trim());
+    formData.append('gender', gender || 'Male');
+    formData.append('address', (address || '').trim());
+    formData.append('city', (city || '').trim());
+    formData.append('state', (state || '').trim());
+    formData.append('id_type', idType || 'Aadhaar');
+    formData.append('id_number', (idNumber || '').trim());
 
     try {
       // Compress images before sending to make upload 10x-20x faster
       if (photoFile) {
         const compressedPhoto = await compressImage(photoFile);
         formData.append('photo', compressedPhoto);
+      } else if (editingCustomer && !photoPreview && editingCustomer.photo) {
+        formData.append('clear_photo', 'true');
       }
+
       if (docFile) {
         const compressedDoc = await compressImage(docFile);
         formData.append('id_document', compressedDoc);
+      } else if (editingCustomer && !docPreview && editingCustomer.id_document) {
+        formData.append('clear_id_document', 'true');
       }
+
       if (docBackFile) {
         const compressedDocBack = await compressImage(docBackFile);
         formData.append('id_document_back', compressedDocBack);
+      } else if (editingCustomer && !docBackPreview && editingCustomer.id_document_back) {
+        formData.append('clear_id_document_back', 'true');
       }
 
       let savedCustomer;
@@ -527,14 +637,33 @@ const Customers = () => {
       queryClient.setQueriesData({ queryKey: ['customers'] }, (old) => {
         if (!Array.isArray(old)) return [savedCustomer];
         if (editingCustomer) {
-          return old.map((c) => (c.id === savedCustomer.id ? savedCustomer : c));
+          return old.map((c) => (c.id === savedCustomer.id ? { ...c, ...savedCustomer } : c));
         }
         return [savedCustomer, ...old];
       });
+      await loadCustomers();
       queryClient.invalidateQueries({ queryKey: ['customers'] });
     } catch (err) {
       console.error(err);
-      const msg = err.response?.data?.first_name?.[0] || err.response?.data?.mobile?.[0] || err.response?.data?.error || err.response?.data?.detail || 'Error saving customer profile.';
+      let msg = 'Error saving customer profile.';
+      if (err.response?.data) {
+        const data = err.response.data;
+        if (typeof data === 'string') {
+          msg = data;
+        } else if (data.detail) {
+          msg = data.detail;
+        } else if (data.error) {
+          msg = data.error;
+        } else if (data.message) {
+          msg = data.message;
+        } else {
+          const firstKey = Object.keys(data)[0];
+          if (firstKey) {
+            const val = data[firstKey];
+            msg = Array.isArray(val) ? `${firstKey}: ${val[0]}` : `${firstKey}: ${val}`;
+          }
+        }
+      }
       setFormError(msg);
     } finally {
       setSubmitting(false);
@@ -576,7 +705,7 @@ const Customers = () => {
       {/* Header Banner */}
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
-          <h3 className="fw-bold text-dark m-0">
+          <h3 data-spotlight-id="customers" className="fw-bold text-dark m-0">
             <i className="bi bi-people-fill text-primary me-2"></i>Customer Directory
           </h3>
           <span className="text-muted small">Manage guest directory, full profile edits, photos, and statutory ID proof documents</span>
@@ -586,26 +715,295 @@ const Customers = () => {
         </button>
       </div>
 
-      {/* Search Bar */}
+      {/* Search & Multi-Filter Bar */}
       <div className="card border-0 shadow-sm rounded-3 mb-4">
         <div className="card-body p-3">
-          <div className="input-group">
-            <span className="input-group-text bg-white border-end-0">
-              <i className="bi bi-search text-muted"></i>
-            </span>
-            <input
-              type="text"
-              className="form-control border-start-0"
-              placeholder="Search customer by name, mobile #, email, or ID proof number..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button className="btn btn-outline-secondary" onClick={() => setSearch('')}>
-                Clear
-              </button>
-            )}
+          {/* Quick Filter Capsules / Status Tabs */}
+          <div className="d-flex flex-wrap gap-2 mb-3 align-items-center">
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill fw-semibold px-3 py-1.5 transition-all ${
+                statusFilter === 'ALL'
+                  ? 'btn-dark shadow-sm'
+                  : 'btn-outline-secondary'
+              }`}
+              onClick={() => setStatusFilter('ALL')}
+            >
+              <i className="bi bi-people-fill me-1.5"></i>
+              All Guests
+              <span className={`badge ms-2 rounded-pill ${statusFilter === 'ALL' ? 'bg-white text-dark' : 'bg-secondary bg-opacity-25 text-secondary'}`}>
+                {counts.all}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill fw-semibold px-3 py-1.5 transition-all ${
+                statusFilter === 'IN_HOUSE'
+                  ? 'btn-success shadow-sm text-white'
+                  : 'btn-outline-success'
+              }`}
+              onClick={() => setStatusFilter('IN_HOUSE')}
+            >
+              <i className="bi bi-door-open-fill me-1.5"></i>
+              In-House
+              <span className={`badge ms-2 rounded-pill ${statusFilter === 'IN_HOUSE' ? 'bg-white text-success' : 'bg-success bg-opacity-25 text-success'}`}>
+                {counts.inHouse}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill fw-semibold px-3 py-1.5 transition-all ${
+                statusFilter === 'CREDIT'
+                  ? 'btn-primary shadow-sm text-white'
+                  : 'btn-outline-primary'
+              }`}
+              onClick={() => setStatusFilter('CREDIT')}
+            >
+              <i className="bi bi-wallet2 me-1.5"></i>
+              Wallet Credit
+              <span className={`badge ms-2 rounded-pill ${statusFilter === 'CREDIT' ? 'bg-white text-primary' : 'bg-primary bg-opacity-25 text-primary'}`}>
+                {counts.credit}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill fw-semibold px-3 py-1.5 transition-all ${
+                statusFilter === 'DUES'
+                  ? 'btn-danger shadow-sm text-white'
+                  : 'btn-outline-danger'
+              }`}
+              onClick={() => setStatusFilter('DUES')}
+            >
+              <i className="bi bi-exclamation-triangle-fill me-1.5"></i>
+              Pending Dues
+              <span className={`badge ms-2 rounded-pill ${statusFilter === 'DUES' ? 'bg-white text-danger' : 'bg-danger bg-opacity-25 text-danger'}`}>
+                {counts.dues}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              className={`btn btn-sm rounded-pill fw-semibold px-3 py-1.5 transition-all ${
+                statusFilter === 'CHECKED_OUT'
+                  ? 'btn-secondary shadow-sm text-white'
+                  : 'btn-outline-secondary'
+              }`}
+              onClick={() => setStatusFilter('CHECKED_OUT')}
+            >
+              <i className="bi bi-box-arrow-right me-1.5"></i>
+              Checked Out
+              <span className={`badge ms-2 rounded-pill ${statusFilter === 'CHECKED_OUT' ? 'bg-white text-secondary' : 'bg-secondary bg-opacity-25 text-secondary'}`}>
+                {counts.checkedOut}
+              </span>
+            </button>
           </div>
+
+          {/* Search Row & Filter Selects */}
+          <div className="row g-2 align-items-center">
+            <div className="col-12 col-md-5 col-lg-5">
+              <div className="input-group">
+                <span className="input-group-text bg-white border-end-0">
+                  <i className="bi bi-search text-muted"></i>
+                </span>
+                <input
+                  type="text"
+                  className="form-control border-start-0 ps-0"
+                  placeholder="Search customer by name, mobile, email, ID proof, room..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                {search && (
+                  <button className="btn btn-outline-secondary border-start-0" type="button" onClick={() => setSearch('')}>
+                    <i className="bi bi-x-lg"></i>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="col-6 col-md-3 col-lg-2">
+              <select
+                className="form-select text-secondary fw-medium"
+                value={idTypeFilter}
+                onChange={(e) => setIdTypeFilter(e.target.value)}
+              >
+                <option value="">All ID Proofs</option>
+                <option value="Aadhaar">Aadhaar</option>
+                <option value="Passport">Passport</option>
+                <option value="Driving License">Driving License</option>
+                <option value="Voter ID">Voter ID</option>
+                <option value="PAN Card">PAN Card</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="col-6 col-md-2 col-lg-2">
+              <select
+                className="form-select text-secondary fw-medium"
+                value={genderFilter}
+                onChange={(e) => setGenderFilter(e.target.value)}
+              >
+                <option value="">All Genders</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div className="col-12 col-md-2 col-lg-3 d-flex gap-2">
+              <button
+                type="button"
+                className={`btn w-100 d-flex align-items-center justify-content-center gap-1.5 fw-semibold ${
+                  showAdvancedFilters || hasDocFilter || cityFilter
+                    ? 'btn-light border-primary text-primary'
+                    : 'btn-outline-secondary'
+                }`}
+                onClick={() => setShowAdvancedFilters(!showAdvancedFilters)}
+                title="More filters"
+              >
+                <i className="bi bi-sliders"></i>
+                <span>Filters</span>
+                {(cityFilter || hasDocFilter) && (
+                  <span className="badge rounded-pill bg-primary text-white extra-small px-1.5 py-0.5">
+                    {[Boolean(cityFilter), Boolean(hasDocFilter)].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
+
+              {(search || activeFiltersCount > 0) && (
+                <button
+                  type="button"
+                  className="btn btn-outline-danger d-flex align-items-center justify-content-center px-3"
+                  onClick={handleResetFilters}
+                  title="Clear all filters & search"
+                >
+                  <i className="bi bi-arrow-counterclockwise me-1"></i>
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Secondary collapsible filter row */}
+          {showAdvancedFilters && (
+            <div className="row g-2 mt-2 pt-2 border-top">
+              <div className="col-12 col-md-4">
+                <label className="form-label extra-small text-uppercase text-muted fw-bold mb-1">
+                  City / Location
+                </label>
+                <div className="input-group input-group-sm">
+                  <span className="input-group-text bg-white"><i className="bi bi-geo-alt text-muted"></i></span>
+                  <input
+                    type="text"
+                    className="form-control"
+                    placeholder="Filter by city name..."
+                    value={cityFilter}
+                    onChange={(e) => setCityFilter(e.target.value)}
+                    list="customer-city-datalist"
+                  />
+                  <datalist id="customer-city-datalist">
+                    {availableCities.map((ct) => (
+                      <option key={ct} value={ct} />
+                    ))}
+                  </datalist>
+                  {cityFilter && (
+                    <button className="btn btn-outline-secondary" type="button" onClick={() => setCityFilter('')}>
+                      <i className="bi bi-x"></i>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="col-12 col-md-4">
+                <label className="form-label extra-small text-uppercase text-muted fw-bold mb-1">
+                  ID Document Attached
+                </label>
+                <select
+                  className="form-select form-select-sm"
+                  value={hasDocFilter}
+                  onChange={(e) => setHasDocFilter(e.target.value)}
+                >
+                  <option value="">Any (With or Without Docs)</option>
+                  <option value="true">Document Attached Only</option>
+                  <option value="false">Missing Document Only</option>
+                </select>
+              </div>
+
+              <div className="col-12 col-md-4 d-flex align-items-end">
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline-secondary w-100"
+                  onClick={() => {
+                    setCityFilter('');
+                    setHasDocFilter('');
+                  }}
+                >
+                  Clear Advanced
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Active Filter Chips / Pills (if any) */}
+          {(activeFiltersCount > 0 || search) && (
+            <div className="d-flex flex-wrap align-items-center gap-1.5 mt-3 pt-2 border-top">
+              <span className="extra-small text-muted fw-semibold me-1">Active Filters:</span>
+
+              {search && (
+                <span className="badge bg-light text-dark border d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  <i className="bi bi-search text-muted"></i>
+                  "{search}"
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setSearch('')}></button>
+                </span>
+              )}
+
+              {statusFilter !== 'ALL' && (
+                <span className="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  Status: {statusFilter === 'IN_HOUSE' ? 'In-House' : statusFilter === 'CREDIT' ? 'Wallet Credit' : statusFilter === 'DUES' ? 'Pending Dues' : 'Checked Out'}
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setStatusFilter('ALL')}></button>
+                </span>
+              )}
+
+              {idTypeFilter && (
+                <span className="badge bg-info bg-opacity-10 text-info-emphasis border border-info-subtle d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  ID: {idTypeFilter}
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setIdTypeFilter('')}></button>
+                </span>
+              )}
+
+              {genderFilter && (
+                <span className="badge bg-secondary bg-opacity-10 text-secondary border d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  Gender: {genderFilter}
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setGenderFilter('')}></button>
+                </span>
+              )}
+
+              {cityFilter && (
+                <span className="badge bg-secondary bg-opacity-10 text-secondary border d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  City: {cityFilter}
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setCityFilter('')}></button>
+                </span>
+              )}
+
+              {hasDocFilter && (
+                <span className="badge bg-warning bg-opacity-10 text-warning-emphasis border border-warning-subtle d-inline-flex align-items-center gap-1 extra-small py-1 px-2 rounded-pill">
+                  Doc: {hasDocFilter === 'true' ? 'Attached' : 'Missing'}
+                  <button type="button" className="btn-close ms-1" style={{ fontSize: '0.5rem' }} onClick={() => setHasDocFilter('')}></button>
+                </span>
+              )}
+
+              <button
+                type="button"
+                className="btn btn-link btn-xs text-danger text-decoration-none fw-semibold p-0 ms-auto"
+                style={{ fontSize: '0.75rem' }}
+                onClick={handleResetFilters}
+              >
+                Reset All Filters
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -783,8 +1181,37 @@ const Customers = () => {
 
                         {columnVisibility.full_name && (
                           <td>
-                            <div className="fw-bold text-dark">{c.full_name}</div>
-                            <span className="text-muted small">{c.email || 'No email registered'}</span>
+                            <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                              <span className="fw-bold text-dark">{c.full_name}</span>
+                              {c.gender && (
+                                <span className="badge bg-light text-secondary border extra-small px-1.5 py-0.5" style={{ fontSize: '0.68rem' }}>
+                                  {c.gender}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-muted small mb-1">{c.email || 'No email registered'}</div>
+                            <div className="d-flex flex-wrap gap-1 align-items-center mt-1">
+                              {c.is_checked_in && (
+                                <span className="badge bg-success bg-opacity-10 text-success border border-success-subtle fw-semibold extra-small px-2 py-0.5">
+                                  <i className="bi bi-door-open-fill me-1"></i>In-House {c.active_stay_room ? `(Rm ${c.active_stay_room})` : ''}
+                                </span>
+                              )}
+                              {(c.has_checked_out || (!c.is_checked_in && (c.stay_count > 0))) && (
+                                <span className="badge bg-secondary bg-opacity-10 text-secondary border border-secondary-subtle fw-semibold extra-small px-2 py-0.5">
+                                  <i className="bi bi-box-arrow-right me-1"></i>Checked Out {c.last_checked_out_room ? `(Rm ${c.last_checked_out_room})` : ''}
+                                </span>
+                              )}
+                              {parseFloat(c.total_wallet_credit || c.advance_credit || 0) > 0.01 && (
+                                <span className="badge bg-primary bg-opacity-10 text-primary border border-primary-subtle fw-semibold extra-small px-2 py-0.5">
+                                  <i className="bi bi-wallet2 me-1"></i>Credit: ₹{parseFloat(c.total_wallet_credit || c.advance_credit).toLocaleString('en-IN')}
+                                </span>
+                              )}
+                              {parseFloat(c.pending_dues || c.overall_pending_balance || 0) > 0.01 && (
+                                <span className="badge bg-danger bg-opacity-10 text-danger border border-danger-subtle fw-semibold extra-small px-2 py-0.5">
+                                  <i className="bi bi-exclamation-triangle-fill me-1"></i>Due: ₹{parseFloat(c.pending_dues || c.overall_pending_balance).toLocaleString('en-IN')}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         )}
 
@@ -803,9 +1230,16 @@ const Customers = () => {
 
                         {columnVisibility.id_proof && (
                           <td>
-                            <span className="badge bg-light text-dark border fw-semibold">
-                              {c.id_type}: {c.id_number || 'N/A'}
-                            </span>
+                            <div className="d-flex align-items-center gap-1.5 flex-wrap">
+                              <span className="badge bg-light text-dark border fw-semibold">
+                                {c.id_type}: {c.id_number || 'N/A'}
+                              </span>
+                              {(c.id_document || c.id_document_back || (c.documents && c.documents.length > 0)) && (
+                                <span className="badge bg-info bg-opacity-10 text-info border border-info-subtle extra-small px-1.5 py-0.5" title="ID Document Attached">
+                                  <i className="bi bi-file-earmark-check-fill me-0.5"></i>Doc
+                                </span>
+                              )}
+                            </div>
                           </td>
                         )}
 
@@ -1054,34 +1488,91 @@ const Customers = () => {
                           />
                         </div>
                         {photoPreview && (
-                          <div className="mt-2">
-                            <img src={photoPreview} alt="Preview" className="img-thumbnail rounded-3 border object-fit-cover" style={{ height: '70px', width: '70px' }} />
+                          <div className="mt-2 d-flex align-items-center gap-2">
+                            <img src={getMediaUrl(photoPreview)} alt="Preview" className="img-thumbnail rounded-3 border object-fit-cover" style={{ height: '70px', width: '70px' }} />
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline-danger py-1 px-2 extra-small rounded-2"
+                              onClick={() => { setPhotoFile(null); setPhotoPreview(''); }}
+                            >
+                              <i className="bi bi-trash me-1"></i>Remove
+                            </button>
                           </div>
                         )}
                       </div>
 
                       {/* ID Document (Front Side) */}
                       <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Front Side)</label>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="form-label small fw-semibold text-dark m-0">ID Document (Front Side)</label>
+                          {(docFile || docPreview) && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5 extra-small fw-bold">
+                              {docFile ? 'New' : '✓ On File'}
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="file"
                           accept="image/*,application/pdf"
                           className="form-control py-2"
                           style={{ height: '44px' }}
-                          onChange={(e) => setDocFile(e.target.files[0] || null)}
+                          onChange={(e) => {
+                            if (e.target.files[0]) {
+                              setDocFile(e.target.files[0]);
+                              setDocPreview(URL.createObjectURL(e.target.files[0]));
+                            }
+                          }}
                         />
+                        {docPreview && (
+                          <div className="mt-2 d-flex align-items-center gap-2">
+                            <img src={getMediaUrl(docPreview)} alt="Front ID" className="img-thumbnail rounded-2 border object-fit-cover" style={{ height: '48px', width: '64px' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                            <span className="extra-small text-muted text-truncate" style={{ maxWidth: '180px' }}>{docFile ? docFile.name : (docPreview.split('/').pop() || 'Front_ID')}</span>
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline-danger py-0.5 px-1.5 extra-small rounded-2 ms-auto"
+                              onClick={() => { setDocFile(null); setDocPreview(''); }}
+                            >
+                              <i className="bi bi-trash"></i>
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* ID Document (Back Side) */}
                       <div className="col-md-6">
-                        <label className="form-label small fw-semibold text-dark mb-1 d-block">ID Document (Back Side)</label>
+                        <div className="d-flex justify-content-between align-items-center mb-1">
+                          <label className="form-label small fw-semibold text-dark m-0">ID Document (Back Side)</label>
+                          {(docBackFile || docBackPreview) && (
+                            <span className="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-0.5 extra-small fw-bold">
+                              {docBackFile ? 'New' : '✓ On File'}
+                            </span>
+                          )}
+                        </div>
                         <input
                           type="file"
                           accept="image/*,application/pdf"
                           className="form-control py-2"
                           style={{ height: '44px' }}
-                          onChange={(e) => setDocBackFile(e.target.files[0] || null)}
+                          onChange={(e) => {
+                            if (e.target.files[0]) {
+                              setDocBackFile(e.target.files[0]);
+                              setDocBackPreview(URL.createObjectURL(e.target.files[0]));
+                            }
+                          }}
                         />
+                        {docBackPreview && (
+                          <div className="mt-2 d-flex align-items-center gap-2">
+                            <img src={getMediaUrl(docBackPreview)} alt="Back ID" className="img-thumbnail rounded-2 border object-fit-cover" style={{ height: '48px', width: '64px' }} onError={(e) => { e.target.style.display = 'none'; }} />
+                            <span className="extra-small text-muted text-truncate" style={{ maxWidth: '180px' }}>{docBackFile ? docBackFile.name : (docBackPreview.split('/').pop() || 'Back_ID')}</span>
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-outline-danger py-0.5 px-1.5 extra-small rounded-2 ms-auto"
+                              onClick={() => { setDocBackFile(null); setDocBackPreview(''); }}
+                            >
+                              <i className="bi bi-trash"></i>
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </div>
                   </div>

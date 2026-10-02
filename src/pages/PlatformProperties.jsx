@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import {
   getPlatformPropertiesApi,
   getPlatformPropertyDetailApi,
@@ -22,6 +23,7 @@ import {
   addPlatformStaffApi,
   deletePlatformStaffApi,
   resetPlatformStaffPasswordApi,
+  togglePlatformStaffActiveApi,
   recordPropertySubscriptionPaymentApi,
   deletePropertySubscriptionPaymentApi,
   getPlatformInquiriesApi,
@@ -428,8 +430,8 @@ const PlatformProperties = ({ initialTab = null }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // 'all' | 'active' | 'expiring' | 'suspended'
 
-  // Column Visibility Filter State
-  const [columnVisibility, setColumnVisibility] = useState({
+  // Column Visibility Filter State (Persisted in localStorage)
+  const DEFAULT_PLATFORM_COLUMNS = {
     hotel: true,
     owner: true,
     capacity: true,
@@ -437,7 +439,14 @@ const PlatformProperties = ({ initialTab = null }) => {
     validity: true,
     status: true,
     actions: true
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility: toggleColumn,
+  } = usePersistentColumns('lms_platform_properties_col_visibility', DEFAULT_PLATFORM_COLUMNS);
+
   const [showColumnFilter, setShowColumnFilter] = useState(false);
   const columnFilterRef = React.useRef(null);
 
@@ -452,13 +461,6 @@ const PlatformProperties = ({ initialTab = null }) => {
       setSortField(field);
       setSortOrder('asc');
     }
-  };
-
-  const toggleColumn = (colKey) => {
-    setColumnVisibility((prev) => ({
-      ...prev,
-      [colKey]: !prev[colKey]
-    }));
   };
 
   const setAllColumns = (val) => {
@@ -578,6 +580,7 @@ const PlatformProperties = ({ initialTab = null }) => {
   const [staffToReset, setStaffToReset] = useState(null);
   const [newStaffPasswordInput, setNewStaffPasswordInput] = useState('');
   const [resettingStaff, setResettingStaff] = useState(false);
+  const [togglingStaffId, setTogglingStaffId] = useState(null);
 
   // SaaS Subscription Bill Print Modal State
   const [showBillModal, setShowBillModal] = useState(false);
@@ -624,7 +627,7 @@ const PlatformProperties = ({ initialTab = null }) => {
 
   const showToast = (msg) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+    setTimeout(() => setToastMessage(null), 2000);
   };
 
   // Open Dedicated Hotel Console
@@ -889,6 +892,60 @@ const PlatformProperties = ({ initialTab = null }) => {
       setResettingStaff(false);
       setStaffToReset(null);
     }
+  };
+
+  // Toggle Staff Active / Inactive Status
+  const handleToggleStaffActive = (staff) => {
+    if (!selectedHotel || !staff) return;
+    if (staff.id === user?.id) {
+      showError('You cannot deactivate your own account.', 'Action Forbidden');
+      return;
+    }
+
+    const willDeactivate = Boolean(staff.is_active);
+    showConfirm({
+      title: willDeactivate ? 'Deactivate User Account' : 'Activate User Account',
+      message: willDeactivate
+        ? `Are you sure you want to deactivate "${staff.username}"? They will be immediately blocked from logging in or using the software.`
+        : `Are you sure you want to activate "${staff.username}"? Their software access will be immediately restored.`,
+      confirmText: willDeactivate ? 'Deactivate Account' : 'Activate Account',
+      confirmVariant: willDeactivate ? 'danger' : 'success',
+      onConfirm: async () => {
+        setTogglingStaffId(staff.id);
+        // Optimistic update
+        setSelectedHotel((prev) => {
+          if (!prev || !prev.staff_users) return prev;
+          return {
+            ...prev,
+            staff_users: prev.staff_users.map((u) =>
+              u.id === staff.id ? { ...u, is_active: !willDeactivate } : u
+            )
+          };
+        });
+
+        try {
+          const res = await togglePlatformStaffActiveApi(selectedHotel.id, staff.id);
+          showSuccess(res.message || `User "${staff.username}" status updated.`, 'Status Updated');
+          showToast(res.message || `User status updated.`);
+          const updated = await getPlatformPropertyDetailApi(selectedHotel.id);
+          if (updated.property) setSelectedHotel(updated.property);
+        } catch (err) {
+          // Revert optimistic update
+          setSelectedHotel((prev) => {
+            if (!prev || !prev.staff_users) return prev;
+            return {
+              ...prev,
+              staff_users: prev.staff_users.map((u) =>
+                u.id === staff.id ? { ...u, is_active: willDeactivate } : u
+              )
+            };
+          });
+          showError(err.response?.data?.error || 'Failed to update user status.', 'Action Failed');
+        } finally {
+          setTogglingStaffId(null);
+        }
+      }
+    });
   };
 
   const handleOnboardSubmit = async (e) => {
@@ -1208,7 +1265,7 @@ const PlatformProperties = ({ initialTab = null }) => {
     navigator.clipboard.writeText(text);
     setCopiedKey(true);
     showToast('Copied to clipboard!');
-    setTimeout(() => setCopiedKey(false), 3000);
+    setTimeout(() => setCopiedKey(false), 2000);
   };
 
   const filteredProperties = properties.filter((p) => {
@@ -2449,12 +2506,63 @@ const PlatformProperties = ({ initialTab = null }) => {
                               </td>
                               <td className="text-muted extra-small">{u.email || 'N/A'}</td>
                               <td>
-                                <span className={`badge rounded-pill extra-small ${u.is_active ? 'bg-success text-white' : 'bg-danger text-white'}`}>
-                                  {u.is_active ? 'Active' : 'Suspended'}
-                                </span>
+                                <button
+                                  type="button"
+                                  className={`btn btn-xs rounded-pill px-2.5 py-1 extra-small fw-bold border-0 d-inline-flex align-items-center gap-1.5 shadow-2xs transition-all ${
+                                    u.is_active
+                                      ? 'bg-success text-white'
+                                      : 'bg-danger text-white'
+                                  }`}
+                                  onClick={() => handleToggleStaffActive(u)}
+                                  disabled={togglingStaffId === u.id || u.id === user?.id}
+                                  title={
+                                    u.id === user?.id
+                                      ? 'You cannot change your own status'
+                                      : u.is_active
+                                      ? 'Active — Click to deactivate (revoke access)'
+                                      : 'Inactive — Click to activate (restore access)'
+                                  }
+                                  style={{
+                                    cursor: u.id === user?.id ? 'not-allowed' : 'pointer',
+                                    opacity: u.id === user?.id ? 0.7 : 1
+                                  }}
+                                >
+                                  {togglingStaffId === u.id ? (
+                                    <span className="spinner-border spinner-border-sm" style={{ width: '10px', height: '10px' }}></span>
+                                  ) : u.is_active ? (
+                                    <CheckCircle2 size={12} />
+                                  ) : (
+                                    <Lock size={12} />
+                                  )}
+                                  <span>{u.is_active ? 'Active' : 'Inactive'}</span>
+                                </button>
                               </td>
                               <td className="text-end pe-3.5">
                                 <div className="d-flex align-items-center justify-content-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    className={`btn btn-sm py-0.5 px-2 extra-small rounded-2 d-flex align-items-center gap-1 ${
+                                      u.is_active ? 'btn-outline-warning text-dark' : 'btn-outline-success'
+                                    }`}
+                                    onClick={() => handleToggleStaffActive(u)}
+                                    disabled={togglingStaffId === u.id || u.id === user?.id}
+                                    title={
+                                      u.id === user?.id
+                                        ? 'Cannot change own status'
+                                        : u.is_active
+                                        ? 'Deactivate User (Block software access)'
+                                        : 'Activate User (Grant software access)'
+                                    }
+                                  >
+                                    {togglingStaffId === u.id ? (
+                                      <span className="spinner-border spinner-border-sm" style={{ width: '10px', height: '10px' }}></span>
+                                    ) : u.is_active ? (
+                                      <Lock size={11} />
+                                    ) : (
+                                      <Check size={11} />
+                                    )}
+                                    <span>{u.is_active ? 'Deactivate' : 'Activate'}</span>
+                                  </button>
                                   <button
                                     type="button"
                                     className="btn btn-outline-secondary btn-sm py-0.5 px-2 extra-small rounded-2 d-flex align-items-center gap-1"

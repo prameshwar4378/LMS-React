@@ -48,9 +48,13 @@ import {
   History
 } from 'lucide-react';
 import ActivityLogModal from '../components/ActivityLogModal';
+import { useShift } from '../context/ShiftContext';
+import { useNotification } from '../context/NotificationContext';
 
 const Dashboard = () => {
   const { user, isShiftWise, isHotelOwner, isSuperUser, isManager } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
+  const { showWarning } = useNotification();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
@@ -254,27 +258,72 @@ const Dashboard = () => {
 
         {/* Quick Launch Buttons */}
         <div className="d-flex flex-wrap align-items-center gap-2">
-          <Link
-            to="/check-in?mode=walkin"
-            className="btn btn-primary fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-white"
-            style={{ backgroundColor: '#2563EB', borderColor: '#2563EB', fontSize: '0.85rem' }}
-          >
-            <Zap size={15} /> + Walk-In
-          </Link>
-          <Link
-            to="/bookings/create"
-            className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
-            style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
-          >
-            <PlusCircle size={15} className="text-primary" /> + Booking
-          </Link>
-          <Link
-            to="/check-in"
-            className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
-            style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
-          >
-            <UserCheck size={15} className="text-success" /> Check-In
-          </Link>
+          {requiresActiveShift ? (
+            <button
+              type="button"
+              className="btn btn-primary fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-white"
+              style={{ backgroundColor: '#2563EB', borderColor: '#2563EB', fontSize: '0.85rem' }}
+              onClick={() => {
+                showWarning('Active cashier shift till is required to check in walk-in guests. Please open your shift first.', 'Shift Till Required');
+                openShiftModal();
+              }}
+            >
+              <Zap size={15} /> + Walk-In
+            </button>
+          ) : (
+            <Link
+              to="/check-in?mode=walkin"
+              className="btn btn-primary fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-white"
+              style={{ backgroundColor: '#2563EB', borderColor: '#2563EB', fontSize: '0.85rem' }}
+            >
+              <Zap size={15} /> + Walk-In
+            </Link>
+          )}
+
+          {requiresActiveShift ? (
+            <button
+              type="button"
+              className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
+              style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
+              onClick={() => {
+                showWarning('Active cashier shift till is required to create bookings. Please open your shift first.', 'Shift Till Required');
+                openShiftModal();
+              }}
+            >
+              <PlusCircle size={15} className="text-primary" /> + Booking
+            </button>
+          ) : (
+            <Link
+              to="/bookings/create"
+              className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
+              style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
+            >
+              <PlusCircle size={15} className="text-primary" /> + Booking
+            </Link>
+          )}
+
+          {requiresActiveShift ? (
+            <button
+              type="button"
+              className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
+              style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
+              onClick={() => {
+                showWarning('Active cashier shift till is required to process check-ins. Please open your shift first.', 'Shift Till Required');
+                openShiftModal();
+              }}
+            >
+              <UserCheck size={15} className="text-success" /> Check-In
+            </button>
+          ) : (
+            <Link
+              to="/check-in"
+              className="btn btn-white border fw-semibold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-2 text-dark bg-white"
+              style={{ borderColor: '#E2E8F0', fontSize: '0.85rem' }}
+            >
+              <UserCheck size={15} className="text-success" /> Check-In
+            </Link>
+          )}
+
           {isShiftWise && (
             <Link
               to="/shifts"
@@ -302,6 +351,43 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* SHIFT TILL CLOSED WARNING BANNER */}
+      {requiresActiveShift && (
+        <div
+          className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3.5 rounded-4 shadow-sm mb-4"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+        >
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="p-2.5 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+              style={{ width: '42px', height: '42px' }}
+            >
+              <Clock size={20} />
+            </div>
+            <div>
+              <div className="fw-bold text-dark fs-6 d-flex align-items-center gap-2">
+                <span>Front Desk Cashier Shift is Closed</span>
+                <span className="badge bg-warning-subtle text-warning-emphasis border border-warning px-2 py-0.5 extra-small">
+                  Shift-Wise Rule
+                </span>
+              </div>
+              <div className="small text-muted">
+                Guest check-ins, advance bookings, and payment entries are locked until you open your front desk shift till.
+              </div>
+            </div>
+          </div>
+          <div className="d-flex align-items-center gap-2 mt-2 mt-md-0">
+            <button
+              type="button"
+              className="btn btn-warning fw-bold px-3.5 py-2 rounded-3 shadow-xs d-flex align-items-center gap-1.5"
+              onClick={openShiftModal}
+            >
+              <Sparkles size={15} /> Open Shift Till Now
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* 2. ASYMMETRIC TOP ROW (HERO OVERVIEW + 4 KPIS + STATUS)   */}
@@ -803,7 +889,7 @@ const Dashboard = () => {
         >
           <div className="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
             <div>
-              <h5 className="fw-bold text-dark m-0" style={{ letterSpacing: '-0.015em', fontSize: '1.05rem' }}>
+              <h5 data-spotlight-id="dashboard" className="fw-bold text-dark m-0" style={{ letterSpacing: '-0.015em', fontSize: '1.05rem' }}>
                 Revenue & Occupancy
               </h5>
               <span className="text-secondary small" style={{ fontSize: '0.8rem' }}>
@@ -1062,7 +1148,7 @@ const Dashboard = () => {
                   onClick={() => setActiveGuestTab('upcoming')}
                   style={{ fontSize: '0.775rem' }}
                 >
-                  <CalendarDays size={13} className="me-1" /> Upcoming Bookings ({tables.upcoming_reservations?.length || 0})
+                  <CalendarDays size={13} className="me-1" /> Upcoming Bookings ({(tables.upcoming_reservations || tables.upcoming_arrivals)?.length || 0})
                 </button>
               </div>
 
@@ -1138,14 +1224,14 @@ const Dashboard = () => {
                 )
               ) : (
                 // Upcoming Reservations Preview (Max 4-5)
-                (!tables.upcoming_reservations || tables.upcoming_reservations.length === 0) ? (
+                (!(tables.upcoming_reservations || tables.upcoming_arrivals) || (tables.upcoming_reservations || tables.upcoming_arrivals).length === 0) ? (
                   <div className="py-5 text-center text-muted">
                     <CalendarDays size={32} className="text-secondary opacity-40 mb-2" />
                     <p className="small m-0">No upcoming advance reservations.</p>
                   </div>
                 ) : (
                   <div className="d-flex flex-column gap-2.5">
-                    {tables.upcoming_reservations.slice(0, 4).map((b) => (
+                    {(tables.upcoming_reservations || tables.upcoming_arrivals).slice(0, 4).map((b) => (
                       <div
                         key={b.id}
                         className="rounded-3 border bg-light bg-opacity-40 d-flex align-items-center justify-content-between gap-3 hover-shadow-xs transition-all"

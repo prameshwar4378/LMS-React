@@ -1,4 +1,5 @@
 import api from './axios';
+import { triggerShiftRefresh } from '../utils/shiftEvents';
 
 export const getBookingsApi = async (params = {}) => {
   const query = new URLSearchParams(params).toString();
@@ -13,21 +14,25 @@ export const getBookingByIdApi = async (id) => {
 
 export const createBookingApi = async (data) => {
   const res = await api.post('/bookings/', data);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const updateBookingApi = async (id, data) => {
   const res = await api.put(`/bookings/${id}/`, data);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const cancelBookingApi = async (id, data = {}) => {
   const res = await api.post(`/bookings/${id}/cancel/`, data);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const checkInBookingApi = async (id, data = {}) => {
   const res = await api.post(`/bookings/${id}/check_in/`, data);
+  triggerShiftRefresh();
   return res.data;
 };
 

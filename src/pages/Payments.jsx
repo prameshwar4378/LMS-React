@@ -12,7 +12,10 @@ import {
 import { generatePaymentThermalReceipt, printThermalContent } from '../utils/thermalPrinter';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { useShift } from '../context/ShiftContext';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import PageLoader from '../components/PageLoader';
+import WhatsAppButton from '../components/WhatsAppButton';
 import {
   Receipt,
   Search,
@@ -46,11 +49,13 @@ import {
   ArrowDownLeft,
   ArrowUpRight,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Clock
 } from 'lucide-react';
 
 const Payments = () => {
   const { user, selectedProperty } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -94,8 +99,7 @@ const Payments = () => {
 
   // Column Visibility State
   const [showColMenu, setShowColMenu] = useState(false);
-  const colMenuRef = useRef(null);
-  const [visibleColumns, setVisibleColumns] = useState({
+  const DEFAULT_PAYMENTS_COLUMNS = {
     index: true,
     payment_number: true,
     stay_number: true,
@@ -109,7 +113,16 @@ const Payments = () => {
     type: true,
     amount: true,
     actions: true
-  });
+  };
+
+  const {
+    columnVisibility: visibleColumns,
+    setColumnVisibility: setVisibleColumns,
+    toggleColumnVisibility: toggleColumn,
+    resetColumnVisibility,
+  } = usePersistentColumns('lms_payments_column_visibility', DEFAULT_PAYMENTS_COLUMNS);
+
+  const colMenuRef = useRef(null);
 
   // Modal State
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -346,34 +359,6 @@ const Payments = () => {
       totalCount: filteredPayments.length
     };
   }, [filteredPayments]);
-
-  // -------------------------------------------------------------
-  // Column Toggle Handler
-  // -------------------------------------------------------------
-  const toggleColumn = (colKey) => {
-    setVisibleColumns((prev) => ({
-      ...prev,
-      [colKey]: !prev[colKey]
-    }));
-  };
-
-  const resetColumnVisibility = () => {
-    setVisibleColumns({
-      index: true,
-      payment_number: true,
-      stay_number: true,
-      room_number: true,
-      customer_name: true,
-      customer_mobile: true,
-      payment_date: true,
-      payment_method: true,
-      transaction_reference: true,
-      received_by_name: true,
-      type: true,
-      amount: true,
-      actions: true
-    });
-  };
 
   // -------------------------------------------------------------
   // Export Handlers
@@ -642,13 +627,41 @@ const Payments = () => {
 
   return (
     <div className="pb-5">
+      {/* SHIFT TILL CLOSED WARNING BANNER */}
+      {requiresActiveShift && (
+        <div
+          className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3.5 rounded-4 shadow-sm mb-4"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+        >
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="p-2.5 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+              style={{ width: '42px', height: '42px' }}
+            >
+              <CreditCard size={20} />
+            </div>
+            <div>
+              <div className="fw-bold text-dark fs-6">Cashier Shift Till is Closed</div>
+              <div className="small text-muted">New payment collections, advance receipts, and settlement transactions are locked until you open your front desk shift till.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-warning fw-bold px-3.5 py-2 rounded-3 shadow-xs mt-2 mt-md-0 d-flex align-items-center gap-1.5"
+            onClick={openShiftModal}
+          >
+            <Clock size={16} /> Open Shift Till Now
+          </button>
+        </div>
+      )}
+
       {/* ------------------------------------------------------------- */}
       {/* 1. TOP HEADER & PRIMARY ACTION BUTTONS                        */}
       {/* ------------------------------------------------------------- */}
       <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
         <div>
           <div className="d-flex align-items-center gap-2 mb-1">
-            <h4 className="fw-bold m-0 text-dark tracking-tight">Payment Transactions Log</h4>
+            <h4 data-spotlight-id="payments" className="fw-bold m-0 text-dark tracking-tight">Payment Transactions Log</h4>
             <span
               className="badge rounded-pill fw-semibold font-monospace"
               style={{
@@ -1537,6 +1550,28 @@ const Payments = () => {
                                 >
                                   <Eye size={14} />
                                 </button>
+                                {parseFloat(p.amount) > 0 && (
+                                  <WhatsAppButton
+                                    eventType="PAYMENT"
+                                    customerMobile={p.customer_mobile}
+                                    customerName={p.customer_name}
+                                    bookingId={p.booking || p.booking_id}
+                                    customerId={p.customer_id || p.customer}
+                                    data={{
+                                      guest_name: p.customer_name || 'Guest',
+                                      booking_number: p.booking_number || p.stay_number || '',
+                                      room_number: p.room_number || '',
+                                      payment_amount: p.amount,
+                                      total_paid: p.amount,
+                                      balance_amount: p.balance_amount || 0,
+                                      payment_date: p.payment_date ? new Date(p.payment_date).toLocaleDateString('en-IN') : '',
+                                      payment_method: p.payment_method || '',
+                                    }}
+                                    size="sm"
+                                    variant="icon-only"
+                                    title="Send WhatsApp Receipt"
+                                  />
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handlePrintThermal(p)}
@@ -1800,6 +1835,28 @@ const Payments = () => {
                 </button>
 
                 <div className="d-flex align-items-center gap-2">
+                  {selectedPayment && parseFloat(selectedPayment.amount) > 0 && (
+                    <WhatsAppButton
+                      eventType="PAYMENT"
+                      customerMobile={selectedPayment.customer_mobile}
+                      customerName={selectedPayment.customer_name}
+                      bookingId={selectedPayment.booking || selectedPayment.booking_id}
+                      customerId={selectedPayment.customer_id || selectedPayment.customer}
+                      data={{
+                        guest_name: selectedPayment.customer_name || 'Guest',
+                        booking_number: selectedPayment.booking_number || selectedPayment.stay_number || '',
+                        room_number: selectedPayment.room_number || '',
+                        payment_amount: selectedPayment.amount,
+                        total_paid: selectedPayment.amount,
+                        balance_amount: selectedPayment.balance_amount || 0,
+                        payment_date: selectedPayment.payment_date ? new Date(selectedPayment.payment_date).toLocaleDateString('en-IN') : '',
+                        payment_method: selectedPayment.payment_method || '',
+                      }}
+                      size="sm"
+                      variant="solid"
+                      customLabel="WhatsApp Receipt"
+                    />
+                  )}
                   <button
                     type="button"
                     onClick={() => handlePrintThermal(selectedPayment)}

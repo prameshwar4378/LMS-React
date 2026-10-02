@@ -63,6 +63,28 @@ export const addShiftExpenseApi = async (id, data) => {
 };
 
 /**
+ * Update an existing cash expense.
+ * @param {number|string} shiftId - Shift ID
+ * @param {number|string} expenseId - Expense ID
+ * @param {FormData|Object} data - { category, amount, description, receipt }
+ */
+export const updateShiftExpenseApi = async (shiftId, expenseId, data) => {
+  const headers = data instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {};
+  const res = await api.patch(`/shifts/${shiftId}/expenses/${expenseId}/`, data, { headers });
+  return res.data;
+};
+
+/**
+ * Delete a cash expense.
+ * @param {number|string} shiftId - Shift ID
+ * @param {number|string} expenseId - Expense ID
+ */
+export const deleteShiftExpenseApi = async (shiftId, expenseId) => {
+  const res = await api.delete(`/shifts/${shiftId}/expenses/${expenseId}/`);
+  return res.data;
+};
+
+/**
  * Record cash added (Float in) or removed (Float out / Drop).
  * @param {number|string} id - Shift ID
  * @param {Object} data - { adjustment_type, amount, reason, notes }
@@ -126,15 +148,6 @@ export const rejectShiftHandoverApi = async (handoverId, data) => {
   return res.data;
 };
 
-/**
- * Update a recorded petty cash expense.
- */
-export const updateShiftExpenseApi = async (shiftId, expenseId, data) => {
-  const isFormData = data instanceof FormData;
-  const headers = isFormData ? { 'Content-Type': 'multipart/form-data' } : {};
-  const res = await api.patch(`/shifts/${shiftId}/expenses/${expenseId}/`, data, { headers });
-  return res.data;
-};
 
 /**
  * Update a recorded cash float or drop adjustment.
@@ -165,8 +178,60 @@ export const forceCloseShiftApi = async (id, data) => {
 /**
  * Fetch all active physical cash drawers / POS stations.
  */
-export const getCashDrawersApi = async () => {
-  const res = await api.get('/shifts/cash_drawers/');
+export const getCashDrawersApi = async (params = {}) => {
+  const headers = {};
+  if (params.property) {
+    headers['X-Property-ID'] = params.property;
+  }
+  const res = await api.get('/shifts/cash_drawers/', { params, headers });
+  return res.data;
+};
+
+/**
+ * Fetch all physical cash drawers (all or active).
+ */
+export const getAllCashDrawersApi = async (params = {}) => {
+  const headers = {};
+  if (params.property) {
+    headers['X-Property-ID'] = params.property;
+  }
+  const res = await api.get('/shifts/cash-drawers/', { params, headers });
+  return Array.isArray(res.data) ? res.data : (res.data?.data || res.data?.results || []);
+};
+
+/**
+ * Create a new cash drawer / counter desk (Owner / Manager only).
+ */
+export const createCashDrawerApi = async (data) => {
+  const headers = {};
+  if (data?.property) {
+    headers['X-Property-ID'] = data.property;
+  }
+  const res = await api.post('/shifts/cash-drawers/', data, { headers });
+  return res.data;
+};
+
+/**
+ * Update an existing cash drawer / counter desk (Owner / Manager only).
+ */
+export const updateCashDrawerApi = async (id, data) => {
+  const headers = {};
+  if (data?.property) {
+    headers['X-Property-ID'] = data.property;
+  }
+  const res = await api.patch(`/shifts/cash-drawers/${id}/`, data, { headers });
+  return res.data;
+};
+
+/**
+ * Delete a cash drawer / counter desk (Owner / Manager only).
+ */
+export const deleteCashDrawerApi = async (id, propertyId = null) => {
+  const headers = {};
+  if (propertyId) {
+    headers['X-Property-ID'] = propertyId;
+  }
+  const res = await api.delete(`/shifts/cash-drawers/${id}/`, { headers });
   return res.data;
 };
 

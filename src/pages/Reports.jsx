@@ -333,7 +333,14 @@ const Reports = () => {
   const [sortDirection, setSortDirection] = useState('asc');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
-  const [hiddenColumns, setHiddenColumns] = useState({});
+  const [hiddenColumns, setHiddenColumns] = useState(() => {
+    try {
+      const saved = localStorage.getItem('lms_reports_hidden_columns');
+      return saved ? JSON.parse(saved) : {};
+    } catch {
+      return {};
+    }
+  });
   const [showColumnMenu, setShowColumnMenu] = useState(false);
 
   // Date & Filter Application States
@@ -482,10 +489,27 @@ const Reports = () => {
   };
 
   const toggleColumnVisibility = (key) => {
-    setHiddenColumns(prev => ({
-      ...prev,
-      [key]: !prev[key]
-    }));
+    setHiddenColumns(prev => {
+      const updated = {
+        ...prev,
+        [key]: !prev[key]
+      };
+      try {
+        localStorage.setItem('lms_reports_hidden_columns', JSON.stringify(updated));
+      } catch (err) {
+        console.error('Failed to persist hidden columns:', err);
+      }
+      return updated;
+    });
+  };
+
+  const resetColumnVisibility = () => {
+    setHiddenColumns({});
+    try {
+      localStorage.removeItem('lms_reports_hidden_columns');
+    } catch (err) {
+      console.error('Failed to clear hidden columns in localStorage:', err);
+    }
   };
 
   const visibleColumns = useMemo(() => {
@@ -610,7 +634,7 @@ const Reports = () => {
           </div>
           <div>
             <div className="d-flex align-items-center gap-2">
-              <h4 className="fw-bold m-0 text-white" style={{ letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
+              <h4 data-spotlight-id="reports" className="fw-bold m-0 text-white" style={{ letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
                 InnVetrix Reports &amp; Business Intelligence Hub
               </h4>
               <span
@@ -1648,8 +1672,18 @@ const Reports = () => {
                         className="position-absolute end-0 mt-1 bg-white border shadow-lg rounded-3 p-2.5 z-3"
                         style={{ minWidth: '200px', maxHeight: '280px', overflowY: 'auto' }}
                       >
-                        <div className="fw-bold extra-small text-secondary text-uppercase mb-2 pb-1 border-bottom">
-                          Toggle Columns
+                        <div className="d-flex justify-content-between align-items-center mb-2 pb-1 border-bottom">
+                          <span className="fw-bold extra-small text-secondary text-uppercase">
+                            Toggle Columns
+                          </span>
+                          <button
+                            type="button"
+                            className="btn btn-link btn-xs p-0 text-primary text-decoration-none fw-semibold"
+                            style={{ fontSize: '0.7rem' }}
+                            onClick={resetColumnVisibility}
+                          >
+                            Reset All
+                          </button>
                         </div>
                         {reportData?.columns?.map((col) => (
                           <label key={col.key} className="form-check form-check-sm mb-1.5 d-flex align-items-center gap-2 cursor-pointer extra-small">

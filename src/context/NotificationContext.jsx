@@ -46,7 +46,7 @@ export const cleanErrorMessage = (err, defaultMsg = 'An unexpected error occurre
 
 // Compact Luxury SaaS Toast Item with Hover-to-Pause
 const ToastItem = ({ toast, onRemove }) => {
-  const TOTAL_TIME = 4000;
+  const TOTAL_TIME = 2000;
   const [remainingTime, setRemainingTime] = useState(TOTAL_TIME);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -154,16 +154,24 @@ export const NotificationProvider = ({ children }) => {
   };
 
   // SUCCESS → Centered Modal Dialogue with Green Success Tick + Top-Right Toast
-  const showSuccess = (msg, customTitle = 'Success!') => {
+  const showSuccess = (msg, customTitle = 'Success!', options = {}) => {
     const text = typeof msg === 'object' ? cleanErrorMessage(msg) : msg;
     setModalState({
       show: true,
       type: 'success',
       title: customTitle,
       message: text || 'Operation completed successfully.',
-      confirmText: 'OK',
-      onConfirm: closeModal,
-      onCancel: closeModal,
+      confirmText: options?.confirmText || 'OK',
+      whatsappAction: options?.whatsappAction || null,
+      autoDismiss: options?.whatsappAction ? false : (options?.autoDismiss !== undefined ? options.autoDismiss : true),
+      onConfirm: () => {
+        if (options?.onConfirm) options.onConfirm();
+        closeModal();
+      },
+      onCancel: () => {
+        if (options?.onCancel) options.onCancel();
+        closeModal();
+      },
     });
 
     const id = Date.now() + Math.random();
@@ -275,6 +283,8 @@ export const NotificationProvider = ({ children }) => {
         confirmText={modalState.confirmText}
         cancelText={modalState.cancelText}
         confirmVariant={modalState.confirmVariant}
+        whatsappAction={modalState.whatsappAction}
+        autoDismiss={modalState.autoDismiss}
         onConfirm={modalState.onConfirm || closeModal}
         onCancel={modalState.onCancel || closeModal}
         onClose={closeModal}

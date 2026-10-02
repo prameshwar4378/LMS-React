@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { useShift } from '../context/ShiftContext';
 import { formatCurrency } from '../utils/formatCurrency';
 import { openShiftApi, getCashDrawersApi } from '../api/shiftApi';
+import CashDrawerModal from './CashDrawerModal';
 import {
   Clock,
   DollarSign,
@@ -28,7 +31,17 @@ const STANDARD_DENOMINATIONS = [
 ];
 
 const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 0, pendingHandovers = [] }) => {
-  const { user } = useAuth();
+  const navigate = useNavigate();
+  const { user, isHotelOwner, isSuperUser, isManager, selectedProperty, branches } = useAuth();
+  const { hasActiveShift } = useShift();
+
+  const canManageDesks = Boolean(
+    isHotelOwner ||
+    isSuperUser ||
+    isManager ||
+    user?.is_superuser ||
+    ['HOTEL_OWNER', 'SUPER_ADMIN', 'SUPERUSER', 'MANAGER'].includes(user?.role)
+  );
   
   const [openingBalance, setOpeningBalance] = useState(0);
   const [showDenominations, setShowDenominations] = useState(false);
@@ -39,22 +52,35 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
   const [selectedHandoverId, setSelectedHandoverId] = useState('');
   const [cashDrawers, setCashDrawers] = useState([]);
   const [selectedDrawerId, setSelectedDrawerId] = useState('');
+  const [drawerModalMode, setDrawerModalMode] = useState(null); // 'add' | 'edit' | null
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const loadCashDrawers = async (autoSelectId = null) => {
+    try {
+      const propId = selectedProperty?.id;
+      const res = await getCashDrawersApi(propId ? { property: propId } : {});
+      const list = res.data || [];
+      setCashDrawers(list);
+
+      if (autoSelectId) {
+        setSelectedDrawerId(autoSelectId);
+      } else if (!selectedDrawerId || !list.some(d => String(d.id) === String(selectedDrawerId))) {
+        const firstAvail = list.find(d => !d.is_in_use || d.allow_shared_users) || list[0];
+        if (firstAvail) {
+          setSelectedDrawerId(firstAvail.id);
+        } else {
+          setSelectedDrawerId('');
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load cash drawers:', err);
+    }
+  };
+
   useEffect(() => {
     if (isOpen) {
-      // Load Cash Drawers
-      getCashDrawersApi()
-        .then((res) => {
-          const list = res.data || [];
-          setCashDrawers(list);
-          const firstAvail = list.find(d => !d.is_in_use || d.allow_shared_users);
-          if (firstAvail) {
-            setSelectedDrawerId(firstAvail.id);
-          }
-        })
-        .catch(console.error);
+      loadCashDrawers();
 
       if (pendingHandovers && pendingHandovers.length > 0) {
         setSelectedHandoverId(pendingHandovers[0].id);
@@ -70,13 +96,40 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
     }
   }, [isOpen, initialSuggestedBalance, pendingHandovers]);
 
-  if (!isOpen) return null;
+  const selectedDrawer = cashDrawers.find(d => String(d.id) === String(selectedDrawerId)) || null;
+
+  const handleOpenAddDesk = () => {
+    setDrawerModalMode('add');
+  };
+
+  const handleOpenEditDesk = () => {
+    if (selectedDrawer) {
+      setDrawerModalMode('edit');
+    }
+  };
+
+  const handleDeskSaved = (savedDrawer) => {
+    loadCashDrawers(savedDrawer?.id);
+    setDrawerModalMode(null);
+  };
+
+  const handleNavigateSettings = () => {
+    onClose();
+    navigate('/settings?section=counters');
+  };
+
+  if (!isOpen || hasActiveShift) return null;
 
   const suggested = parseFloat(initialSuggestedBalance || 0);
   const entered = parseFloat(openingBalance || 0);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (cashDrawers.length === 0) {
+      setError('No front desk counter available. Please create a counter desk or configure desks in Settings before opening shift.');
+      return;
+    }
+
     if (entered < 0 || isNaN(entered)) {
       setError('Opening cash balance cannot be negative.');
       return;
@@ -172,6 +225,17 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
                       {dateStr} &bull; {timeStr}
                     </div>
                   </div>
+                  <div className="col-12 mt-2 pt-2 border-top">
+                    <div className="d-flex align-items-center justify-content-between">
+                      <div className="d-flex align-items-center gap-1.5 text-secondary extra-small">
+                        <Building2 size={13} className="text-primary" /> Operating Branch:
+                      </div>
+                      <span className="badge bg-primary-subtle text-primary border border-primary-subtle extra-small px-2 py-0.5 rounded-pill fw-semibold">
+                        {selectedProperty?.name || user?.property_name || 'Main Hotel'}
+                        {(selectedProperty?.code || selectedProperty?.property_code) ? ` (${selectedProperty.code || selectedProperty.property_code})` : ''}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -196,12 +260,53 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
                 </div>
               )}
 
-              {/* POS Register / Cash Drawer Selection (Only shown if multiple physical counters exist) */}
-              {cashDrawers.length > 1 && (
-                <div className="mb-3">
-                  <label className="form-label fw-bold text-dark small mb-1.5 d-flex align-items-center gap-1.5">
+              {/* POS Register / Cash Drawer Selection */}
+              <div className="mb-3">
+                <div className="d-flex justify-content-between align-items-center mb-1.5">
+                  <label className="form-label fw-bold text-dark small mb-0 d-flex align-items-center gap-1.5">
                     <Building2 size={14} className="text-primary" /> Assigned Counter / Desk
                   </label>
+
+                  {canManageDesks && (
+                    <div className="d-flex align-items-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-link p-0 text-decoration-none extra-small fw-semibold d-inline-flex align-items-center"
+                        style={{ color: '#0d6efd', cursor: 'pointer', fontSize: '0.8rem' }}
+                        onClick={handleOpenAddDesk}
+                        title="Add new counter desk"
+                      >
+                        <span style={{ color: '#16a34a', fontWeight: 'bold', fontSize: '0.95rem', lineHeight: 1, marginRight: '3px' }}>+</span>
+                        <span>Add</span>
+                      </button>
+
+                      {selectedDrawer && (
+                        <button
+                          type="button"
+                          className="btn btn-link p-0 text-decoration-none extra-small fw-semibold d-inline-flex align-items-center"
+                          style={{ color: '#0d6efd', cursor: 'pointer', fontSize: '0.8rem' }}
+                          onClick={handleOpenEditDesk}
+                          title="Change selected counter desk details"
+                        >
+                          <span style={{ color: '#ca8a04', fontSize: '0.825rem', lineHeight: 1, marginRight: '3px' }}>✏️</span>
+                          <span>Change</span>
+                        </button>
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn btn-link p-0 text-decoration-none extra-small text-muted d-inline-flex align-items-center"
+                        style={{ fontSize: '0.75rem', cursor: 'pointer' }}
+                        onClick={handleNavigateSettings}
+                        title="Manage all desks in Settings"
+                      >
+                        ⚙️ Settings
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {cashDrawers.length > 0 ? (
                   <select
                     className="form-select rounded-3"
                     style={{ borderColor: '#CBD5E1', fontSize: '0.875rem' }}
@@ -211,12 +316,41 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
                   >
                     {cashDrawers.map((d) => (
                       <option key={d.id} value={d.id} disabled={d.is_in_use && !d.allow_shared_users}>
-                        {d.name} {d.is_in_use ? `(In Use by ${d.current_cashier_name || 'Staff'})` : ''}
+                        {d.name} {d.code ? `(${d.code})` : ''} {d.is_in_use ? `[In Use by ${d.current_cashier_name || 'Staff'}]` : ''}
                       </option>
                     ))}
                   </select>
-                </div>
-              )}
+                ) : canManageDesks ? (
+                  <div className="p-3 rounded-3 bg-white border border-warning-subtle text-center shadow-xs">
+                    <AlertTriangle size={20} className="text-warning mb-1" />
+                    <div className="fw-semibold text-dark extra-small mb-1">No Assigned Counter / Desk Found</div>
+                    <div className="text-muted extra-small mb-2" style={{ fontSize: '0.75rem' }}>
+                      No counter desks are configured yet. Add one now or manage in Settings.
+                    </div>
+                    <div className="d-flex justify-content-center gap-2">
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary py-1 px-2.5 rounded-2 extra-small fw-semibold d-inline-flex align-items-center gap-1"
+                        onClick={handleOpenAddDesk}
+                      >
+                        <span style={{ color: '#86efac', fontWeight: 'bold' }}>+</span> Add Desk
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-2 extra-small fw-semibold d-inline-flex align-items-center gap-1"
+                        onClick={handleNavigateSettings}
+                      >
+                        ⚙️ Manage in Settings
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="alert alert-warning py-2 px-3 rounded-3 mb-0 extra-small d-flex align-items-center gap-2">
+                    <AlertTriangle size={14} className="text-warning flex-shrink-0" />
+                    <span>No counter desk available. Please ask hotel owner to configure desks in Settings.</span>
+                  </div>
+                )}
+              </div>
 
               {/* Previous Shift Reference & Quick Fill Options */}
               {!selectedHandoverId && suggested > 0 && (
@@ -375,6 +509,20 @@ const OpenShiftModal = ({ isOpen, onClose, onSuccess, initialSuggestedBalance = 
 
         </div>
       </div>
+
+      {/* Quick Add / Edit Desk Modal for Owners */}
+      {drawerModalMode && (
+        <CashDrawerModal
+          isOpen={Boolean(drawerModalMode)}
+          onClose={() => setDrawerModalMode(null)}
+          drawer={drawerModalMode === 'edit' ? selectedDrawer : null}
+          defaultPropertyId={selectedProperty?.id}
+          targetPropertyName={selectedProperty?.name}
+          branches={branches}
+          onSuccess={handleDeskSaved}
+          onNavigateSettings={handleNavigateSettings}
+        />
+      )}
     </div>
   );
 };

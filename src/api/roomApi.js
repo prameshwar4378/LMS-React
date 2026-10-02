@@ -50,11 +50,12 @@ export const deleteRoomApi = async (id) => {
   return res.data;
 };
 
-export const checkAvailabilityApi = async (checkIn, checkOut, roomType = '', excludeBookingId = null, excludeStayId = null) => {
+export const checkAvailabilityApi = async (checkIn, checkOut, roomType = '', excludeBookingId = null, excludeStayId = null, checkCleaning = false) => {
   let url = `/rooms/availability/?check_in=${checkIn}&check_out=${checkOut}`;
   if (roomType) url += `&room_type=${roomType}`;
   if (excludeBookingId) url += `&exclude_booking_id=${excludeBookingId}`;
   if (excludeStayId) url += `&exclude_stay_id=${excludeStayId}`;
+  if (checkCleaning) url += `&check_cleaning=true`;
   const res = await api.get(url);
   return res.data;
 };

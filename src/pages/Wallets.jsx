@@ -618,7 +618,7 @@ const Wallets = () => {
             >
               <Wallet size={20} />
             </div>
-            <h4 className="fw-bold m-0 text-dark">Customer Wallets &amp; Advance Credit</h4>
+            <h4 data-spotlight-id="wallets" className="fw-bold m-0 text-dark">Customer Wallets &amp; Advance Credit</h4>
           </div>
           <span className="text-secondary small">
             Live tracking of customer advance deposits, available wallet credit, and pending stay settlements.

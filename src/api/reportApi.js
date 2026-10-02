@@ -71,3 +71,11 @@ export const getShiftReconciliationReportApi = async (params = {}) => {
   return res.data;
 };
 
+/**
+ * Fetch real-time hotel operational reminders & bottleneck alerts.
+ */
+export const getOperationalRemindersApi = async () => {
+  const res = await api.get('/reports/operational-reminders/');
+  return res.data;
+};
+

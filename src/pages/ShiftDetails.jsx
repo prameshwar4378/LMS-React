@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
-import { getShiftDetailsApi } from '../api/shiftApi';
+import { getShiftDetailsApi, deleteShiftExpenseApi } from '../api/shiftApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import PageLoader from '../components/PageLoader';
 import ShiftApprovalModal from '../components/ShiftApprovalModal';
 import CloseShiftModal from '../components/CloseShiftModal';
 import AdminForceCloseModal from '../components/AdminForceCloseModal';
+import ShiftExpenseModal from '../components/ShiftExpenseModal';
+import ConfirmModal from '../components/ConfirmModal';
 import ThermalSlipModal from '../components/ThermalSlipModal';
 import {
   Clock,
@@ -29,18 +31,26 @@ import {
   TrendingUp,
   TrendingDown,
   Sliders,
-  Activity
+  Activity,
+  Edit2,
+  Trash2,
+  PlusCircle
 } from 'lucide-react';
 
 const ShiftDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { hasRole, isSingleOwner, selectedProperty } = useAuth();
+  const { user, hasRole, isSingleOwner, selectedProperty } = useAuth();
   const queryClient = useQueryClient();
 
   const [showApprovalModal, setShowApprovalModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showForceCloseModal, setShowForceCloseModal] = useState(false);
+
+  // Expense Management States
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseToEdit, setExpenseToEdit] = useState(null);
+  const [deleteExpenseConfirm, setDeleteExpenseConfirm] = useState({ show: false, expense: null, loading: false });
 
   // Thermal Print Modal States
   const [showThermalModal, setShowThermalModal] = useState(false);
@@ -58,6 +68,24 @@ const ShiftDetails = () => {
     staleTime: 2 * 60 * 1000,
     gcTime: 5 * 60 * 1000,
   });
+
+  const isManagerOrAdmin = user?.is_superuser || hasRole(['SUPER_ADMIN', 'HOTEL_OWNER', 'MANAGER']);
+  const canManageExpenses = shift?.status === 'OPEN' || isManagerOrAdmin;
+
+  const handleConfirmDeleteExpense = async () => {
+    if (!deleteExpenseConfirm.expense || !shift) return;
+    setDeleteExpenseConfirm(prev => ({ ...prev, loading: true }));
+    try {
+      await deleteShiftExpenseApi(shift.id, deleteExpenseConfirm.expense.id);
+      queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      loadShift();
+      setDeleteExpenseConfirm({ show: false, expense: null, loading: false });
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete expense.');
+      setDeleteExpenseConfirm(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   const handlePrint = () => {
     const printContent = document.getElementById('printable-shift-sheet');
@@ -329,7 +357,7 @@ const ShiftDetails = () => {
       </div>
 
       {/* Printable Sheet Header */}
-      <div id="printable-shift-sheet" className="card border-0 shadow-xs bg-white rounded-4 p-4 mb-4 printable-shift-sheet" style={{ border: '1px solid #E2E8F0' }}>
+      <div id="printable-shift-sheet" className="card border-0 shadow-sm bg-white rounded-4 p-4 mb-4 printable-shift-sheet" style={{ border: '1px solid #E2E8F0' }}>
         
         {/* Executive Summary Row */}
         <div className="d-flex flex-column flex-md-row justify-content-between align-items-start gap-3 pb-3 mb-3 border-bottom">
@@ -373,29 +401,37 @@ const ShiftDetails = () => {
 
         {/* 4 Overview Columns */}
         <div className="row g-3 mb-4 text-center">
-          <div className="col-6 col-md-3 border-end">
-            <div className="text-secondary extra-small fw-semibold">Opening Float</div>
-            <div className="fs-5 fw-bold text-dark mt-1 font-monospace">{formatCurrency(shift.opening_balance)}</div>
-          </div>
-          <div className="col-6 col-md-3 border-end">
-            <div className="text-secondary extra-small fw-semibold">Cash Receipts In</div>
-            <div className="fs-5 fw-bold text-success mt-1 font-monospace">+{formatCurrency(fin.cash_collections || 0)}</div>
-          </div>
-          <div className="col-6 col-md-3 border-end">
-            <div className="text-secondary extra-small fw-semibold">Expected Cash in Till</div>
-            <div className="fs-5 fw-bold text-primary mt-1 font-monospace">{formatCurrency(shift.financials?.expected_cash ?? shift.expected_cash ?? 0)}</div>
+          <div className="col-6 col-md-3">
+            <div className="p-3 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+              <div className="text-secondary extra-small fw-semibold text-uppercase">Opening Float</div>
+              <div className="fs-5 fw-bold text-dark mt-1 font-monospace">{formatCurrency(shift.opening_balance)}</div>
+            </div>
           </div>
           <div className="col-6 col-md-3">
-            <div className="text-secondary extra-small fw-semibold">Physical Counted</div>
-            <div className="fs-5 fw-bold text-dark mt-1 font-monospace">
-              {shift.actual_cash !== null ? formatCurrency(shift.actual_cash) : 'Uncounted'}
+            <div className="p-3 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+              <div className="text-secondary extra-small fw-semibold text-uppercase">Cash Receipts In</div>
+              <div className="fs-5 fw-bold text-success mt-1 font-monospace">+{formatCurrency(fin.cash_collections || 0)}</div>
+            </div>
+          </div>
+          <div className="col-6 col-md-3">
+            <div className="p-3 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+              <div className="text-secondary extra-small fw-semibold text-uppercase">Expected Cash in Till</div>
+              <div className="fs-5 fw-bold text-primary mt-1 font-monospace">{formatCurrency(shift.financials?.expected_cash ?? shift.expected_cash ?? 0)}</div>
+            </div>
+          </div>
+          <div className="col-6 col-md-3">
+            <div className="p-3 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+              <div className="text-secondary extra-small fw-semibold text-uppercase">Physical Counted</div>
+              <div className="fs-5 fw-bold text-dark mt-1 font-monospace">
+                {shift.actual_cash !== null ? formatCurrency(shift.actual_cash) : 'Uncounted'}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Operational Productivity & Room Metrics Card */}
         {shift.operational_metrics && (
-          <div className="card border-0 shadow-xs rounded-3 p-3.5 mb-4 bg-light" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="card border-0 shadow-sm rounded-3 p-3.5 mb-4 bg-light" style={{ border: '1px solid #E2E8F0' }}>
             <div className="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
               <div className="d-flex align-items-center gap-2">
                 <div className="p-1.5 rounded-2 bg-primary text-white">
@@ -410,9 +446,9 @@ const ShiftDetails = () => {
               </span>
             </div>
 
-            <div className="row g-2 text-center">
+            <div className="row g-2.5 text-center">
               <div className="col-6 col-md-3">
-                <div className="p-2.5 bg-white rounded-3 border">
+                <div className="p-2.5 bg-white rounded-3 border border-light-subtle shadow-2xs h-100">
                   <div className="text-secondary extra-small fw-semibold text-uppercase">Check-ins</div>
                   <div className="fs-4 fw-bold text-success mt-0.5 font-monospace">{shift.operational_metrics.total_checkins}</div>
                   <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Arrivals processed</span>
@@ -420,7 +456,7 @@ const ShiftDetails = () => {
               </div>
 
               <div className="col-6 col-md-3">
-                <div className="p-2.5 bg-white rounded-3 border">
+                <div className="p-2.5 bg-white rounded-3 border border-light-subtle shadow-2xs h-100">
                   <div className="text-secondary extra-small fw-semibold text-uppercase">Check-outs</div>
                   <div className="fs-4 fw-bold text-danger mt-0.5 font-monospace">{shift.operational_metrics.total_checkouts}</div>
                   <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Departures cleared</span>
@@ -428,7 +464,7 @@ const ShiftDetails = () => {
               </div>
 
               <div className="col-6 col-md-3">
-                <div className="p-2.5 bg-white rounded-3 border">
+                <div className="p-2.5 bg-white rounded-3 border border-light-subtle shadow-2xs h-100">
                   <div className="text-secondary extra-small fw-semibold text-uppercase">New Bookings</div>
                   <div className="fs-4 fw-bold text-primary mt-0.5 font-monospace">{shift.operational_metrics.total_bookings}</div>
                   <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Reservations logged</span>
@@ -436,7 +472,7 @@ const ShiftDetails = () => {
               </div>
 
               <div className="col-6 col-md-3">
-                <div className="p-2.5 bg-white rounded-3 border">
+                <div className="p-2.5 bg-white rounded-3 border border-light-subtle shadow-2xs h-100">
                   <div className="text-secondary extra-small fw-semibold text-uppercase">Avg Daily Rate (ADR)</div>
                   <div className="fs-4 fw-bold text-dark mt-0.5 font-monospace">{formatCurrency(shift.operational_metrics.adr || 0)}</div>
                   <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Per check-in average</span>
@@ -452,7 +488,7 @@ const ShiftDetails = () => {
             <h6 className="fw-bold text-dark mb-2.5 d-flex align-items-center gap-1.5" style={{ fontSize: '0.9rem' }}>
               <Building2 size={15} className="text-primary" /> Physical Cash Denominations Counted
             </h6>
-            <div className="table-responsive border rounded-3 overflow-hidden">
+            <div className="table-responsive border border-light-subtle rounded-3 overflow-hidden shadow-2xs bg-white">
               <table className="table table-sm table-striped align-middle mb-0" style={{ fontSize: '0.8rem' }}>
                 <thead className="table-light extra-small text-secondary">
                   <tr>
@@ -488,14 +524,14 @@ const ShiftDetails = () => {
             <div className="row g-3">
               {shift.handovers_received && shift.handovers_received.length > 0 && (
                 <div className="col-12 col-md-6">
-                  <div className="border rounded-3 p-3 h-100 bg-light">
+                  <div className="border border-light-subtle rounded-3 p-3 h-100 bg-light bg-opacity-60 shadow-2xs">
                     <div className="extra-small fw-bold text-success text-uppercase mb-2 d-flex align-items-center gap-1">
                       <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#16A34A' }}></span>
                       Incoming Handovers Received ({shift.handovers_received.length})
                     </div>
                     <div className="d-flex flex-column gap-2">
                       {shift.handovers_received.map((h) => (
-                        <div key={h.id} className="p-2.5 bg-white rounded-3 border extra-small">
+                        <div key={h.id} className="p-2.5 bg-white rounded-3 border border-light-subtle extra-small shadow-2xs">
                           <div className="d-flex justify-content-between align-items-start mb-1">
                             <div>
                               <strong className="text-dark">From {h.from_user_name}</strong>
@@ -524,14 +560,14 @@ const ShiftDetails = () => {
 
               {shift.handovers_sent && shift.handovers_sent.length > 0 && (
                 <div className="col-12 col-md-6">
-                  <div className="border rounded-3 p-3 h-100 bg-light">
+                  <div className="border border-light-subtle rounded-3 p-3 h-100 bg-light bg-opacity-60 shadow-2xs">
                     <div className="extra-small fw-bold text-primary text-uppercase mb-2 d-flex align-items-center gap-1">
                       <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#2563EB' }}></span>
                       Outgoing Handovers Given ({shift.handovers_sent.length})
                     </div>
                     <div className="d-flex flex-column gap-2">
                       {shift.handovers_sent.map((h) => (
-                        <div key={h.id} className="p-2.5 bg-white rounded-3 border extra-small">
+                        <div key={h.id} className="p-2.5 bg-white rounded-3 border border-light-subtle extra-small shadow-2xs">
                           <div className="d-flex justify-content-between align-items-start mb-1">
                             <div>
                               <strong className="text-dark">Transferred to {h.to_user_name}</strong>
@@ -572,16 +608,30 @@ const ShiftDetails = () => {
         <div className="row g-3 mb-4">
           {/* Petty Cash Expenses */}
           <div className="col-12 col-md-6">
-            <div className="border rounded-3 p-3 h-100 bg-light">
-              <h6 className="fw-bold text-dark mb-2 d-flex align-items-center gap-1.5" style={{ fontSize: '0.85rem' }}>
-                <Receipt size={14} className="text-danger" /> Cash Expenses ({shift.expenses?.length || 0})
-              </h6>
+            <div className="border border-light-subtle rounded-3 p-3 h-100 bg-light bg-opacity-60 shadow-2xs">
+              <div className="d-flex justify-content-between align-items-center mb-2">
+                <h6 className="fw-bold text-dark mb-0 d-flex align-items-center gap-1.5" style={{ fontSize: '0.85rem' }}>
+                  <Receipt size={14} className="text-danger" /> Cash Expenses ({shift.expenses?.length || 0})
+                </h6>
+                {canManageExpenses && (
+                  <button
+                    type="button"
+                    className="btn btn-xs btn-outline-danger extra-small py-0.5 px-2 rounded-2 d-inline-flex align-items-center gap-1 no-print d-print-none"
+                    onClick={() => {
+                      setExpenseToEdit(null);
+                      setShowExpenseModal(true);
+                    }}
+                  >
+                    <PlusCircle size={11} /> Add
+                  </button>
+                )}
+              </div>
               {(!shift.expenses || shift.expenses.length === 0) ? (
                 <div className="extra-small text-secondary fst-italic">No expenses recorded during this shift.</div>
               ) : (
                 <div className="d-flex flex-column gap-1.5">
                   {shift.expenses.map((e) => (
-                    <div key={e.id} className="d-flex justify-content-between align-items-center p-2.5 bg-white rounded-2 border extra-small">
+                    <div key={e.id} className="d-flex justify-content-between align-items-center p-2.5 bg-white rounded-2 border border-light-subtle extra-small shadow-2xs">
                       <div>
                         <div className="fw-semibold text-dark">{e.description}</div>
                         <div className="text-secondary" style={{ fontSize: '0.72rem' }}>
@@ -592,8 +642,33 @@ const ShiftDetails = () => {
                           )}
                         </div>
                       </div>
-                      <div className="d-flex align-items-center gap-2">
+                      <div className="d-flex align-items-center gap-1.5">
                         <span className="font-monospace fw-bold text-danger">-{formatCurrency(e.amount)}</span>
+                        {canManageExpenses && (
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-light border p-1 rounded-1 text-secondary no-print d-print-none"
+                            title="Edit Cash Expense"
+                            onClick={() => {
+                              setExpenseToEdit(e);
+                              setShowExpenseModal(true);
+                            }}
+                          >
+                            <Edit2 size={12} />
+                          </button>
+                        )}
+                        {canManageExpenses && (
+                          <button
+                            type="button"
+                            className="btn btn-xs btn-light border p-1 rounded-1 text-danger no-print d-print-none"
+                            title="Delete Cash Expense"
+                            onClick={() => {
+                              setDeleteExpenseConfirm({ show: true, expense: e, loading: false });
+                            }}
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                         <button
                           type="button"
                           className="btn btn-xs btn-light border p-1 rounded-1 text-secondary no-print d-print-none"
@@ -616,7 +691,7 @@ const ShiftDetails = () => {
 
           {/* Cash Adjustments */}
           <div className="col-12 col-md-6">
-            <div className="border rounded-3 p-3 h-100 bg-light">
+            <div className="border border-light-subtle rounded-3 p-3 h-100 bg-light bg-opacity-60 shadow-2xs">
               <h6 className="fw-bold text-dark mb-2 d-flex align-items-center gap-1.5" style={{ fontSize: '0.85rem' }}>
                 <ArrowLeftRight size={14} className="text-primary" /> Cash Adjustments ({shift.adjustments?.length || 0})
               </h6>
@@ -625,7 +700,7 @@ const ShiftDetails = () => {
               ) : (
                 <div className="d-flex flex-column gap-1.5">
                   {shift.adjustments.map((a) => (
-                    <div key={a.id} className="d-flex justify-content-between align-items-center p-2.5 bg-white rounded-2 border extra-small">
+                    <div key={a.id} className="d-flex justify-content-between align-items-center p-2.5 bg-white rounded-2 border border-light-subtle extra-small shadow-2xs">
                       <div>
                         <div className="fw-semibold text-dark">{a.reason}</div>
                         <div className="text-secondary" style={{ fontSize: '0.72rem' }}>
@@ -657,7 +732,7 @@ const ShiftDetails = () => {
               No payment transactions linked to this shift.
             </div>
           ) : (
-            <div className="table-responsive border rounded-3 overflow-hidden">
+            <div className="table-responsive border border-light-subtle rounded-3 overflow-hidden shadow-2xs bg-white">
               <table className="table table-sm table-hover align-middle mb-0" style={{ fontSize: '0.8rem' }}>
                 <thead className="table-light extra-small text-secondary">
                   <tr>
@@ -811,6 +886,36 @@ const ShiftDetails = () => {
           }}
         />
       )}
+
+      {/* Shift Expense Create/Edit Modal */}
+      {shift && (
+        <ShiftExpenseModal
+          isOpen={showExpenseModal}
+          onClose={() => {
+            setShowExpenseModal(false);
+            setExpenseToEdit(null);
+          }}
+          shift={shift}
+          expenseToEdit={expenseToEdit}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['shift-details', id] });
+            queryClient.invalidateQueries({ queryKey: ['shifts'] });
+            loadShift();
+          }}
+        />
+      )}
+
+      {/* Delete Expense Confirm Modal */}
+      <ConfirmModal
+        show={deleteExpenseConfirm.show}
+        title="Delete Petty Cash Expense"
+        message={`Are you sure you want to delete expense #${deleteExpenseConfirm.expense?.id} (${formatCurrency(deleteExpenseConfirm.expense?.amount || 0)} - "${deleteExpenseConfirm.expense?.description}")? This amount will be returned to the till drawer expected cash.`}
+        confirmText="Yes, Delete Expense"
+        confirmVariant="danger"
+        loading={deleteExpenseConfirm.loading}
+        onClose={() => setDeleteExpenseConfirm({ show: false, expense: null, loading: false })}
+        onConfirm={handleConfirmDeleteExpense}
+      />
 
     </div>
   );

@@ -56,3 +56,17 @@ export const toggleUserActiveApi = async (id) => {
   return response.data;
 };
 
+export const toggleUserMobileAccessApi = async (id, can_use_mobile_app = null) => {
+  const payload = can_use_mobile_app !== null ? { can_use_mobile_app } : {};
+  const response = await api.patch(`/users/${id}/toggle_mobile_access/`, payload);
+  return response.data;
+};
+
+export const updateUserPermissionsApi = async (id, custom_permissions) => {
+  const response = await api.patch(`/users/${id}/update_permissions/`, {
+    permissions: custom_permissions,
+    custom_permissions: custom_permissions,
+  });
+  return response.data;
+};
+

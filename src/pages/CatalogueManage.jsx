@@ -835,7 +835,7 @@ const CatalogueManage = () => {
               {formData.is_published ? '● Live Online' : '○ Private'}
             </span>
           </div>
-          <h3 className="fw-bold text-dark m-0 mt-1 d-flex align-items-center gap-2">
+          <h3 data-spotlight-id="catalogue" className="fw-bold text-dark m-0 mt-1 d-flex align-items-center gap-2">
             <Globe size={26} className="text-primary" /> Hotel Digital Catalogue &amp; Showcase
           </h3>
           <span className="text-muted small">

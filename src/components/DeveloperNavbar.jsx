@@ -53,9 +53,19 @@ const DeveloperNavbar = ({ activeTab, onSelectTab, onOpenOnboardModal }) => {
             <span>{dateStr}</span>
           </div>
           <div className="border-start" style={{ height: '16px', borderColor: '#CBD5E1' }}></div>
-          <div className="d-flex align-items-center gap-2 fw-bold font-monospace text-dark text-nowrap">
+          <div className="d-flex align-items-center gap-2 fw-bold font-monospace text-dark text-nowrap flex-shrink-0">
             <Clock size={14} className="text-primary flex-shrink-0" />
-            <span>{timeStr}</span>
+            <span
+              style={{
+                fontVariantNumeric: 'tabular-nums',
+                fontFeatureSettings: '"tnum"',
+                display: 'inline-block',
+                minWidth: '95px',
+                textAlign: 'left'
+              }}
+            >
+              {timeStr}
+            </span>
             <span className="badge bg-dark-subtle text-dark rounded-pill extra-small px-1.5 py-0 font-monospace">IST</span>
           </div>
         </div>

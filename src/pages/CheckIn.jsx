@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBookingsApi, getBookingByIdApi, checkInBookingApi } from '../api/bookingApi';
@@ -14,6 +14,7 @@ import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
 import { compressImage } from '../utils/imageCompressor';
 import { extractErrorMessage } from '../utils/errorUtils';
+import ShiftRequiredGate from '../components/ShiftRequiredGate';
 
 import {
   DoorOpen,
@@ -58,7 +59,7 @@ const CheckIn = () => {
   const bookingIdParam = searchParams.get('booking_id');
   const navigate = useNavigate();
   const { showError, showWarning, showSuccess } = useNotification();
-  const { hasPermission } = useAuth();
+  const { hasPermission, selectedProperty } = useAuth();
   const queryClient = useQueryClient();
 
   const [mode, setMode] = useState(bookingIdParam ? 'advance' : 'walkin');
@@ -173,9 +174,9 @@ const CheckIn = () => {
 
   // Query 2: Customer Directory
   const { data: customers = [] } = useQuery({
-    queryKey: ['customers'],
+    queryKey: ['customers', selectedProperty?.id],
     queryFn: () => getCustomersApi(),
-    staleTime: 2 * 60 * 1000,
+    staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
 
@@ -299,7 +300,7 @@ const CheckIn = () => {
     queryKey: ['checkin-data', checkInDate, checkInTime, checkoutDate, checkoutTime, mode],
     queryFn: async () => {
       if (!checkInDate || !checkoutDate) return [];
-      const res = await checkAvailabilityApi(dtIn, dtOut);
+      const res = await checkAvailabilityApi(dtIn, dtOut, '', null, null, true);
       return res?.rooms || [];
     },
     enabled: !!(checkInDate && checkoutDate),
@@ -307,8 +308,17 @@ const CheckIn = () => {
     gcTime: 5 * 60 * 1000,
   });
 
-  const availableRooms = checkInRoomsData;
-  const advanceAvailableRooms = checkInRoomsData;
+  const availableRooms = useMemo(() => {
+    return (checkInRoomsData || []).filter((r) => {
+      // Immediate check-in strictly requires rooms to be clean, active, available, and not reserved for walk-ins
+      if (!r.is_active || r.status === 'CLEANING' || r.status === 'MAINTENANCE' || r.status === 'OCCUPIED' || (mode === 'walkin' && r.status === 'RESERVED')) {
+        return false;
+      }
+      return true;
+    });
+  }, [checkInRoomsData, mode]);
+
+  const advanceAvailableRooms = availableRooms;
   const fetchAdvanceAvailability = loadAvailableRooms;
 
   // Auto-select first room in Walk-In mode if not yet selected or currently selected room became unavailable
@@ -319,41 +329,49 @@ const CheckIn = () => {
         setSelectedRoomId(availableRooms[0].id);
         setCustomRoomRate(availableRooms[0].base_price);
       }
+    } else if (mode === 'walkin' && availableRooms.length === 0) {
+      setSelectedRoomId('');
     }
   }, [availableRooms, mode, selectedRoomId]);
 
   // Query 6: Customer live search in Walk-In mode
   const { data: custSearchResults = [] } = useQuery({
-    queryKey: ['customers-search', custSearchTerm],
+    queryKey: ['customers-search', custSearchTerm, selectedProperty?.id],
     queryFn: async () => {
       if (custSearchTerm.trim().length <= 1) return [];
       const res = await searchCustomersApi(custSearchTerm);
       return res || [];
     },
     enabled: custSearchTerm.trim().length > 1,
-    staleTime: 2 * 60 * 1000,
+    staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
 
   const combinedCustResults = React.useMemo(() => {
     const term = custSearchTerm.trim().toLowerCase();
-    if (!term) return [];
+    if (!term) {
+      return (customers || []).slice(0, 20);
+    }
     const termDigits = custSearchTerm.replace(/\D/g, '');
 
     const localMatches = (customers || []).filter((c) => {
       const first = (c.first_name || '').toLowerCase();
+      const middle = (c.middle_name || '').toLowerCase();
       const last = (c.last_name || '').toLowerCase();
-      const full = (c.full_name || `${first} ${last}`).toLowerCase();
+      const full = (c.full_name || `${first} ${middle} ${last}`).toLowerCase();
       const mobile = (c.mobile || '').toLowerCase();
       const mobileDigits = (c.mobile || '').replace(/\D/g, '');
       const idNum = (c.id_number || '').toLowerCase();
+      const email = (c.email || '').toLowerCase();
       return (
         full.includes(term) ||
         first.includes(term) ||
+        middle.includes(term) ||
         last.includes(term) ||
         mobile.includes(term) ||
         (termDigits && mobileDigits.includes(termDigits)) ||
-        idNum.includes(term)
+        idNum.includes(term) ||
+        email.includes(term)
       );
     });
 
@@ -473,11 +491,7 @@ const CheckIn = () => {
   // Walk-In Customer Search Handler
   const handleCustSearch = (term) => {
     setCustSearchTerm(term);
-    if (term.trim().length > 0) {
-      setShowCustDropdown(true);
-    } else {
-      setShowCustDropdown(false);
-    }
+    setShowCustDropdown(true);
   };
 
   const handleSelectCustomer = (c) => {
@@ -561,6 +575,13 @@ const CheckIn = () => {
         showWarning(msg, 'Room Selection Required');
         return;
       }
+      const chosenRoom = (checkInRoomsData || []).find((r) => String(r.id) === String(selectedRoomId));
+      if (chosenRoom && (chosenRoom.status === 'CLEANING' || chosenRoom.status === 'MAINTENANCE' || chosenRoom.status === 'OCCUPIED' || (mode === 'walkin' && chosenRoom.status === 'RESERVED'))) {
+        const msg = `Room ${chosenRoom.room_number} is currently ${chosenRoom.status.toLowerCase()} and cannot be checked in for a walk-in guest. Please select an available clean room.`;
+        setError(msg);
+        showWarning(msg, 'Room Unavailable');
+        return;
+      }
       setCurrentStep(2);
     } else if (currentStep === 2) {
       if (!firstName || !mobile) {
@@ -611,6 +632,15 @@ const CheckIn = () => {
       return;
     }
 
+    const targetRoomId = reallocatedRoomId || selectedBooking.room;
+    const targetRoom = advanceAvailableRooms.find(r => String(r.id) === String(targetRoomId)) || (String(targetRoomId) === String(selectedBooking.room) ? selectedBooking.room_detail : null);
+    if (targetRoom && targetRoom.status === 'CLEANING') {
+      const msg = `Room ${targetRoom.room_number} is currently marked as Cleaning and cannot be checked in. Please reallocate this guest to an available clean room, or mark the room as Clean in Rooms management first.`;
+      setError(msg);
+      showWarning(msg, 'Room Under Cleaning');
+      return;
+    }
+
     setShowAdvanceConfirmModal(true);
   };
 
@@ -655,7 +685,33 @@ const CheckIn = () => {
       queryClient.invalidateQueries({ queryKey: ['current-shift'] });
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
       const stayId = res?.data?.stay_id || res?.stay_id || res?.data?.id || res?.id;
-      showSuccess(`Check-In for Booking #${selectedBooking.booking_number} completed successfully!`, 'Check-In Successful');
+      showSuccess(
+        `Check-In for Booking #${selectedBooking.booking_number} completed successfully!`,
+        'Check-In Successful',
+        {
+          whatsappAction: {
+            eventType: 'CHECK_IN',
+            customerMobile: selectedBooking?.customer_detail?.mobile || selectedBooking?.customer?.mobile,
+            customerName: selectedBooking?.customer_detail?.full_name || selectedBooking?.customer?.full_name,
+            bookingId: selectedBooking?.id,
+            customerId: selectedBooking?.customer_detail?.id || selectedBooking?.customer?.id,
+            data: {
+              guest_name: selectedBooking?.customer_detail?.full_name || 'Guest',
+              booking_number: selectedBooking?.booking_number || '',
+              room_number: selectedBooking?.room_detail?.room_number || selectedBooking?.room?.room_number || '',
+              check_in_date: selectedBooking?.check_in_date || checkInDate,
+              check_in_time: selectedBooking?.check_in_time || checkInTime,
+              check_out_date: selectedBooking?.expected_checkout_date || checkoutDate,
+              check_out_time: checkoutTime,
+              guest_count: selectedBooking?.number_of_guests || 1,
+              number_of_nights: selectedBooking?.total_nights || nightsCount,
+              amount_paid: numericAdvance,
+              balance_amount: estimatedBalance,
+            },
+            customLabel: 'Send Welcome Message on WhatsApp',
+          },
+        }
+      );
       setShowAdvanceConfirmModal(false);
       navigate(`/stays/${stayId}`);
     } catch (err) {
@@ -681,6 +737,14 @@ const CheckIn = () => {
       const msg = 'Please select an available room.';
       setError(msg);
       showWarning(msg, 'Room Required');
+      return;
+    }
+    const chosenRoom = (checkInRoomsData || []).find((r) => String(r.id) === String(selectedRoomId));
+    if (chosenRoom && (chosenRoom.status === 'CLEANING' || chosenRoom.status === 'MAINTENANCE' || chosenRoom.status === 'OCCUPIED' || (mode === 'walkin' && chosenRoom.status === 'RESERVED'))) {
+      const msg = `Room ${chosenRoom.room_number} is currently ${chosenRoom.status.toLowerCase()} and cannot be checked in for a walk-in guest. Please choose an available clean room.`;
+      setError(msg);
+      showWarning(msg, 'Room Unavailable');
+      setCurrentStep(1);
       return;
     }
     if (!firstName || !mobile) {
@@ -750,8 +814,34 @@ const CheckIn = () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       queryClient.invalidateQueries({ queryKey: ['rooms'] });
-      showSuccess(`Walk-In Check-In for ${firstName} ${lastName} completed successfully!`, 'Check-In Successful');
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
       const stayId = res?.data?.id || res?.id || res?.data?.stay_id || res?.stay_id;
+      const selectedRoom = availableRooms.find((r) => String(r.id) === String(selectedRoomId));
+      showSuccess(
+        `Walk-In Check-In for ${firstName} ${lastName} completed successfully!`,
+        'Check-In Successful',
+        {
+          whatsappAction: {
+            eventType: 'CHECK_IN',
+            customerMobile: mobile,
+            customerName: `${firstName} ${lastName}`.trim(),
+            data: {
+              guest_name: `${firstName} ${lastName}`.trim(),
+              booking_number: res?.data?.stay_number || res?.stay_number || '',
+              room_number: selectedRoom?.room_number || '',
+              check_in_date: checkInDate,
+              check_in_time: checkInTime,
+              check_out_date: checkoutDate,
+              check_out_time: checkoutTime,
+              guest_count: parseInt(adults || 1) + parseInt(children || 0),
+              number_of_nights: nightsCount,
+              amount_paid: advancePayment || 0,
+              balance_amount: estimatedBalance,
+            },
+            customLabel: 'Send Welcome Message on WhatsApp',
+          },
+        }
+      );
       if (stayId) {
         navigate(`/stays/${stayId}`);
       } else {
@@ -843,7 +933,8 @@ const CheckIn = () => {
   const isGuestEntered = !!firstName && !!mobile;
 
   return (
-    <div style={{ maxWidth: '1400px', margin: '0 auto' }} className="pb-5">
+    <ShiftRequiredGate actionName="check in guests or allocate rooms">
+      <div style={{ maxWidth: '1400px', margin: '0 auto' }} className="pb-5">
 
       {/* ========================================================= */}
       {/* 1. PAGE HEADER WITH MODE TABS                             */}
@@ -981,7 +1072,7 @@ const CheckIn = () => {
           <div className="saas-card p-4 border-0 bg-white shadow-sm mb-4">
             <div className="d-flex justify-content-between align-items-center mb-3">
               <div>
-                <h5 className="fw-bold text-dark m-0 d-flex align-items-center gap-2">
+                <h5 data-spotlight-id="checkin" className="fw-bold text-dark m-0 d-flex align-items-center gap-2">
                   <Search size={20} className="text-primary" /> 1. Search Active Confirmed Booking
                 </h5>
                 <span className="text-muted small">Search by Booking # (BK-...), Guest Name, Mobile Number, or Room #</span>
@@ -1297,7 +1388,7 @@ const CheckIn = () => {
                     <label className="form-label fw-bold text-dark">Room Allocation / Room Transfer (Optional)</label>
                     <select className="form-select border-primary" value={reallocatedRoomId} onChange={(e) => setReallocatedRoomId(e.target.value)}>
                       <option value={selectedBooking.room}>
-                        Room {selectedBooking.room_detail?.room_number} - {selectedBooking.room_detail?.room_type_name} (Originally Assigned Room)
+                        Room {selectedBooking.room_detail?.room_number} - {selectedBooking.room_detail?.room_type_name} (Originally Assigned Room){selectedBooking.room_detail?.status === 'CLEANING' ? ' ⚠️ [CURRENTLY CLEANING]' : ''}
                       </option>
                       {advanceAvailableRooms
                         .filter((r) => String(r.id) !== String(selectedBooking.room))
@@ -1307,6 +1398,15 @@ const CheckIn = () => {
                           </option>
                         ))}
                     </select>
+
+                    {selectedBooking?.room_detail?.status === 'CLEANING' && String(reallocatedRoomId || selectedBooking.room) === String(selectedBooking.room) && (
+                      <div className="alert alert-warning border-warning-subtle d-flex align-items-center gap-2 py-2 px-3 mt-2 mb-0 small rounded-3">
+                        <AlertTriangle size={16} className="text-warning flex-shrink-0" />
+                        <div>
+                          <strong>Room Under Cleaning:</strong> Originally assigned Room {selectedBooking.room_detail?.room_number} is currently being cleaned. Please reallocate this guest to an available clean room above, or change its status to <em>Available</em> in Rooms once housekeeping is complete.
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1626,7 +1726,7 @@ const CheckIn = () => {
 
                   {filteredAvailableRooms.length === 0 ? (
                     <div className="p-4 text-center text-muted bg-light rounded-3 border">
-                      No available rooms for the selected check-in period.
+                      No clean & ready rooms available for the selected check-in period.
                     </div>
                   ) : (
                     <div className="row g-3 mb-3" style={{ maxHeight: '340px', overflowY: 'auto' }}>
@@ -1651,12 +1751,23 @@ const CheckIn = () => {
                               <div className="text-muted small mb-2">{rm.room_type_name}</div>
                               <div className="d-flex justify-content-between align-items-center">
                                 <span className="fw-bold text-primary">{formatCurrency(rm.base_price)}</span>
-                                <span className="text-muted" style={{ fontSize: '0.725rem' }}>Max 3 Guests</span>
+                                <span className="text-muted" style={{ fontSize: '0.725rem' }}>
+                                  Max {(rm.max_adults || 2) + (rm.max_children || 0)} Guests
+                                </span>
                               </div>
                             </div>
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {checkInRoomsData.some((r) => r.status === 'CLEANING') && (
+                    <div className="alert alert-light border border-warning-subtle text-secondary py-2 px-3 rounded-3 small d-flex align-items-center gap-2 mt-2 mb-0">
+                      <span className="badge bg-warning text-dark">Housekeeping</span>
+                      <span>
+                        {checkInRoomsData.filter((r) => r.status === 'CLEANING').length} room(s) currently being cleaned are hidden from check-in until marked Clean & Available in Rooms.
+                      </span>
                     </div>
                   )}
 
@@ -1714,7 +1825,16 @@ const CheckIn = () => {
 
                   {/* Search Existing Customer Bar */}
                   <div className="position-relative mb-4" ref={custSearchRef}>
-                    <label className="form-label small fw-semibold text-primary">Search Existing Customer Directory</label>
+                    <div className="d-flex justify-content-between align-items-center mb-1">
+                      <label className="form-label small fw-semibold text-primary m-0">
+                        Search Existing Customer Directory
+                      </label>
+                      {customers.length > 0 && (
+                        <span className="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill extra-small px-2 py-0.5">
+                          {customers.length} registered {customers.length === 1 ? 'guest' : 'guests'}
+                        </span>
+                      )}
+                    </div>
                     <div className="input-group">
                       <span className="input-group-text bg-white"><Search size={16} /></span>
                       <input
@@ -1723,7 +1843,7 @@ const CheckIn = () => {
                         placeholder="Search guest by name, mobile, or Aadhaar ID..."
                         value={custSearchTerm}
                         onChange={(e) => handleCustSearch(e.target.value)}
-                        onFocus={() => (custSearchTerm.length > 0 || customers.length > 0) && setShowCustDropdown(true)}
+                        onFocus={() => setShowCustDropdown(true)}
                         onKeyDown={(e) => {
                           if (e.key === 'Escape') {
                             setShowCustDropdown(false);
@@ -1737,7 +1857,7 @@ const CheckIn = () => {
                           style={{ cursor: 'pointer' }}
                           onClick={() => {
                             setCustSearchTerm('');
-                            setShowCustDropdown(false);
+                            setShowCustDropdown(true);
                           }}
                           title="Clear search"
                         >
@@ -1747,28 +1867,86 @@ const CheckIn = () => {
                     </div>
 
                     {showCustDropdown && (
-                      <div className="position-absolute start-0 end-0 top-100 mt-1 bg-white border rounded-3 shadow-lg z-3 overflow-hidden" style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                      <div className="position-absolute start-0 end-0 top-100 mt-1 bg-white border rounded-3 shadow-lg z-3 overflow-hidden" style={{ maxHeight: '280px', overflowY: 'auto' }}>
                         {combinedCustResults.length === 0 ? (
-                          <div className="p-3 text-muted small text-center">No existing customer records found</div>
+                          <div className="p-3 text-muted small text-center">
+                            {custSearchTerm.trim() ? (
+                              <>No existing customer records found matching &ldquo;<strong>{custSearchTerm}</strong>&rdquo;</>
+                            ) : (
+                              'No registered customer records found in directory. Fill in the fields below to register.'
+                            )}
+                          </div>
                         ) : (
-                          combinedCustResults.map((c) => (
-                            <div
-                              key={c.id}
-                              className="p-3 border-bottom hover-bg-light cursor-pointer d-flex justify-content-between align-items-center"
-                              style={{ cursor: 'pointer' }}
-                              onMouseDown={() => handleSelectCustomer(c)}
-                            >
-                              <div>
-                                <div className="fw-bold text-dark small">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</div>
-                                <div className="text-muted" style={{ fontSize: '0.75rem' }}>📞 <strong className="text-success">{c.mobile}</strong> | ID: {c.id_number || 'N/A'}</div>
-                              </div>
-                              <button type="button" className="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill">Use Customer</button>
+                          <>
+                            <div className="px-3 py-2 bg-light border-bottom extra-small text-muted fw-bold d-flex justify-content-between align-items-center">
+                              <span>
+                                <i className="bi bi-people-fill text-primary me-1"></i>
+                                {custSearchTerm.trim() ? `Search Results (${combinedCustResults.length})` : `Registered Guests Directory (${combinedCustResults.length})`}
+                              </span>
+                              <span className="text-secondary" style={{ fontSize: '0.7rem' }}>Click &ldquo;Use Customer&rdquo; to auto-fill</span>
                             </div>
-                          ))
+                            {combinedCustResults.map((c) => (
+                              <div
+                                key={c.id}
+                                className="p-3 border-bottom hover-bg-light cursor-pointer d-flex justify-content-between align-items-center"
+                                style={{ cursor: 'pointer' }}
+                                onMouseDown={() => handleSelectCustomer(c)}
+                              >
+                                <div>
+                                  <div className="fw-bold text-dark small">{c.full_name || `${c.first_name} ${c.last_name || ''}`}</div>
+                                  <div className="text-muted" style={{ fontSize: '0.75rem' }}>
+                                    📞 <strong className="text-success">{c.mobile}</strong>
+                                    {c.id_number ? ` | ID: ${c.id_type || 'ID'}: ${c.id_number}` : ''}
+                                    {c.city ? ` | ${c.city}` : ''}
+                                  </div>
+                                </div>
+                                <button type="button" className="btn btn-sm btn-outline-primary py-1 px-2.5 rounded-pill fw-semibold">
+                                  <i className="bi bi-check-lg me-1"></i>Use Customer
+                                </button>
+                              </div>
+                            ))}
+                          </>
                         )}
                       </div>
                     )}
                   </div>
+
+                  {/* Active Selected Customer Linked Banner */}
+                  {selectedCustomerId && !isNewCust && (
+                    <div className="alert alert-success d-flex justify-content-between align-items-center py-2.5 px-3 mb-4 border-success-subtle rounded-3 shadow-2xs">
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-check-circle-fill text-success fs-5"></i>
+                        <div>
+                          <strong className="text-dark small d-block">
+                            Existing Customer Profile Linked: {firstName} {lastName}
+                          </strong>
+                          <span className="text-muted extra-small">
+                            📞 {mobile} {idNumber ? `| ID: ${idType} ${idNumber}` : ''} {email ? `| ✉️ ${email}` : ''}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-outline-secondary py-1 px-2.5 rounded-pill"
+                        onClick={() => {
+                          setSelectedCustomerId('');
+                          setSelectedCustData(null);
+                          setIsNewCust(true);
+                          setFirstName('');
+                          setLastName('');
+                          setMobile('');
+                          setEmail('');
+                          setAddress('');
+                          setIdNumber('');
+                          setPhotoPreview('');
+                          setDocPreview('');
+                          setDocBackPreview('');
+                        }}
+                      >
+                        <i className="bi bi-x-circle me-1"></i>Clear &amp; New Guest
+                      </button>
+                    </div>
+                  )}
 
                   {/* Primary Guest Fields Grid */}
                   <div className="row g-3 mb-4">
@@ -2756,7 +2934,8 @@ const CheckIn = () => {
         </div>
       )}
 
-    </div>
+      </div>
+    </ShiftRequiredGate>
   );
 };
 

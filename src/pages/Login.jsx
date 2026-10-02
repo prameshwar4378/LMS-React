@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
@@ -8,6 +8,14 @@ const Login = () => {
   const [error, setError] = useState('');
   const { login, loading } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const notice = sessionStorage.getItem('lms_auth_notice');
+    if (notice) {
+      setError(notice);
+      sessionStorage.removeItem('lms_auth_notice');
+    }
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,7 +33,7 @@ const Login = () => {
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Invalid username or password.');
+      setError(err.response?.data?.detail || err.response?.data?.error || 'Invalid username or password.');
     }
   };
 

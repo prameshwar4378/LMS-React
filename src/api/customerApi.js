@@ -1,9 +1,21 @@
 import api from './axios';
+import { triggerShiftRefresh } from '../utils/shiftEvents';
 
-export const getCustomersApi = async (search = '') => {
-  // Guard against TanStack Query context object or non-string search parameter
-  const term = typeof search === 'string' ? search.trim() : '';
-  const url = term ? `/customers/?search=${encodeURIComponent(term)}` : '/customers/';
+export const getCustomersApi = async (params = '') => {
+  let queryParams = {};
+  if (typeof params === 'string') {
+    if (params.trim()) queryParams.search = params.trim();
+  } else if (params && typeof params === 'object') {
+    queryParams = { ...params };
+  }
+  const searchParams = new URLSearchParams();
+  Object.entries(queryParams).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+      searchParams.append(k, v);
+    }
+  });
+  const qs = searchParams.toString();
+  const url = qs ? `/customers/?${qs}` : '/customers/';
   const res = await api.get(url);
   return Array.isArray(res.data) ? res.data : (res.data?.results || []);
 };
@@ -26,15 +38,15 @@ export const searchCustomersApi = async (query = '') => {
 };
 
 export const createCustomerApi = async (formData) => {
-  // Can accept FormData (for photo & doc files) or JSON object
-  const headers = formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {};
-  const res = await api.post('/customers/', formData, { headers });
+  // Let axios / browser handle multipart/form-data boundary automatically for FormData
+  const res = await api.post('/customers/', formData);
   return res.data;
 };
 
 export const updateCustomerApi = async (id, formData) => {
-  const headers = formData instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {};
-  const res = await api.put(`/customers/${id}/`, formData, { headers });
+  const customerId = (typeof id === 'object' && id !== null) ? (id.id || id) : id;
+  // Use PATCH for partial updates, and let Axios/browser set multipart boundary automatically
+  const res = await api.patch(`/customers/${customerId}/`, formData);
   return res.data;
 };
 
@@ -42,9 +54,7 @@ export const uploadCustomerDocumentApi = async (customerId, title, file) => {
   const formData = new FormData();
   if (title) formData.append('title', title);
   formData.append('document_file', file);
-  const res = await api.post(`/customers/${customerId}/upload_document/`, formData, {
-    headers: { 'Content-Type': 'multipart/form-data' }
-  });
+  const res = await api.post(`/customers/${customerId}/upload_document/`, formData);
   return res.data;
 };
 
@@ -75,11 +85,13 @@ export const deleteCustomerApi = async (id) => {
 
 export const recordCustomerPaymentApi = async (customerId, paymentData) => {
   const res = await api.post(`/customers/${customerId}/record_payment/`, paymentData);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const refundCustomerCreditApi = async (customerId, refundData) => {
   const res = await api.post(`/customers/${customerId}/refund_credit/`, refundData);
+  triggerShiftRefresh();
   return res.data;
 };
 

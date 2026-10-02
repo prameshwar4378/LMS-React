@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useRef } from 'react';
+import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getBookingsApi, updateBookingApi, cancelBookingApi, deleteBookingApi } from '../api/bookingApi';
@@ -7,21 +7,28 @@ import { checkAvailabilityApi, getRoomsApi } from '../api/roomApi';
 import StatusBadge from '../components/StatusBadge';
 import ConfirmModal from '../components/ConfirmModal';
 import PageLoader from '../components/PageLoader';
+import RoomCalendar from '../components/RoomCalendar';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { exportBookingsToExcel, exportBookingsToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { useShift } from '../context/ShiftContext';
+import WhatsAppButton from '../components/WhatsAppButton';
 
 const Bookings = () => {
   const { user, selectedProperty, hasPermission, getPermissionLimit } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
   const { showSuccess, showError } = useNotification();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
   const canGiveDiscount = hasPermission('billing', 'can_give_discount');
   const maxDiscountPercent = getPermissionLimit('billing', 'max_discount_percent') ?? 100;
   const queryClient = useQueryClient();
 
-  const [statusFilter, setStatusFilter] = useState('CONFIRMED');
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'calendar'
+  const [statusFilter, setStatusFilter] = useState('');
+  const [activeGridFilter, setActiveGridFilter] = useState(null); // null | 'UPCOMING' | 'ARRIVING_TODAY' | 'CHECKED_IN' | 'PENDING_PAYMENT'
   const [search, setSearch] = useState('');
 
   // TanStack Query for bookings data fetching
@@ -36,10 +43,132 @@ const Bookings = () => {
     gcTime: 5 * 60 * 1000,
   });
 
+  // Local Today date string YYYY-MM-DD
+  const todayStr = useMemo(() => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }, []);
+
+  // Helper: calculate total agreed booking rate
+  const getBookingTotalCost = useCallback((b) => {
+    const checkIn = new Date(b.check_in_date || '1970-01-01');
+    const checkOut = new Date(b.expected_checkout_date || b.check_in_date || '1970-01-01');
+    const diffTime = checkOut.getTime() - checkIn.getTime();
+    const nights = Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24))) || 1;
+    const rate = parseFloat(b.room_rate || 0);
+    let discount = 0;
+    if (b.discount_type === 'PERCENTAGE') {
+      discount = (rate * nights * parseFloat(b.discount_value || 0)) / 100;
+    } else {
+      discount = parseFloat(b.discount_value || 0);
+    }
+    return Math.max(0, rate * nights - discount);
+  }, []);
+
+  // Grid 1 Filter: Upcoming bookings (active reservations awaiting arrival / check-in)
+  const isUpcoming = useCallback((b) => {
+    return b.status === 'CONFIRMED' || b.status === 'PENDING';
+  }, []);
+
+  // Grid 2 Filter: Arriving today (scheduled check-in today and not cancelled)
+  const isArrivingToday = useCallback((b) => {
+    const bDate = b.check_in_date ? b.check_in_date.split('T')[0] : '';
+    return bDate === todayStr && b.status !== 'CANCELLED';
+  }, [todayStr]);
+
+  // Grid 3 Filter: Checked in (guest has checked in)
+  const isCheckedIn = useCallback((b) => {
+    return b.status === 'CHECKED_IN';
+  }, []);
+
+  // Grid 4 Filter: Pending payment (unpaid advance, balance due, or pending status)
+  const isPendingPayment = useCallback((b) => {
+    if (b.status === 'CANCELLED' || b.status === 'COMPLETED') return false;
+    const total = getBookingTotalCost(b);
+    const advance = parseFloat(b.advance_amount || 0);
+    return advance <= 0 || advance < total || b.status === 'PENDING';
+  }, [getBookingTotalCost]);
+
+  // Helper to determine if a reservation has an overdue arrival (guest hasn't checked in past scheduled time)
+  const getArrivalOverdueInfo = useCallback((b) => {
+    if (!b || (b.status !== 'CONFIRMED' && b.status !== 'PENDING')) {
+      return { isOverdue: false, daysLate: 0, hoursLate: 0, label: '', isPastDate: false };
+    }
+
+    if (!b.check_in_date) {
+      return { isOverdue: false, daysLate: 0, hoursLate: 0, label: '', isPastDate: false };
+    }
+
+    const inDateStr = b.check_in_date.split('T')[0];
+    const inTimeStr = b.check_in_time ? b.check_in_time.substring(0, 5) : '12:00';
+    const cleanTime = inTimeStr.length === 5 ? `${inTimeStr}:00` : inTimeStr;
+    const scheduledDt = new Date(`${inDateStr}T${cleanTime}`);
+
+    const now = new Date();
+
+    if (isNaN(scheduledDt.getTime())) {
+      if (inDateStr < todayStr) {
+        return { isOverdue: true, daysLate: 1, hoursLate: 24, label: 'Overdue Arrival', isPastDate: true };
+      }
+      return { isOverdue: false, daysLate: 0, hoursLate: 0, label: '', isPastDate: false };
+    }
+
+    if (now > scheduledDt) {
+      const diffMs = now.getTime() - scheduledDt.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      const isPastDate = inDateStr < todayStr;
+
+      let label = 'Late Arrival';
+      if (isPastDate && diffDays >= 1) {
+        label = `Overdue (${diffDays}d late)`;
+      } else if (isPastDate) {
+        label = 'Overdue Arrival';
+      } else if (diffHours >= 1) {
+        label = `Late (${diffHours}h overdue)`;
+      }
+
+      return {
+        isOverdue: true,
+        daysLate: Math.max(isPastDate ? 1 : 0, diffDays),
+        hoursLate: diffHours,
+        label,
+        isPastDate,
+      };
+    }
+
+    return { isOverdue: false, daysLate: 0, hoursLate: 0, label: '', isPastDate: false };
+  }, [todayStr]);
+
+  // 4 Provided KPI Grid Counts + Overdue Arrival Count
+  const upcomingCount = useMemo(() => rawBookings.filter(isUpcoming).length, [rawBookings, isUpcoming]);
+  const arrivingTodayCount = useMemo(() => rawBookings.filter(isArrivingToday).length, [rawBookings, isArrivingToday]);
+  const checkedInCount = useMemo(() => rawBookings.filter(isCheckedIn).length, [rawBookings, isCheckedIn]);
+  const pendingPaymentCount = useMemo(() => rawBookings.filter(isPendingPayment).length, [rawBookings, isPendingPayment]);
+  const overdueArrivalCount = useMemo(() => rawBookings.filter((b) => getArrivalOverdueInfo(b).isOverdue).length, [rawBookings, getArrivalOverdueInfo]);
+
   const bookings = useMemo(() => {
-    if (!statusFilter) return rawBookings;
-    return rawBookings.filter((b) => b.status === statusFilter);
-  }, [rawBookings, statusFilter]);
+    let result = rawBookings;
+
+    if (activeGridFilter === 'UPCOMING') {
+      result = result.filter(isUpcoming);
+    } else if (activeGridFilter === 'ARRIVING_TODAY') {
+      result = result.filter(isArrivingToday);
+    } else if (activeGridFilter === 'CHECKED_IN') {
+      result = result.filter(isCheckedIn);
+    } else if (activeGridFilter === 'PENDING_PAYMENT') {
+      result = result.filter(isPendingPayment);
+    } else if (statusFilter === 'OVERDUE_ARRIVAL') {
+      result = result.filter((b) => getArrivalOverdueInfo(b).isOverdue);
+    } else if (statusFilter) {
+      result = result.filter((b) => b.status === statusFilter);
+    }
+
+    return result;
+  }, [rawBookings, activeGridFilter, statusFilter, isUpcoming, isArrivingToday, isCheckedIn, isPendingPayment, getArrivalOverdueInfo]);
 
   // Selected Booking for View Details Modal
   const [viewBooking, setViewBooking] = useState(null);
@@ -80,11 +209,8 @@ const Bookings = () => {
 
   const navigate = useNavigate();
 
-  // KPI Analytics Counters
-  const totalBookings = rawBookings.length;
-  const confirmedBookings = rawBookings.filter((b) => b.status === 'CONFIRMED').length;
-  const checkedInBookings = rawBookings.filter((b) => b.status === 'CHECKED_IN').length;
-  const totalAdvancePaid = rawBookings.reduce((sum, b) => sum + parseFloat(b.advance_amount || 0), 0);
+  // Mobile layout mode: 'cards' on small phones by default, 'table' on desktop/tablets
+  const [mobileLayoutMode, setMobileLayoutMode] = useState(() => (typeof window !== 'undefined' && window.innerWidth < 768 ? 'cards' : 'table'));
 
   // -------------------------------------------------------------
   // Column Visibility & Definitions
@@ -101,7 +227,7 @@ const Bookings = () => {
     { key: 'actions', label: 'Actions' },
   ];
 
-  const [columnVisibility, setColumnVisibility] = useState({
+  const DEFAULT_BOOKINGS_COLUMNS = {
     booking_number: true,
     guest_profile: true,
     assigned_room: true,
@@ -111,7 +237,16 @@ const Bookings = () => {
     advance_paid: true,
     status: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+    visibleColumnCount
+  } = usePersistentColumns('lms_bookings_column_visibility', DEFAULT_BOOKINGS_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -126,34 +261,11 @@ const Bookings = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
-  const resetColumnVisibility = () => {
-    setColumnVisibility({
-      booking_number: true,
-      guest_profile: true,
-      assigned_room: true,
-      check_in: true,
-      expected_checkout: true,
-      agreed_rate: true,
-      advance_paid: true,
-      status: true,
-      actions: true,
-    });
-  };
-
-  const visibleColumnCount = Object.values(columnVisibility).filter(Boolean).length || 1;
-
   // -------------------------------------------------------------
-  // Column-wise Sorting State & Logic
+  // Column-wise Sorting State & Logic (Default: Chronological Check-In Ascending)
   // -------------------------------------------------------------
   const [sortColumn, setSortColumn] = useState('check_in_date');
-  const [sortDirection, setSortDirection] = useState('desc'); // 'asc' | 'desc'
+  const [sortDirection, setSortDirection] = useState('asc'); // 'asc' | 'desc'
 
   const handleSort = (columnKey) => {
     if (sortColumn === columnKey) {
@@ -184,14 +296,32 @@ const Bookings = () => {
           valA = Number(a.room_detail?.room_number) || (a.room_detail?.room_number || '');
           valB = Number(b.room_detail?.room_number) || (b.room_detail?.room_number || '');
           break;
-        case 'check_in_date':
-          valA = new Date(`${a.check_in_date || '1970-01-01'}T${a.check_in_time || '12:00'}`).getTime();
-          valB = new Date(`${b.check_in_date || '1970-01-01'}T${b.check_in_time || '12:00'}`).getTime();
+        case 'check_in':
+        case 'check_in_date': {
+          const parseCheckInTime = (item) => {
+            const dateStr = (item.check_in_date || '1970-01-01').split('T')[0];
+            let timeStr = item.check_in_time || '12:00:00';
+            if (timeStr.length === 5) timeStr = `${timeStr}:00`;
+            const ts = new Date(`${dateStr}T${timeStr}`).getTime();
+            return isNaN(ts) ? 0 : ts;
+          };
+          valA = parseCheckInTime(a);
+          valB = parseCheckInTime(b);
           break;
-        case 'expected_checkout_date':
-          valA = new Date(`${a.expected_checkout_date || a.check_in_date || '1970-01-01'}T${a.expected_checkout_time || '11:00'}`).getTime();
-          valB = new Date(`${b.expected_checkout_date || b.check_in_date || '1970-01-01'}T${b.expected_checkout_time || '11:00'}`).getTime();
+        }
+        case 'expected_checkout':
+        case 'expected_checkout_date': {
+          const parseCheckoutTime = (item) => {
+            const dateStr = (item.expected_checkout_date || item.check_in_date || '1970-01-01').split('T')[0];
+            let timeStr = item.expected_checkout_time || '11:00:00';
+            if (timeStr.length === 5) timeStr = `${timeStr}:00`;
+            const ts = new Date(`${dateStr}T${timeStr}`).getTime();
+            return isNaN(ts) ? 0 : ts;
+          };
+          valA = parseCheckoutTime(a);
+          valB = parseCheckoutTime(b);
           break;
+        }
         case 'room_rate':
           valA = parseFloat(a.room_rate || 0);
           valB = parseFloat(b.room_rate || 0);
@@ -210,7 +340,9 @@ const Bookings = () => {
       }
 
       if (typeof valA === 'number' && typeof valB === 'number') {
-        return sortDirection === 'asc' ? valA - valB : valB - valA;
+        const diff = sortDirection === 'asc' ? valA - valB : valB - valA;
+        if (diff !== 0) return diff;
+        return (a.id || 0) - (b.id || 0);
       }
       valA = String(valA);
       valB = String(valB);
@@ -226,7 +358,7 @@ const Bookings = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, activeGridFilter]);
 
   const totalItems = sortedBookings.length;
   const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -338,6 +470,12 @@ const Bookings = () => {
 
   // Open Edit Modal
   const handleOpenEdit = async (booking) => {
+    if (requiresActiveShift) {
+      showError('Active cashier shift till is required to modify reservations. Please open your shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+
     setEditBooking(booking);
     setEditError('');
 
@@ -490,6 +628,12 @@ const Bookings = () => {
 
   // Cancel Booking Modal
   const handleCancel = (booking) => {
+    if (requiresActiveShift) {
+      showError('Active cashier shift till is required to cancel reservations. Please open your shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+
     setConfirmModal({
       show: true,
       title: 'Cancel Booking Confirmation',
@@ -508,7 +652,24 @@ const Bookings = () => {
           }
           return old.map((b) => (b.id === booking.id ? { ...b, status: 'CANCELLED' } : b));
         });
-        showSuccess(`Booking #${booking.booking_number} cancelled.`, 'Booking Cancelled');
+        showSuccess(`Booking #${booking.booking_number} cancelled.`, 'Booking Cancelled', {
+          whatsappAction: {
+            eventType: 'CANCELLATION',
+            customerMobile: booking.customer_detail?.mobile,
+            customerName: booking.customer_detail?.full_name,
+            bookingId: booking.id,
+            customerId: booking.customer_detail?.id,
+            data: {
+              guest_name: booking.customer_detail?.full_name || 'Guest',
+              booking_number: booking.booking_number,
+              room_number: booking.room_detail?.room_number || 'N/A',
+              check_in_date: formatDate(booking.check_in_date),
+              check_out_date: formatDate(booking.expected_checkout_date),
+              advance_paid: booking.advance_amount || 0,
+            },
+            customLabel: 'Send WhatsApp Cancellation Notice',
+          },
+        });
 
         try {
           await cancelBookingApi(booking.id);
@@ -561,7 +722,31 @@ const Bookings = () => {
   };
 
   const handleCheckIn = (bookingId) => {
+    if (requiresActiveShift) {
+      showError('Active cashier shift till is required to check in guests. Please open your shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     navigate(`/check-in?booking_id=${bookingId}`);
+  };
+
+  // Dynamic WhatsApp event type & labels based on booking status
+  const getBookingWhatsAppEventType = (status) => {
+    if (status === 'CANCELLED') return 'CANCELLATION';
+    if (status === 'CHECKED_IN') return 'CHECK_IN';
+    return 'BOOKING';
+  };
+
+  const getBookingWhatsAppTitle = (status) => {
+    if (status === 'CANCELLED') return 'Send WhatsApp Cancellation Notice';
+    if (status === 'CHECKED_IN') return 'Send WhatsApp Welcome Message';
+    return 'Send WhatsApp Booking Confirmation';
+  };
+
+  const getBookingWhatsAppLabel = (status) => {
+    if (status === 'CANCELLED') return 'Send Cancellation Notice';
+    if (status === 'CHECKED_IN') return 'Send Welcome Message';
+    return 'Send Booking Confirmation';
   };
 
   return (
@@ -569,125 +754,394 @@ const Bookings = () => {
       {/* Header Banner */}
       <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
-          <h3 className="fw-bold text-dark m-0">
+          <h3 data-spotlight-id="bookings" className="fw-bold text-dark m-0">
             <i className="bi bi-calendar-check text-primary me-2"></i>Advance Bookings Management
           </h3>
           <span className="text-muted small">Manage reservation bookings, edit room allocations, process check-ins & advance deposits</span>
         </div>
-        {hasPermission('bookings', 'can_create') && (
-          <Link to="/bookings/create" className="btn btn-primary fw-bold shadow-sm px-4 py-2">
-            <i className="bi bi-calendar-plus-fill me-2"></i>New Advance Booking
-          </Link>
-        )}
+        <div className="d-flex flex-wrap align-items-center gap-2">
+          <div className="btn-group" role="group">
+            <button
+              type="button"
+              className={`btn btn-outline-secondary ${viewMode === 'list' ? 'active' : ''}`}
+              onClick={() => setViewMode('list')}
+            >
+              <i className="bi bi-list-ul me-1"></i> List
+            </button>
+            <button
+              type="button"
+              className={`btn btn-outline-secondary ${viewMode === 'calendar' ? 'active' : ''}`}
+              onClick={() => setViewMode('calendar')}
+            >
+              <i className="bi bi-calendar-week me-1"></i> Calendar
+            </button>
+          </div>
+
+          {hasPermission('bookings', 'can_create') && (
+            requiresActiveShift ? (
+              <button
+                type="button"
+                className="btn btn-primary fw-bold shadow-sm px-4 py-2"
+                onClick={() => {
+                  showError('Active cashier shift till is required to create new reservations. Please open your shift first.', 'Shift Till Required');
+                  openShiftModal();
+                }}
+              >
+                <i className="bi bi-calendar-plus-fill me-2"></i>New Advance Booking
+              </button>
+            ) : (
+              <Link to="/bookings/create" className="btn btn-primary fw-bold shadow-sm px-4 py-2">
+                <i className="bi bi-calendar-plus-fill me-2"></i>New Advance Booking
+              </Link>
+            )
+          )}
+        </div>
       </div>
 
+      {/* SHIFT TILL CLOSED WARNING BANNER */}
+      {requiresActiveShift && (
+        <div
+          className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3.5 rounded-4 shadow-sm mb-4"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+        >
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="p-2.5 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+              style={{ width: '42px', height: '42px' }}
+            >
+              <i className="bi bi-lock-fill fs-5"></i>
+            </div>
+            <div>
+              <div className="fw-bold text-dark fs-6">Cashier Shift Till is Closed</div>
+              <div className="small text-muted">Reservation creation and advance cash collections are locked until you open your front desk cashier shift.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-warning fw-bold px-3.5 py-2 rounded-3 shadow-xs mt-2 mt-md-0 d-flex align-items-center gap-1.5"
+            onClick={openShiftModal}
+          >
+            <i className="bi bi-clock-history me-1"></i> Open Shift Till Now
+          </button>
+        </div>
+      )}
 
-      {/* Analytics KPI Summary Cards */}
-      <div className="row g-3 mb-4">
-        <div className="col-md-3 col-sm-6">
-          <div className="card border-0 shadow-sm rounded-3 bg-white h-100">
-            <div className="card-body p-3 d-flex align-items-center">
-              <div className="rounded-circle bg-primary bg-opacity-10 p-3 me-3 text-primary">
-                <i className="bi bi-journal-bookmark fs-3"></i>
+
+      {viewMode === 'calendar' ? (
+        <RoomCalendar />
+      ) : (
+        <>
+          {/* Analytics KPI Summary Cards */}
+      {/* 4 Interactive KPI Grids */}
+      <div className="row g-2 g-sm-3 mb-3 mb-sm-4">
+        {/* Grid 1: Upcoming Bookings */}
+        <div className="col-6 col-lg-3">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setActiveGridFilter((prev) => (prev === 'UPCOMING' ? null : 'UPCOMING'));
+              setStatusFilter('');
+            }}
+            className={`card border-0 shadow-sm rounded-3 h-100 transition-all ${
+              activeGridFilter === 'UPCOMING' ? 'bg-primary bg-opacity-10' : 'bg-white'
+            }`}
+            style={{
+              cursor: 'pointer',
+              border: activeGridFilter === 'UPCOMING' ? '2px solid #2563EB' : '1px solid #E2E8F0',
+              boxShadow: activeGridFilter === 'UPCOMING' ? '0 4px 14px rgba(37, 99, 235, 0.22)' : undefined,
+              transform: activeGridFilter === 'UPCOMING' ? 'translateY(-2px)' : undefined,
+              transition: 'all 0.2s ease-in-out'
+            }}
+            title="Click to filter by Upcoming Bookings"
+          >
+            <div className="card-body p-2.5 p-sm-3 d-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center overflow-hidden">
+                <div className="rounded-circle bg-primary bg-opacity-10 p-2 p-sm-3 me-2 me-sm-3 text-primary flex-shrink-0">
+                  <i className="bi bi-journal-bookmark fs-4 fs-sm-3"></i>
+                </div>
+                <div className="overflow-hidden">
+                  <span className="text-muted extra-small fw-semibold d-block text-truncate">Upcoming Bookings</span>
+                  <div className="d-flex align-items-baseline gap-2">
+                    <h5 className="fw-bold m-0 text-primary fs-5 fs-sm-4">{upcomingCount}</h5>
+                    {overdueArrivalCount > 0 && (
+                      <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
+                        {overdueArrivalCount} Overdue
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-              <div>
-                <span className="text-muted small fw-semibold d-block">Total Reservations</span>
-                <h4 className="fw-bold m-0 text-dark">{totalBookings}</h4>
-              </div>
+              {activeGridFilter === 'UPCOMING' && (
+                <span className="badge bg-primary text-white rounded-pill extra-small px-2 py-1 ms-1 d-none d-sm-inline-block">
+                  <i className="bi bi-funnel-fill me-1"></i>Active
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="col-md-3 col-sm-6">
-          <div className="card border-0 shadow-sm rounded-3 bg-white h-100">
-            <div className="card-body p-3 d-flex align-items-center">
-              <div className="rounded-circle bg-info bg-opacity-10 p-3 me-3 text-info">
-                <i className="bi bi-clock-history fs-3"></i>
+        {/* Grid 2: Arriving Today */}
+        <div className="col-6 col-lg-3">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setActiveGridFilter((prev) => (prev === 'ARRIVING_TODAY' ? null : 'ARRIVING_TODAY'));
+              setStatusFilter('');
+            }}
+            className={`card border-0 shadow-sm rounded-3 h-100 transition-all ${
+              activeGridFilter === 'ARRIVING_TODAY' ? 'bg-info bg-opacity-10' : 'bg-white'
+            }`}
+            style={{
+              cursor: 'pointer',
+              border: activeGridFilter === 'ARRIVING_TODAY' ? '2px solid #0284C7' : '1px solid #E2E8F0',
+              boxShadow: activeGridFilter === 'ARRIVING_TODAY' ? '0 4px 14px rgba(2, 132, 199, 0.22)' : undefined,
+              transform: activeGridFilter === 'ARRIVING_TODAY' ? 'translateY(-2px)' : undefined,
+              transition: 'all 0.2s ease-in-out'
+            }}
+            title="Click to filter by Bookings Arriving Today"
+          >
+            <div className="card-body p-2.5 p-sm-3 d-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center overflow-hidden">
+                <div className="rounded-circle bg-info bg-opacity-10 p-2 p-sm-3 me-2 me-sm-3 text-info flex-shrink-0">
+                  <i className="bi bi-box-arrow-in-right fs-4 fs-sm-3"></i>
+                </div>
+                <div className="overflow-hidden">
+                  <span className="text-muted extra-small fw-semibold d-block text-truncate">Arriving Today</span>
+                  <h5 className="fw-bold m-0 text-info fs-5 fs-sm-4">{arrivingTodayCount}</h5>
+                </div>
               </div>
-              <div>
-                <span className="text-muted small fw-semibold d-block">Confirmed Pending</span>
-                <h4 className="fw-bold m-0 text-info">{confirmedBookings}</h4>
-              </div>
+              {activeGridFilter === 'ARRIVING_TODAY' && (
+                <span className="badge bg-info text-white rounded-pill extra-small px-2 py-1 ms-1 d-none d-sm-inline-block">
+                  <i className="bi bi-funnel-fill me-1"></i>Active
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="col-md-3 col-sm-6">
-          <div className="card border-0 shadow-sm rounded-3 bg-white h-100">
-            <div className="card-body p-3 d-flex align-items-center">
-              <div className="rounded-circle bg-success bg-opacity-10 p-3 me-3 text-success">
-                <i className="bi bi-person-check fs-3"></i>
+        {/* Grid 3: Checked In */}
+        <div className="col-6 col-lg-3">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setActiveGridFilter((prev) => (prev === 'CHECKED_IN' ? null : 'CHECKED_IN'));
+              setStatusFilter('');
+            }}
+            className={`card border-0 shadow-sm rounded-3 h-100 transition-all ${
+              activeGridFilter === 'CHECKED_IN' ? 'bg-success bg-opacity-10' : 'bg-white'
+            }`}
+            style={{
+              cursor: 'pointer',
+              border: activeGridFilter === 'CHECKED_IN' ? '2px solid #10B981' : '1px solid #E2E8F0',
+              boxShadow: activeGridFilter === 'CHECKED_IN' ? '0 4px 14px rgba(16, 185, 129, 0.22)' : undefined,
+              transform: activeGridFilter === 'CHECKED_IN' ? 'translateY(-2px)' : undefined,
+              transition: 'all 0.2s ease-in-out'
+            }}
+            title="Click to filter by Checked In Bookings"
+          >
+            <div className="card-body p-2.5 p-sm-3 d-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center overflow-hidden">
+                <div className="rounded-circle bg-success bg-opacity-10 p-2 p-sm-3 me-2 me-sm-3 text-success flex-shrink-0">
+                  <i className="bi bi-person-check fs-4 fs-sm-3"></i>
+                </div>
+                <div className="overflow-hidden">
+                  <span className="text-muted extra-small fw-semibold d-block text-truncate">Checked In</span>
+                  <h5 className="fw-bold m-0 text-success fs-5 fs-sm-4">{checkedInCount}</h5>
+                </div>
               </div>
-              <div>
-                <span className="text-muted small fw-semibold d-block">Checked-In Stays</span>
-                <h4 className="fw-bold m-0 text-success">{checkedInBookings}</h4>
-              </div>
+              {activeGridFilter === 'CHECKED_IN' && (
+                <span className="badge bg-success text-white rounded-pill extra-small px-2 py-1 ms-1 d-none d-sm-inline-block">
+                  <i className="bi bi-funnel-fill me-1"></i>Active
+                </span>
+              )}
             </div>
           </div>
         </div>
 
-        <div className="col-md-3 col-sm-6">
-          <div className="card border-0 shadow-sm rounded-3 bg-white h-100">
-            <div className="card-body p-3 d-flex align-items-center">
-              <div className="rounded-circle bg-warning bg-opacity-10 p-3 me-3 text-warning">
-                <i className="bi bi-cash-coin fs-3"></i>
+        {/* Grid 4: Pending Payment */}
+        <div className="col-6 col-lg-3">
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => {
+              setActiveGridFilter((prev) => (prev === 'PENDING_PAYMENT' ? null : 'PENDING_PAYMENT'));
+              setStatusFilter('');
+            }}
+            className={`card border-0 shadow-sm rounded-3 h-100 transition-all ${
+              activeGridFilter === 'PENDING_PAYMENT' ? 'bg-warning bg-opacity-10' : 'bg-white'
+            }`}
+            style={{
+              cursor: 'pointer',
+              border: activeGridFilter === 'PENDING_PAYMENT' ? '2px solid #F59E0B' : '1px solid #E2E8F0',
+              boxShadow: activeGridFilter === 'PENDING_PAYMENT' ? '0 4px 14px rgba(245, 158, 11, 0.22)' : undefined,
+              transform: activeGridFilter === 'PENDING_PAYMENT' ? 'translateY(-2px)' : undefined,
+              transition: 'all 0.2s ease-in-out'
+            }}
+            title="Click to filter by Bookings with Pending Payment"
+          >
+            <div className="card-body p-2.5 p-sm-3 d-flex align-items-center justify-content-between">
+              <div className="d-flex align-items-center overflow-hidden">
+                <div className="rounded-circle bg-warning bg-opacity-10 p-2 p-sm-3 me-2 me-sm-3 text-warning-emphasis flex-shrink-0">
+                  <i className="bi bi-cash-coin fs-4 fs-sm-3"></i>
+                </div>
+                <div className="overflow-hidden">
+                  <span className="text-muted extra-small fw-semibold d-block text-truncate">Pending Payment</span>
+                  <h5 className="fw-bold m-0 text-warning-emphasis fs-5 fs-sm-4">{pendingPaymentCount}</h5>
+                </div>
               </div>
-              <div>
-                <span className="text-muted small fw-semibold d-block">Advance Collected</span>
-                <h4 className="fw-bold m-0 text-dark">{formatCurrency(totalAdvancePaid)}</h4>
-              </div>
+              {activeGridFilter === 'PENDING_PAYMENT' && (
+                <span className="badge bg-warning text-dark rounded-pill extra-small px-2 py-1 ms-1 d-none d-sm-inline-block">
+                  <i className="bi bi-funnel-fill me-1"></i>Active
+                </span>
+              )}
             </div>
           </div>
         </div>
       </div>
 
       {/* Filters & Search Toolbar */}
-      <div className="card border-0 shadow-sm rounded-3 mb-4">
-        <div className="card-body p-3">
-          <div className="row g-3 align-items-center">
+      <div className="card border-0 shadow-sm rounded-3 mb-3 mb-sm-4">
+        <div className="card-body p-2.5 p-sm-3">
+          {/* Active Grid Filter Alert Indicator */}
+          {activeGridFilter && (
+            <div className="d-flex align-items-center justify-content-between p-2 px-3 bg-light rounded-3 border mb-2.5">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-muted extra-small fw-semibold">Active Filter:</span>
+                <span className={`badge rounded-pill extra-small px-2 py-1 ${
+                  activeGridFilter === 'UPCOMING' ? 'bg-primary text-white' :
+                  activeGridFilter === 'ARRIVING_TODAY' ? 'bg-info text-white' :
+                  activeGridFilter === 'CHECKED_IN' ? 'bg-success text-white' :
+                  'bg-warning text-dark'
+                }`}>
+                  <i className="bi bi-funnel-fill me-1"></i>
+                  {activeGridFilter === 'UPCOMING' && 'Upcoming Bookings'}
+                  {activeGridFilter === 'ARRIVING_TODAY' && 'Arriving Today'}
+                  {activeGridFilter === 'CHECKED_IN' && 'Checked In'}
+                  {activeGridFilter === 'PENDING_PAYMENT' && 'Pending Payment'}
+                  {' '}({bookings.length} records)
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-link text-muted p-0 text-decoration-none extra-small"
+                onClick={() => setActiveGridFilter(null)}
+              >
+                <i className="bi bi-x-circle me-1"></i>Show All Bookings
+              </button>
+            </div>
+          )}
+
+          {/* Active Status Filter Alert Indicator for Overdue */}
+          {statusFilter === 'OVERDUE_ARRIVAL' && (
+            <div className="d-flex align-items-center justify-content-between p-2 px-3 bg-danger bg-opacity-10 rounded-3 border border-danger-subtle mb-2.5">
+              <div className="d-flex align-items-center gap-2">
+                <span className="text-danger extra-small fw-semibold">Active Filter:</span>
+                <span className="badge rounded-pill extra-small px-2 py-1 bg-danger text-white">
+                  <i className="bi bi-clock-history me-1"></i>
+                  Overdue Arrival ({bookings.length} records)
+                </span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-sm btn-link text-danger p-0 text-decoration-none extra-small fw-bold"
+                onClick={() => setStatusFilter('')}
+              >
+                <i className="bi bi-x-circle me-1"></i>Show All Bookings
+              </button>
+            </div>
+          )}
+
+          <div className="row g-2 g-sm-3 align-items-center">
             <div className="col-md-6">
-              <div className="input-group">
+              <div className="input-group input-group-sm">
                 <span className="input-group-text bg-white border-end-0">
                   <i className="bi bi-search text-muted"></i>
                 </span>
                 <input
                   type="text"
                   className="form-control border-start-0"
-                  placeholder="Search by Booking #, Guest Name, Mobile #, or Room #"
+                  placeholder="Search by Booking #, Guest Name, Mobile, or Room #"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  style={{ fontSize: '0.8rem' }}
                 />
+                {search && (
+                  <button
+                    className="btn btn-outline-secondary border-start-0"
+                    type="button"
+                    onClick={() => setSearch('')}
+                  >
+                    <i className="bi bi-x"></i>
+                  </button>
+                )}
               </div>
             </div>
             <div className="col-md-6">
-              <div className="d-flex flex-wrap gap-2 justify-content-md-end">
+              <div className="d-flex flex-wrap gap-1.5 justify-content-start justify-content-md-end">
                 <button
-                  className={`btn btn-sm ${statusFilter === '' ? 'btn-dark' : 'btn-outline-secondary'}`}
-                  onClick={() => setStatusFilter('')}
+                  className={`btn btn-sm ${!activeGridFilter && statusFilter === '' ? 'btn-dark' : 'btn-outline-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  onClick={() => {
+                    setActiveGridFilter(null);
+                    setStatusFilter('');
+                  }}
                 >
                   All Statuses
                 </button>
+                {overdueArrivalCount > 0 && (
+                  <button
+                    className={`btn btn-sm ${!activeGridFilter && statusFilter === 'OVERDUE_ARRIVAL' ? 'btn-danger text-white shadow-2xs' : 'btn-outline-danger'}`}
+                    style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                    onClick={() => {
+                      setActiveGridFilter(null);
+                      setStatusFilter((prev) => (prev === 'OVERDUE_ARRIVAL' ? '' : 'OVERDUE_ARRIVAL'));
+                    }}
+                    title="Filter bookings where guest has not arrived past scheduled check-in"
+                  >
+                    <i className="bi bi-clock-history me-1"></i>
+                    Overdue ({overdueArrivalCount})
+                  </button>
+                )}
                 <button
-                  className={`btn btn-sm ${statusFilter === 'CONFIRMED' ? 'btn-info text-white' : 'btn-outline-info'}`}
-                  onClick={() => setStatusFilter('CONFIRMED')}
+                  className={`btn btn-sm ${!activeGridFilter && statusFilter === 'CONFIRMED' ? 'btn-info text-white' : 'btn-outline-info'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  onClick={() => {
+                    setActiveGridFilter(null);
+                    setStatusFilter('CONFIRMED');
+                  }}
                 >
                   Confirmed
                 </button>
                 <button
-                  className={`btn btn-sm ${statusFilter === 'CHECKED_IN' ? 'btn-success' : 'btn-outline-success'}`}
-                  onClick={() => setStatusFilter('CHECKED_IN')}
+                  className={`btn btn-sm ${!activeGridFilter && statusFilter === 'CHECKED_IN' ? 'btn-success' : 'btn-outline-success'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  onClick={() => {
+                    setActiveGridFilter(null);
+                    setStatusFilter('CHECKED_IN');
+                  }}
                 >
                   Checked-In
                 </button>
                 <button
-                  className={`btn btn-sm ${statusFilter === 'COMPLETED' ? 'btn-secondary' : 'btn-outline-secondary'}`}
-                  onClick={() => setStatusFilter('COMPLETED')}
+                  className={`btn btn-sm ${!activeGridFilter && statusFilter === 'COMPLETED' ? 'btn-secondary' : 'btn-outline-secondary'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  onClick={() => {
+                    setActiveGridFilter(null);
+                    setStatusFilter('COMPLETED');
+                  }}
                 >
                   Completed
                 </button>
                 <button
-                  className={`btn btn-sm ${statusFilter === 'CANCELLED' ? 'btn-danger' : 'btn-outline-danger'}`}
-                  onClick={() => setStatusFilter('CANCELLED')}
+                  className={`btn btn-sm ${!activeGridFilter && statusFilter === 'CANCELLED' ? 'btn-danger' : 'btn-outline-danger'}`}
+                  style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem' }}
+                  onClick={() => {
+                    setActiveGridFilter(null);
+                    setStatusFilter('CANCELLED');
+                  }}
                 >
                   Cancelled
                 </button>
@@ -728,8 +1182,32 @@ const Bookings = () => {
               </span>
             </div>
 
+            {/* Mobile View Toggle: Cards vs Table on small screens */}
+            <div className="btn-group btn-group-sm d-md-none" role="group" aria-label="View mode">
+              <button
+                type="button"
+                className={`btn btn-sm ${mobileLayoutMode === 'cards' ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2.5 d-inline-flex align-items-center gap-1`}
+                style={{ fontSize: '0.75rem', height: '30px' }}
+                onClick={() => setMobileLayoutMode('cards')}
+                title="Card View (Optimized for Mobile)"
+              >
+                <i className="bi bi-grid-fill"></i>
+                <span>Cards</span>
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${mobileLayoutMode === 'table' ? 'btn-primary' : 'btn-outline-secondary'} py-1 px-2.5 d-inline-flex align-items-center gap-1`}
+                style={{ fontSize: '0.75rem', height: '30px' }}
+                onClick={() => setMobileLayoutMode('table')}
+                title="Full Table View"
+              >
+                <i className="bi bi-table"></i>
+                <span>Table</span>
+              </button>
+            </div>
+
             {/* EXACT TOP RIGHT CORNER: Column Visibility + Excel & PDF Small Buttons */}
-            <div className="d-flex align-items-center gap-2 ms-auto">
+            <div className="d-flex align-items-center gap-2 ms-auto ms-sm-0">
               {/* Column Visibility Dropdown */}
               <div className="dropdown position-relative" ref={columnMenuRef}>
                 <button
@@ -793,7 +1271,7 @@ const Bookings = () => {
                 title="Export Bookings to Excel (.xls)"
               >
                 <i className="bi bi-file-earmark-excel-fill text-success"></i>
-                <span>Excel</span>
+                <span className="d-none d-sm-inline">Excel</span>
               </button>
 
               {/* Small Professional PDF Export Button */}
@@ -805,199 +1283,498 @@ const Bookings = () => {
                 title="Export Bookings to PDF Report"
               >
                 <i className="bi bi-file-earmark-pdf-fill text-danger"></i>
-                <span>PDF</span>
+                <span className="d-none d-sm-inline">PDF</span>
               </button>
             </div>
           </div>
 
           <div className="card-body p-0">
-            <div className="table-responsive">
-              <table className="table table-hover align-middle m-0">
-                <thead className="table-light text-muted small text-uppercase fw-bold">
-                  <tr>
-                    {columnVisibility.booking_number && renderSortHeader('Booking #', 'booking_number', 'ps-4')}
-                    {columnVisibility.guest_profile && renderSortHeader('Guest Profile', 'guest_profile')}
-                    {columnVisibility.assigned_room && renderSortHeader('Assigned Room', 'assigned_room')}
-                    {columnVisibility.check_in && renderSortHeader('Check-In', 'check_in_date')}
-                    {columnVisibility.expected_checkout && renderSortHeader('Expected Check-Out', 'expected_checkout_date')}
-                    {columnVisibility.agreed_rate && renderSortHeader('Agreed Rate', 'room_rate')}
-                    {columnVisibility.advance_paid && renderSortHeader('Advance Paid', 'advance_amount')}
-                    {columnVisibility.status && renderSortHeader('Status', 'status')}
-                    {columnVisibility.actions && <th className="text-end pe-4 text-nowrap">Actions</th>}
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginatedBookings.length === 0 ? (
-                    <tr>
-                      <td colSpan={visibleColumnCount} className="text-center py-5 text-muted">
-                        <i className="bi bi-inbox fs-1 d-block text-muted opacity-50 mb-2"></i>
-                        No reservation bookings found matching your search.
-                      </td>
-                    </tr>
-                  ) : (
-                    paginatedBookings.map((b) => {
-                      const overdue = isBookingOverdue(b);
-                      return (
-                        <tr key={b.id}>
-                          {columnVisibility.booking_number && (
-                            <td className="ps-4">
-                              <span className="fw-bold text-primary">{b.booking_number}</span>
-                              <span className="d-block text-muted extra-small">
-                                {formatDate(b.created_at)}
+            {/* Horizontal Swipe Indicator for small/medium screens */}
+            <div className="d-flex d-xl-none align-items-center justify-content-between px-3 py-1.5 bg-light-subtle border-bottom text-muted extra-small">
+              <span className="d-flex align-items-center gap-1.5">
+                <i className="bi bi-arrows-expand text-primary"></i>
+                <span>Swipe table horizontally to view all columns & actions</span>
+              </span>
+              <span className="badge bg-light text-secondary border">
+                ↔ Scrollable
+              </span>
+            </div>
+
+            {/* Mobile Cards View (Optimized for Phones & Android) */}
+            {mobileLayoutMode === 'cards' && (
+              <div className="d-md-none p-3 d-flex flex-column gap-3 bg-light-subtle">
+                {paginatedBookings.length === 0 ? (
+                  <div className="text-center py-5 text-muted bg-white rounded-3 border">
+                    <i className="bi bi-inbox fs-1 d-block text-muted opacity-50 mb-2"></i>
+                    No reservation bookings found matching your search.
+                  </div>
+                ) : (
+                  paginatedBookings.map((b) => {
+                    const overdue = isBookingOverdue(b);
+                    const arrivalOverdue = getArrivalOverdueInfo(b);
+                    return (
+                      <div
+                        key={b.id}
+                        className="card border shadow-xs rounded-3 overflow-hidden bg-white"
+                        style={arrivalOverdue.isOverdue ? { borderLeft: '4px solid #dc3545' } : undefined}
+                      >
+                        {/* Card Header: Booking # & Status */}
+                        <div className="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center border-bottom">
+                          <div>
+                            <span className="fw-bold text-primary font-monospace" style={{ fontSize: '0.85rem' }}>
+                              {b.booking_number}
+                            </span>
+                            <span className="text-muted extra-small d-block">
+                              Booked on {formatDate(b.created_at)}
+                            </span>
+                          </div>
+                          <div className="d-flex align-items-center gap-1 flex-wrap justify-content-end">
+                            <StatusBadge status={b.status} />
+                            {overdue && (
+                              <span className="badge bg-danger text-white extra-small fw-bold">
+                                OVERDUE
                               </span>
-                            </td>
-                          )}
-
-                          {columnVisibility.guest_profile && (
-                            <td>
-                              <div className="d-flex align-items-center">
-                                {b.customer_detail?.photo ? (
-                                  <img
-                                    src={b.customer_detail.photo}
-                                    alt=""
-                                    className="rounded-circle me-2 object-fit-cover"
-                                    width="36"
-                                    height="36"
-                                  />
-                                ) : (
-                                  <div className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2 fw-bold" style={{ width: 36, height: 36 }}>
-                                    {b.customer_detail?.first_name?.[0] || 'G'}
-                                  </div>
-                                )}
-                                <div>
-                                  <div className="fw-bold text-dark">{b.customer_detail?.full_name || 'Guest'}</div>
-                                  <span className="text-muted small">
-                                    <i className="bi bi-telephone me-1"></i>{b.customer_detail?.mobile}
-                                  </span>
-                                </div>
-                              </div>
-                            </td>
-                          )}
-
-                          {columnVisibility.assigned_room && (
-                            <td>
-                              <div className="fw-bold text-dark">Room {b.room_detail?.room_number}</div>
-                              <span className="badge bg-light text-muted border extra-small">
-                                {b.room_detail?.room_type_name}
+                            )}
+                            {arrivalOverdue.isOverdue && (
+                              <span
+                                className="badge bg-danger text-white extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-xs"
+                                title={`Scheduled check-in: ${b.check_in_date} ${b.check_in_time || ''}`}
+                              >
+                                <i className="bi bi-clock-history"></i>
+                                {arrivalOverdue.label.toUpperCase()}
                               </span>
-                            </td>
-                          )}
+                            )}
+                          </div>
+                        </div>
 
-                          {columnVisibility.check_in && (
-                            <td>
-                              <div className="fw-semibold text-dark">{formatDate(b.check_in_date)}</div>
-                              <span className="text-muted extra-small">{b.check_in_time || '12:00 PM'}</span>
-                            </td>
-                          )}
-
-                          {columnVisibility.expected_checkout && (
-                            <td>
-                              <div className={`fw-semibold ${overdue ? 'text-danger' : 'text-dark'}`}>
-                                {formatDate(b.expected_checkout_date)}
-                              </div>
-                              <div className="d-flex align-items-center gap-1">
-                                <span className={`${overdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
-                                  {b.expected_checkout_time || '11:00 AM'}
-                                </span>
-                                {overdue && (
-                                  <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
-                                    Overdue
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          )}
-
-                          {columnVisibility.agreed_rate && (
-                            <td className="fw-semibold text-dark">
-                              {formatCurrency(b.room_rate)}
-                              <span className="text-muted extra-small d-block">/ night</span>
-                            </td>
-                          )}
-
-                          {columnVisibility.advance_paid && (
-                            <td>
-                              <span className="fw-bold text-success">{formatCurrency(b.advance_amount)}</span>
-                            </td>
-                          )}
-
-                          {columnVisibility.status && (
-                            <td>
-                              <div className="d-flex flex-column align-items-start gap-1">
-                                <StatusBadge status={b.status} />
-                                {overdue && (
-                                  <span className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm animate-pulse">
-                                    <i className="bi bi-exclamation-circle-fill"></i> OVERDUE
-                                  </span>
-                                )}
-                              </div>
-                            </td>
-                          )}
-
-                          {columnVisibility.actions && (
-                            <td className="text-end pe-4">
-                              <div className="btn-group btn-group-sm">
-                                {/* View Details */}
-                                <button
-                                  className="btn btn-outline-secondary"
-                                  title="View Details"
-                                  onClick={() => setViewBooking(b)}
+                        {/* Card Body */}
+                        <div className="card-body p-3">
+                          {/* Guest Profile & Room Assignment */}
+                          <div className="d-flex align-items-center justify-content-between mb-2.5 pb-2.5 border-bottom">
+                            <div className="d-flex align-items-center gap-2 overflow-hidden">
+                              {b.customer_detail?.photo ? (
+                                <img
+                                  src={b.customer_detail.photo}
+                                  alt=""
+                                  className="rounded-circle object-fit-cover flex-shrink-0"
+                                  width="36"
+                                  height="36"
+                                />
+                              ) : (
+                                <div
+                                  className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center fw-bold flex-shrink-0"
+                                  style={{ width: 36, height: 36, fontSize: '0.85rem' }}
                                 >
-                                  <i className="bi bi-eye"></i>
-                                </button>
-
-                                {/* Edit Booking */}
-                                {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
-                                  <button
-                                    className="btn btn-outline-primary"
-                                    title="Edit Booking"
-                                    onClick={() => handleOpenEdit(b)}
+                                  {b.customer_detail?.first_name?.[0] || 'G'}
+                                </div>
+                              )}
+                              <div className="overflow-hidden">
+                                <div className="fw-bold text-dark text-truncate" style={{ fontSize: '0.875rem' }}>
+                                  {b.customer_detail?.full_name || 'Guest'}
+                                </div>
+                                {b.customer_detail?.mobile && (
+                                  <a
+                                    href={`tel:${b.customer_detail.mobile}`}
+                                    className="text-secondary extra-small text-decoration-none d-inline-flex align-items-center gap-1"
                                   >
-                                    <i className="bi bi-pencil-square"></i>
-                                  </button>
-                                )}
-
-                                {/* Check-In */}
-                                {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
-                                  <button
-                                    className="btn btn-success fw-semibold"
-                                    title="Process Check-In"
-                                    onClick={() => handleCheckIn(b.id)}
-                                  >
-                                    <i className="bi bi-key me-1"></i>Check-In
-                                  </button>
-                                )}
-
-                                {/* Cancel */}
-                                {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
-                                  <button
-                                    className="btn btn-outline-warning text-dark"
-                                    title="Cancel Booking"
-                                    onClick={() => handleCancel(b)}
-                                  >
-                                    <i className="bi bi-x-circle"></i>
-                                  </button>
-                                )}
-
-                                {/* Delete */}
-                                {hasPermission('bookings', 'can_delete') && (
-                                  <button
-                                    className="btn btn-outline-danger"
-                                    title="Delete Record"
-                                    onClick={() => handleDelete(b)}
-                                  >
-                                    <i className="bi bi-trash"></i>
-                                  </button>
+                                    <i className="bi bi-telephone text-primary"></i>
+                                    <span>{b.customer_detail.mobile}</span>
+                                  </a>
                                 )}
                               </div>
-                            </td>
-                          )}
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
+                            </div>
+
+                            <div className="text-end flex-shrink-0 ms-2">
+                              <span className="badge bg-light text-dark border fw-bold" style={{ fontSize: '0.78rem' }}>
+                                Room {b.room_detail?.room_number || '—'}
+                              </span>
+                              <span className="d-block text-muted extra-small">
+                                {b.room_detail?.room_type_name || 'Standard'}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Stay Dates & Financials Grid */}
+                          <div className="row g-2 extra-small text-muted mb-3">
+                            <div className="col-6">
+                              <span className="d-block text-secondary" style={{ fontSize: '0.7rem' }}>CHECK-IN</span>
+                              <strong className={`d-block ${arrivalOverdue.isOverdue ? 'text-danger fw-bold' : 'text-dark'}`} style={{ fontSize: '0.8rem' }}>
+                                {formatDate(b.check_in_date)}
+                              </strong>
+                              <span className={arrivalOverdue.isOverdue ? 'text-danger fw-semibold' : ''}>
+                                {b.check_in_time || '12:00 PM'}
+                                {arrivalOverdue.isOverdue && (
+                                  <span className="ms-1 badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-semibold py-0 px-1">
+                                    {arrivalOverdue.isPastDate ? `${arrivalOverdue.daysLate}d late` : 'late'}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
+                            <div className="col-6">
+                              <span className="d-block text-secondary" style={{ fontSize: '0.7rem' }}>EXPECTED CHECKOUT</span>
+                              <strong className={`d-block ${overdue ? 'text-danger fw-bold' : 'text-dark'}`} style={{ fontSize: '0.8rem' }}>
+                                {formatDate(b.expected_checkout_date)}
+                              </strong>
+                              <span>{b.expected_checkout_time || '11:00 AM'}</span>
+                            </div>
+                            <div className="col-6 mt-2 pt-2 border-top">
+                              <span className="d-block text-secondary" style={{ fontSize: '0.7rem' }}>AGREED RATE</span>
+                              <strong className="text-dark" style={{ fontSize: '0.9rem' }}>
+                                {formatCurrency(b.room_rate)}
+                              </strong>
+                              <span className="text-muted extra-small"> / night</span>
+                            </div>
+                            <div className="col-6 mt-2 pt-2 border-top">
+                              <span className="d-block text-secondary" style={{ fontSize: '0.7rem' }}>ADVANCE PAID</span>
+                              <strong className="text-success" style={{ fontSize: '0.9rem' }}>
+                                {formatCurrency(b.advance_amount)}
+                              </strong>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          <div className="d-flex align-items-center gap-1.5 pt-2 border-top flex-wrap">
+                            <button
+                              type="button"
+                              className="btn btn-sm btn-outline-secondary flex-grow-1 d-flex align-items-center justify-content-center gap-1 py-1.5"
+                              style={{ fontSize: '0.75rem' }}
+                              onClick={() => setViewBooking(b)}
+                            >
+                              <i className="bi bi-eye"></i>
+                              <span>View</span>
+                            </button>
+
+                            {/* WhatsApp Customer Action */}
+                            <WhatsAppButton
+                              eventType={getBookingWhatsAppEventType(b.status)}
+                              customerMobile={b.customer_detail?.mobile}
+                              customerName={b.customer_detail?.full_name}
+                              bookingId={b.id}
+                              customerId={b.customer_detail?.id}
+                              data={{
+                                guest_name: b.customer_detail?.full_name || 'Guest',
+                                booking_number: b.booking_number,
+                                room_number: b.room_detail?.room_number || 'To be Assigned',
+                                check_in_date: formatDate(b.check_in_date),
+                                check_in_time: b.check_in_time || '12:00 PM',
+                                check_out_date: formatDate(b.expected_checkout_date),
+                                check_out_time: b.expected_checkout_time || '11:00 AM',
+                                guest_count: (b.adults || 1) + (b.children || 0),
+                                number_of_nights: b.total_nights || 1,
+                                booking_amount: b.total_amount || 0,
+                                advance_paid: b.advance_amount || 0,
+                                balance_amount: b.balance_amount || 0,
+                              }}
+                              customLabel=""
+                              size="sm"
+                              variant="icon-only"
+                              title={getBookingWhatsAppTitle(b.status)}
+                            />
+
+                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary flex-grow-1 d-flex align-items-center justify-content-center gap-1 py-1.5"
+                                style={{ fontSize: '0.75rem' }}
+                                onClick={() => handleOpenEdit(b)}
+                              >
+                                <i className="bi bi-pencil-square"></i>
+                                <span>Edit</span>
+                              </button>
+                            )}
+
+                            {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-success flex-grow-1 d-flex align-items-center justify-content-center gap-1 fw-bold py-1.5 shadow-2xs"
+                                style={{ fontSize: '0.75rem' }}
+                                onClick={() => handleCheckIn(b.id)}
+                              >
+                                <i className="bi bi-key"></i>
+                                <span>Check-In</span>
+                              </button>
+                            )}
+
+                            {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-warning text-dark flex-grow-1 d-flex align-items-center justify-content-center gap-1 py-1.5"
+                                style={{ fontSize: '0.75rem' }}
+                                onClick={() => handleCancel(b)}
+                              >
+                                <i className="bi bi-x-circle"></i>
+                                <span>Cancel</span>
+                              </button>
+                            )}
+
+                            {hasPermission('bookings', 'can_delete') && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-danger py-1.5 px-2.5"
+                                onClick={() => handleDelete(b)}
+                                title="Delete Record"
+                              >
+                                <i className="bi bi-trash"></i>
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            )}
+
+            {/* Table View (Always visible on desktop >= 768px, or on mobile when mobileLayoutMode === 'table') */}
+            <div className={`${mobileLayoutMode === 'cards' ? 'd-none d-md-block' : 'd-block'}`}>
+              <div className="table-responsive" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <table className="table table-hover align-middle m-0" style={{ minWidth: '1080px' }}>
+                  <thead className="table-light text-muted small text-uppercase fw-bold">
+                    <tr>
+                      {columnVisibility.booking_number && renderSortHeader('Booking #', 'booking_number', 'ps-4')}
+                      {columnVisibility.guest_profile && renderSortHeader('Guest Profile', 'guest_profile')}
+                      {columnVisibility.assigned_room && renderSortHeader('Assigned Room', 'assigned_room')}
+                      {columnVisibility.check_in && renderSortHeader('Check-In', 'check_in_date')}
+                      {columnVisibility.expected_checkout && renderSortHeader('Expected Check-Out', 'expected_checkout_date')}
+                      {columnVisibility.agreed_rate && renderSortHeader('Agreed Rate', 'room_rate')}
+                      {columnVisibility.advance_paid && renderSortHeader('Advance Paid', 'advance_amount')}
+                      {columnVisibility.status && renderSortHeader('Status', 'status')}
+                      {columnVisibility.actions && <th className="text-end pe-4 text-nowrap" style={{ minWidth: '190px' }}>Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedBookings.length === 0 ? (
+                      <tr>
+                        <td colSpan={visibleColumnCount} className="text-center py-5 text-muted">
+                          <i className="bi bi-inbox fs-1 d-block text-muted opacity-50 mb-2"></i>
+                          No reservation bookings found matching your search.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginatedBookings.map((b) => {
+                        const overdue = isBookingOverdue(b);
+                        const arrivalOverdue = getArrivalOverdueInfo(b);
+                        return (
+                          <tr
+                            key={b.id}
+                            style={arrivalOverdue.isOverdue ? { borderLeft: '4px solid #dc3545', backgroundColor: 'rgba(220, 53, 69, 0.02)' } : undefined}
+                          >
+                            {columnVisibility.booking_number && (
+                              <td className="ps-4 text-nowrap" style={{ minWidth: '135px' }}>
+                                <span className="fw-bold text-primary font-monospace">{b.booking_number}</span>
+                                <span className="d-block text-muted extra-small">
+                                  {formatDate(b.created_at)}
+                                </span>
+                              </td>
+                            )}
+
+                            {columnVisibility.guest_profile && (
+                              <td className="text-nowrap" style={{ minWidth: '190px' }}>
+                                <div className="d-flex align-items-center">
+                                  {b.customer_detail?.photo ? (
+                                    <img
+                                      src={b.customer_detail.photo}
+                                      alt=""
+                                      className="rounded-circle me-2 object-fit-cover flex-shrink-0"
+                                      width="36"
+                                      height="36"
+                                    />
+                                  ) : (
+                                    <div
+                                      className="rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-2 fw-bold flex-shrink-0"
+                                      style={{ width: 36, height: 36 }}
+                                    >
+                                      {b.customer_detail?.first_name?.[0] || 'G'}
+                                    </div>
+                                  )}
+                                  <div className="overflow-hidden">
+                                    <div className="fw-bold text-dark text-truncate" style={{ maxWidth: '170px' }}>
+                                      {b.customer_detail?.full_name || 'Guest'}
+                                    </div>
+                                    <span className="text-muted small">
+                                      <i className="bi bi-telephone me-1"></i>{b.customer_detail?.mobile}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+                            )}
+
+                            {columnVisibility.assigned_room && (
+                              <td className="text-nowrap" style={{ minWidth: '125px' }}>
+                                <div className="fw-bold text-dark">Room {b.room_detail?.room_number || '—'}</div>
+                                <span className="badge bg-light text-muted border extra-small">
+                                  {b.room_detail?.room_type_name || 'Standard'}
+                                </span>
+                              </td>
+                            )}
+
+                            {columnVisibility.check_in && (
+                              <td className="text-nowrap" style={{ minWidth: '130px' }}>
+                                <div className={`fw-semibold ${arrivalOverdue.isOverdue ? 'text-danger' : 'text-dark'}`}>
+                                  {formatDate(b.check_in_date)}
+                                </div>
+                                <div className="d-flex align-items-center gap-1">
+                                  <span className={`${arrivalOverdue.isOverdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
+                                    {b.check_in_time || '12:00 PM'}
+                                  </span>
+                                  {arrivalOverdue.isOverdue && (
+                                    <span
+                                      className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5"
+                                      title={`Scheduled check-in: ${formatDate(b.check_in_date)} ${b.check_in_time || ''}`}
+                                    >
+                                      {arrivalOverdue.isPastDate ? `${arrivalOverdue.daysLate}d late` : 'late'}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+
+                            {columnVisibility.expected_checkout && (
+                              <td className="text-nowrap" style={{ minWidth: '145px' }}>
+                                <div className={`fw-semibold ${overdue ? 'text-danger' : 'text-dark'}`}>
+                                  {formatDate(b.expected_checkout_date)}
+                                </div>
+                                <div className="d-flex align-items-center gap-1">
+                                  <span className={`${overdue ? 'text-danger fw-bold' : 'text-muted'} extra-small`}>
+                                    {b.expected_checkout_time || '11:00 AM'}
+                                  </span>
+                                  {overdue && (
+                                    <span className="badge bg-danger-subtle text-danger border border-danger-subtle extra-small fw-bold px-1.5 py-0.5">
+                                      Overdue
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+
+                            {columnVisibility.agreed_rate && (
+                              <td className="fw-semibold text-dark text-nowrap" style={{ minWidth: '115px' }}>
+                                {formatCurrency(b.room_rate)}
+                                <span className="text-muted extra-small d-block">/ night</span>
+                              </td>
+                            )}
+
+                            {columnVisibility.advance_paid && (
+                              <td className="text-nowrap" style={{ minWidth: '115px' }}>
+                                <span className="fw-bold text-success">{formatCurrency(b.advance_amount)}</span>
+                              </td>
+                            )}
+
+                            {columnVisibility.status && (
+                              <td className="text-nowrap" style={{ minWidth: '125px' }}>
+                                <div className="d-flex flex-column align-items-start gap-1">
+                                  <StatusBadge status={b.status} />
+                                  {overdue && (
+                                    <span className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm">
+                                      <i className="bi bi-exclamation-circle-fill"></i> OVERDUE
+                                    </span>
+                                  )}
+                                  {arrivalOverdue.isOverdue && (
+                                    <span
+                                      className="badge bg-danger text-white px-2 py-1 rounded-pill extra-small fw-bold d-inline-flex align-items-center gap-1 shadow-sm"
+                                      title={`Guest scheduled check-in was ${formatDate(b.check_in_date)} ${b.check_in_time || ''}. Customer is overdue for check-in.`}
+                                    >
+                                      <i className="bi bi-clock-history"></i> {arrivalOverdue.label.toUpperCase()}
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+
+                            {columnVisibility.actions && (
+                              <td className="text-end pe-4 text-nowrap" style={{ minWidth: '190px' }}>
+                                <div className="btn-group btn-group-sm shadow-2xs">
+                                  {/* View Details */}
+                                  <button
+                                    className="btn btn-outline-secondary"
+                                    title="View Details"
+                                    onClick={() => setViewBooking(b)}
+                                  >
+                                    <i className="bi bi-eye"></i>
+                                  </button>
+
+                                  {/* WhatsApp Customer Action */}
+                                  <WhatsAppButton
+                                    eventType={getBookingWhatsAppEventType(b.status)}
+                                    customerMobile={b.customer_detail?.mobile}
+                                    customerName={b.customer_detail?.full_name}
+                                    bookingId={b.id}
+                                    customerId={b.customer_detail?.id}
+                                    data={{
+                                      guest_name: b.customer_detail?.full_name || 'Guest',
+                                      booking_number: b.booking_number,
+                                      room_number: b.room_detail?.room_number || 'To be Assigned',
+                                      check_in_date: formatDate(b.check_in_date),
+                                      check_in_time: b.check_in_time || '12:00 PM',
+                                      check_out_date: formatDate(b.expected_checkout_date),
+                                      check_out_time: b.expected_checkout_time || '11:00 AM',
+                                      guest_count: (b.adults || 1) + (b.children || 0),
+                                      number_of_nights: b.total_nights || 1,
+                                      booking_amount: b.total_amount || 0,
+                                      advance_paid: b.advance_amount || 0,
+                                      balance_amount: b.balance_amount || 0,
+                                    }}
+                                    customLabel=""
+                                    size="sm"
+                                    variant="icon-only"
+                                    title={getBookingWhatsAppTitle(b.status)}
+                                  />
+
+                                  {/* Edit Booking */}
+                                  {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_edit') && (
+                                    <button
+                                      className="btn btn-outline-primary"
+                                      title="Edit Booking"
+                                      onClick={() => handleOpenEdit(b)}
+                                    >
+                                      <i className="bi bi-pencil-square"></i>
+                                    </button>
+                                  )}
+
+                                  {/* Check-In */}
+                                  {b.status === 'CONFIRMED' && hasPermission('stays', 'can_checkin') && (
+                                    <button
+                                      className="btn btn-success fw-semibold d-inline-flex align-items-center gap-1"
+                                      title="Process Check-In"
+                                      onClick={() => handleCheckIn(b.id)}
+                                    >
+                                      <i className="bi bi-key"></i>
+                                      <span>Check-In</span>
+                                    </button>
+                                  )}
+
+                                  {/* Cancel */}
+                                  {b.status === 'CONFIRMED' && hasPermission('bookings', 'can_cancel') && (
+                                    <button
+                                      className="btn btn-outline-warning text-dark"
+                                      title="Cancel Booking"
+                                      onClick={() => handleCancel(b)}
+                                    >
+                                      <i className="bi bi-x-circle"></i>
+                                    </button>
+                                  )}
+
+                                  {/* Delete */}
+                                  {hasPermission('bookings', 'can_delete') && (
+                                    <button
+                                      className="btn btn-outline-danger"
+                                      title="Delete Record"
+                                      onClick={() => handleDelete(b)}
+                                    >
+                                      <i className="bi bi-trash"></i>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
 
@@ -1064,6 +1841,8 @@ const Bookings = () => {
           )}
         </div>
       )}
+        </>
+      )}
 
       {/* VIEW BOOKING DETAILS MODAL */}
       {viewBooking && (
@@ -1078,6 +1857,25 @@ const Bookings = () => {
               </div>
 
               <div className="modal-body p-4">
+                {(() => {
+                  const arrivalOverdue = getArrivalOverdueInfo(viewBooking);
+                  if (!arrivalOverdue.isOverdue) return null;
+                  return (
+                    <div className="alert alert-danger d-flex align-items-center gap-2.5 py-2.5 px-3 mb-3 border-danger-subtle rounded-3 shadow-xs">
+                      <i className="bi bi-clock-history text-danger fs-4 flex-shrink-0"></i>
+                      <div className="small">
+                        <strong className="d-block text-danger fw-bold">
+                          Customer Check-In is Overdue ({arrivalOverdue.label})
+                        </strong>
+                        <span>
+                          The guest was scheduled to arrive on <strong>{formatDate(viewBooking.check_in_date)} at {viewBooking.check_in_time || '12:00 PM'}</strong>, but has not checked in yet.
+                          You can contact the guest via phone or WhatsApp to verify arrival status, or proceed with Check-In.
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <div className="row g-3">
                   {/* Guest Info */}
                   <div className="col-md-6">
@@ -1121,9 +1919,16 @@ const Bookings = () => {
                             <span className="text-muted">Assigned Room:</span>
                             <span className="fw-bold text-dark">Room {viewBooking.room_detail?.room_number} ({viewBooking.room_detail?.room_type_name})</span>
                           </li>
-                          <li className="mb-2 d-flex justify-content-between">
+                          <li className="mb-2 d-flex justify-content-between align-items-center">
                             <span className="text-muted">Check-In Schedule:</span>
-                            <span className="fw-semibold text-dark">{formatDate(viewBooking.check_in_date)} @ {viewBooking.check_in_time || '12:00 PM'}</span>
+                            <span className={`fw-semibold ${getArrivalOverdueInfo(viewBooking).isOverdue ? 'text-danger' : 'text-dark'}`}>
+                              {formatDate(viewBooking.check_in_date)} @ {viewBooking.check_in_time || '12:00 PM'}
+                              {getArrivalOverdueInfo(viewBooking).isOverdue && (
+                                <span className="badge bg-danger ms-2 extra-small">
+                                  {getArrivalOverdueInfo(viewBooking).label}
+                                </span>
+                              )}
+                            </span>
                           </li>
                           <li className="mb-2 d-flex justify-content-between">
                             <span className="text-muted">Check-Out Schedule:</span>
@@ -1184,7 +1989,31 @@ const Bookings = () => {
                 >
                   <i className="bi bi-box-arrow-up-right me-1"></i> View Full Stay Details
                 </button>
-                <div className="d-flex gap-2">
+                <div className="d-flex gap-2 align-items-center">
+                  <WhatsAppButton
+                    eventType={getBookingWhatsAppEventType(viewBooking.status)}
+                    customerMobile={viewBooking.customer_detail?.mobile}
+                    customerName={viewBooking.customer_detail?.full_name}
+                    bookingId={viewBooking.id}
+                    customerId={viewBooking.customer_detail?.id}
+                    data={{
+                      guest_name: viewBooking.customer_detail?.full_name || 'Guest',
+                      booking_number: viewBooking.booking_number,
+                      room_number: viewBooking.room_detail?.room_number || 'To be Assigned',
+                      check_in_date: formatDate(viewBooking.check_in_date),
+                      check_in_time: viewBooking.check_in_time || '12:00 PM',
+                      check_out_date: formatDate(viewBooking.expected_checkout_date),
+                      check_out_time: viewBooking.expected_checkout_time || '11:00 AM',
+                      guest_count: (viewBooking.adults || 1) + (viewBooking.children || 0),
+                      number_of_nights: viewBooking.total_nights || 1,
+                      booking_amount: viewBooking.total_amount || 0,
+                      advance_paid: viewBooking.advance_amount || 0,
+                      balance_amount: viewBooking.balance_amount || 0,
+                    }}
+                    customLabel={getBookingWhatsAppLabel(viewBooking.status)}
+                    size="md"
+                    variant="solid"
+                  />
                   {viewBooking.status === 'CONFIRMED' && (
                     <button className="btn btn-success fw-bold" onClick={() => { setViewBooking(null); handleCheckIn(viewBooking.id); }}>
                       <i className="bi bi-key me-1"></i>Proceed to Check-In

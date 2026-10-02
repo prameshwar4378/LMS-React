@@ -25,6 +25,8 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate, formatDateTime } from '../utils/dateUtils';
 import { compressImage } from '../utils/imageCompressor';
 import { getMediaUrl } from '../utils/mediaUtils';
+import DocumentViewerModal from '../components/DocumentViewerModal';
+import WhatsAppButton from '../components/WhatsAppButton';
 
 const StayDetails = () => {
   const { id } = useParams();
@@ -263,16 +265,28 @@ const StayDetails = () => {
     setActionLoading(true);
     setActionError('');
     try {
+      let calNights = 1;
+      if (editCheckInDate && editCheckoutDate) {
+        const d1 = new Date(editCheckInDate);
+        const d2 = new Date(editCheckoutDate);
+        calNights = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+      }
+
       await updateStayApi(stay.id, {
         check_in_date: editCheckInDate,
         check_in_time: editCheckInTime,
         expected_checkout_date: editCheckoutDate,
         expected_checkout_time: editCheckoutTime,
+        chargeable_nights: calNights,
       });
       setShowEditDatesModal(false);
+      showSuccess(`Stay schedule updated successfully (${calNights} night${calNights > 1 ? 's' : ''}). Room charges recalculated.`, 'Schedule Updated');
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['rooms'] });
     } catch (err) {
-      setActionError(err.response?.data?.expected_checkout_date?.[0] || err.response?.data?.error || 'Failed to update stay dates & times.');
+      setActionError(err.response?.data?.expected_checkout_date?.[0] || err.response?.data?.chargeable_nights?.[0] || err.response?.data?.error || 'Failed to update stay dates & times.');
     } finally {
       setActionLoading(false);
     }
@@ -500,7 +514,40 @@ const StayDetails = () => {
     try {
       await createExtraChargeApi(chargeData);
       setShowChargeModal(false);
-      showSuccess('Extra charge added to bill successfully.', 'Charge Added');
+
+      const chargeAmt = parseFloat(chargeData?.amount || 0);
+      const currentBill = stay?.bill_summary || {};
+      const currentCust = stay?.primary_customer_detail || {};
+      const newExtraTotal = parseFloat(currentBill?.total_extra_charges || 0) + chargeAmt;
+      const newGrandTotal = parseFloat(currentBill?.grand_total || 0) + chargeAmt;
+      const newBalance = parseFloat(currentBill?.balance || 0) + chargeAmt;
+      const totalPaid = parseFloat(currentBill?.total_paid || 0);
+
+      showSuccess(
+        `Extra charge of ${formatCurrency(chargeAmt)} added to bill successfully.`,
+        'Charge Added',
+        {
+          whatsappAction: {
+            eventType: 'EXTRA_CHARGE',
+            customerMobile: currentCust?.mobile || stay?.customer_detail?.mobile || stay?.customer?.mobile,
+            customerName: currentCust?.full_name || stay?.customer_detail?.full_name || 'Guest',
+            bookingId: stay?.booking_id || stay?.booking?.id || stay?.booking,
+            customerId: currentCust?.id || stay?.customer_detail?.id,
+            data: {
+              guest_name: currentCust?.full_name || stay?.customer_detail?.full_name || 'Guest',
+              booking_number: stay?.booking_number || stay?.stay_number,
+              room_number: stay?.room_detail?.room_number || stay?.room,
+              charge_description: chargeData?.charge_type || chargeData?.description || 'Extra Service / Amenity',
+              charge_amount: chargeAmt,
+              total_extra_charges: newExtraTotal,
+              grand_total: newGrandTotal,
+              total_paid: totalPaid,
+              balance_amount: newBalance,
+            },
+            customLabel: 'Send Extra Charge Notice on WhatsApp',
+          },
+        }
+      );
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
     } catch (err) {
       showError('Error adding extra charge.', 'Failed');
@@ -562,13 +609,41 @@ const StayDetails = () => {
         showSuccess('Payment transaction record updated successfully.', 'Payment Updated');
       } else {
         await createPaymentApi(payData);
-        showSuccess('Payment transaction recorded successfully.', 'Payment Recorded');
+        const newAmt = parseFloat(payData?.amount || 0);
+        const currentTotalPaid = parseFloat(bill?.total_paid || 0) + newAmt;
+        const currentBalance = Math.max(0, parseFloat(bill?.balance || 0) - newAmt);
+
+        showSuccess(
+          `Payment transaction of ${formatCurrency(newAmt)} recorded successfully.`,
+          'Payment Recorded',
+          {
+            whatsappAction: {
+              eventType: 'PAYMENT',
+              customerMobile: cust?.mobile || stay?.customer_detail?.mobile || stay?.customer?.mobile,
+              customerName: cust?.full_name || stay?.customer_detail?.full_name || 'Guest',
+              bookingId: stay?.booking_id || stay?.booking?.id || stay?.booking,
+              customerId: cust?.id || stay?.customer_detail?.id,
+              data: {
+                guest_name: cust?.full_name || stay?.customer_detail?.full_name || 'Guest',
+                booking_number: stay?.booking_number || stay?.stay_number,
+                room_number: stay?.room_detail?.room_number || stay?.room,
+                payment_amount: newAmt,
+                total_paid: currentTotalPaid,
+                balance_amount: currentBalance,
+                payment_date: formatDate(payData?.payment_date || new Date()),
+                payment_method: payData?.payment_method || 'CASH',
+              },
+              customLabel: 'Send Payment Receipt on WhatsApp',
+            },
+          }
+        );
       }
       setShowPaymentModal(false);
       setEditPayment(null);
       queryClient.invalidateQueries({ queryKey: ['stay-details', id] });
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error saving payment record.';
       showError(errMsg, 'Payment Failed');
@@ -724,7 +799,63 @@ const StayDetails = () => {
             </div>
 
             {/* Top Action Suite */}
-            <div className="d-flex gap-2 flex-wrap">
+            <div className="d-flex gap-2 flex-wrap align-items-center">
+              {/* Contextual WhatsApp Customer Message Actions */}
+              {stay.status === 'CHECKED_IN' && (
+                <WhatsAppButton
+                  eventType="CHECK_IN"
+                  customerMobile={cust.mobile}
+                  customerName={cust.full_name}
+                  bookingId={stay.booking_id || stay.booking?.id || stay.booking}
+                  customerId={cust.id}
+                  data={{
+                    guest_name: cust.full_name || 'Guest',
+                    booking_number: stay.booking_number || stay.stay_number,
+                    room_number: stay.room_detail?.room_number || stay.room,
+                    check_in_date: stay.check_in_date,
+                    check_in_time: stay.check_in_time,
+                    check_out_date: stay.expected_checkout_date,
+                    check_out_time: stay.expected_checkout_time,
+                    guest_count: 1 + (stay.guests?.length || 0),
+                    number_of_nights: stay.total_nights || stay.chargeable_nights || 1,
+                    amount_paid: bill.total_paid || 0,
+                    balance_amount: bill.balance || 0,
+                  }}
+                  customLabel="Send Welcome Message"
+                  size="md"
+                  variant="subtle"
+                />
+              )}
+
+              {isCheckedOut && (
+                <WhatsAppButton
+                  eventType="CHECK_OUT"
+                  customerMobile={cust.mobile}
+                  customerName={cust.full_name}
+                  bookingId={stay.booking_id || stay.booking?.id || stay.booking}
+                  customerId={cust.id}
+                  data={{
+                    guest_name: cust.full_name || 'Guest',
+                    booking_number: stay.booking_number || stay.stay_number,
+                    room_number: stay.room_detail?.room_number || stay.room,
+                    check_in_date: stay.check_in_date,
+                    check_out_date: stay.actual_checkout_date || stay.expected_checkout_date,
+                    total_nights: stay.total_nights || 1,
+                    room_charges: bill.room_charges || 0,
+                    extra_charges: bill.extra_charges || 0,
+                    discount: bill.discount || 0,
+                    tax: bill.tax || 0,
+                    grand_total: bill.grand_total || 0,
+                    total_paid: bill.total_paid || 0,
+                    balance_amount: bill.balance || 0,
+                    payment_status: parseFloat(bill.balance || 0) <= 0 ? 'Fully Paid' : 'Balance Pending',
+                  }}
+                  customLabel="Send Thank You Message"
+                  size="md"
+                  variant="subtle"
+                />
+              )}
+
               {isCheckedOut && (
                 <button className="btn btn-outline-primary fw-semibold d-flex align-items-center gap-1.5 shadow-2xs" onClick={() => setShowInvoiceModal(true)}>
                   <i className="bi bi-printer me-1"></i> Invoice
@@ -1165,7 +1296,7 @@ const StayDetails = () => {
                       <th className="text-center" style={{ width: '80px' }}>Qty</th>
                       <th className="text-end" style={{ minWidth: '120px' }}>Unit Price</th>
                       <th className="text-end" style={{ minWidth: '130px' }}>Total Amount</th>
-                      <th className="text-center" style={{ width: '100px' }}>Action</th>
+                      <th className="text-center" style={{ width: '160px' }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1181,17 +1312,42 @@ const StayDetails = () => {
                         <td className="text-end">{formatCurrency(c.unit_price)}</td>
                         <td className="text-end fw-bold text-primary fs-6">{formatCurrency(c.amount)}</td>
                         <td className="text-center">
-                          {canEdit ? (
-                            <button
-                              className="btn btn-sm btn-outline-danger"
-                              onClick={() => requestDeleteCharge(c.id, c.charge_type_name)}
-                              title="Delete Charge"
-                            >
-                              <i className="bi bi-trash"></i> Delete
-                            </button>
-                          ) : (
-                            <span className="badge bg-light text-muted border">Locked</span>
-                          )}
+                          <div className="d-flex align-items-center justify-content-center gap-1.5">
+                            {parseFloat(c.amount) > 0 && (
+                              <WhatsAppButton
+                                eventType="EXTRA_CHARGE"
+                                customerMobile={cust.mobile}
+                                customerName={cust.full_name}
+                                bookingId={stay.booking_id || stay.booking?.id || stay.booking}
+                                customerId={cust.id}
+                                data={{
+                                  guest_name: cust.full_name || 'Guest',
+                                  booking_number: stay.booking_number || stay.stay_number,
+                                  room_number: stay.room_detail?.room_number || stay.room,
+                                  charge_description: c.charge_type_name || c.description || 'Extra Service',
+                                  charge_amount: c.amount,
+                                  total_extra_charges: bill.total_extra_charges || 0,
+                                  grand_total: bill.grand_total || 0,
+                                  total_paid: bill.total_paid || 0,
+                                  balance_amount: bill.balance || 0,
+                                }}
+                                customLabel="Notice"
+                                size="sm"
+                                variant="outline"
+                              />
+                            )}
+                            {canEdit ? (
+                              <button
+                                className="btn btn-sm btn-outline-danger"
+                                onClick={() => requestDeleteCharge(c.id, c.charge_type_name)}
+                                title="Delete Charge"
+                              >
+                                <i className="bi bi-trash"></i> Delete
+                              </button>
+                            ) : (
+                              <span className="badge bg-light text-muted border">Locked</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1253,18 +1409,42 @@ const StayDetails = () => {
                           )}
                         </td>
                         <td className="text-center">
-                          {canEdit ? (
-                            <div className="btn-group btn-group-sm">
-                              <button className="btn btn-outline-primary" onClick={() => openEditPaymentModal(p)} title="Edit Payment">
-                                <i className="bi bi-pencil"></i> Edit
-                              </button>
-                              <button className="btn btn-outline-danger" onClick={() => requestDeletePayment(p.id, p.payment_number, p.amount)} title="Delete Payment">
-                                <i className="bi bi-trash"></i> Delete
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="badge bg-light text-muted border">Locked</span>
-                          )}
+                          <div className="d-flex align-items-center justify-content-center gap-1.5">
+                            {parseFloat(p.amount) > 0 && (
+                              <WhatsAppButton
+                                eventType="PAYMENT"
+                                customerMobile={cust.mobile}
+                                customerName={cust.full_name}
+                                bookingId={stay.booking_id || stay.booking?.id || stay.booking}
+                                customerId={cust.id}
+                                data={{
+                                  guest_name: cust.full_name || 'Guest',
+                                  booking_number: stay.booking_number || stay.stay_number,
+                                  room_number: stay.room_detail?.room_number || stay.room,
+                                  payment_amount: p.amount,
+                                  total_paid: bill.total_paid || 0,
+                                  balance_amount: bill.balance || 0,
+                                  payment_date: formatDate(p.payment_date),
+                                  payment_method: p.payment_method,
+                                }}
+                                customLabel="Receipt"
+                                size="sm"
+                                variant="outline"
+                              />
+                            )}
+                            {canEdit ? (
+                              <div className="btn-group btn-group-sm">
+                                <button className="btn btn-outline-primary" onClick={() => openEditPaymentModal(p)} title="Edit Payment">
+                                  <i className="bi bi-pencil"></i> Edit
+                                </button>
+                                <button className="btn btn-outline-danger" onClick={() => requestDeletePayment(p.id, p.payment_number, p.amount)} title="Delete Payment">
+                                  <i className="bi bi-trash"></i> Delete
+                                </button>
+                              </div>
+                            ) : (
+                              <span className="badge bg-light text-muted border">Locked</span>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1291,11 +1471,49 @@ const StayDetails = () => {
             <div className="row g-4">
               {/* Photo Snapshot Panel */}
               <div className="col-md-4">
-                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between">
+                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between shadow-xs">
                   <div>
                     <div className="fw-bold mb-2 text-dark"><i className="bi bi-camera-fill me-1 text-primary"></i>Customer Photo Snapshot</div>
                     {cust.photo ? (
-                      <img src={getMediaUrl(cust.photo)} alt="Guest" onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }} className="img-fluid rounded shadow-sm border mb-3" style={{ maxHeight: '180px', objectFit: 'cover' }} />
+                      <div
+                        onClick={() => setPreviewModalDoc({
+                          show: true,
+                          title: 'Customer Photo Snapshot - Full View',
+                          url: getMediaUrl(cust.photo)
+                        })}
+                        className="position-relative border rounded bg-white overflow-hidden shadow-xs mb-3"
+                        style={{
+                          height: '150px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          backgroundColor: '#f8fafc',
+                        }}
+                        title="Click to view full size"
+                      >
+                        <img
+                          src={getMediaUrl(cust.photo)}
+                          alt="Guest Snapshot"
+                          onError={(e) => { e.target.onerror = null; e.target.style.display = 'none'; }}
+                          className="img-fluid"
+                          style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        />
+                        <div
+                          className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center text-white"
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                            backdropFilter: 'blur(1px)',
+                            opacity: 0,
+                            transition: 'opacity 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
+                        >
+                          <i className="bi bi-zoom-in fs-3 mb-1"></i>
+                          <span className="small fw-bold">Click to Full View</span>
+                        </div>
+                      </div>
                     ) : (
                       <div className="alert alert-warning m-0 py-3">No photo captured</div>
                     )}
@@ -1303,9 +1521,17 @@ const StayDetails = () => {
                   <div className="d-flex justify-content-center gap-1 flex-wrap mt-3">
                     {cust.photo ? (
                       <>
-                        <a href={getMediaUrl(cust.photo)} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary fw-semibold">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary fw-semibold"
+                          onClick={() => setPreviewModalDoc({
+                            show: true,
+                            title: 'Customer Photo Snapshot - Full View',
+                            url: getMediaUrl(cust.photo)
+                          })}
+                        >
                           <i className="bi bi-eye"></i> View
-                        </a>
+                        </button>
                         {canEdit && (
                           <>
                             <button className="btn btn-sm btn-outline-warning fw-semibold" onClick={openEditGuestModal}>
@@ -1330,13 +1556,57 @@ const StayDetails = () => {
 
               {/* ID Proof - Front Side Panel */}
               <div className="col-md-4">
-                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between">
+                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between shadow-xs">
                   <div>
                     <div className="fw-bold mb-2 text-dark"><i className="bi bi-card-heading me-1 text-primary"></i>{cust.id_type || 'ID Proof'} (Front Side)</div>
                     {cust.id_document ? (
-                      <div className="py-3">
-                        <i className="bi bi-file-earmark-check text-success display-4 d-block mb-1"></i>
-                        <span className="small text-muted">Front Document Uploaded</span>
+                      <div
+                        onClick={() => setPreviewModalDoc({
+                          show: true,
+                          title: `${cust.id_type || 'ID Proof'} (Front Side) - Full View`,
+                          url: getMediaUrl(cust.id_document)
+                        })}
+                        className="position-relative border rounded bg-white overflow-hidden shadow-xs mb-3"
+                        style={{
+                          height: '150px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          backgroundColor: '#f8fafc',
+                        }}
+                        title="Click to view full size"
+                      >
+                        <img
+                          src={getMediaUrl(cust.id_document)}
+                          alt="Front Document"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.style.display = 'none';
+                            const fallback = e.target.nextElementSibling;
+                            if (fallback) fallback.style.display = 'block';
+                          }}
+                          className="img-fluid"
+                          style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        />
+                        <div style={{ display: 'none' }} className="py-3 text-center">
+                          <i className="bi bi-file-earmark-medical text-primary display-4 d-block mb-1"></i>
+                          <span className="small text-muted">Front Document Uploaded</span>
+                        </div>
+                        <div
+                          className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center text-white"
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                            backdropFilter: 'blur(1px)',
+                            opacity: 0,
+                            transition: 'opacity 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
+                        >
+                          <i className="bi bi-zoom-in fs-3 mb-1"></i>
+                          <span className="small fw-bold">Click to Full View</span>
+                        </div>
                       </div>
                     ) : (
                       <div className="alert alert-secondary m-0 py-3">No front document uploaded</div>
@@ -1345,9 +1615,17 @@ const StayDetails = () => {
                   <div className="d-flex justify-content-center gap-1 flex-wrap mt-3">
                     {cust.id_document ? (
                       <>
-                        <a href={cust.id_document} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary fw-semibold">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary fw-semibold"
+                          onClick={() => setPreviewModalDoc({
+                            show: true,
+                            title: `${cust.id_type || 'ID Proof'} (Front Side) - Full View`,
+                            url: getMediaUrl(cust.id_document)
+                          })}
+                        >
                           <i className="bi bi-eye"></i> View
-                        </a>
+                        </button>
                         {canEdit && (
                           <>
                             <button className="btn btn-sm btn-outline-warning fw-semibold" onClick={openEditGuestModal}>
@@ -1372,13 +1650,57 @@ const StayDetails = () => {
 
               {/* ID Proof - Back Side Panel */}
               <div className="col-md-4">
-                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between">
+                <div className="p-3 border rounded text-center bg-light h-100 d-flex flex-column justify-content-between shadow-xs">
                   <div>
                     <div className="fw-bold mb-2 text-dark"><i className="bi bi-card-heading me-1 text-primary"></i>{cust.id_type || 'ID Proof'} (Back Side)</div>
                     {cust.id_document_back ? (
-                      <div className="py-3">
-                        <i className="bi bi-file-earmark-check text-success display-4 d-block mb-1"></i>
-                        <span className="small text-muted">Back Document Uploaded</span>
+                      <div
+                        onClick={() => setPreviewModalDoc({
+                          show: true,
+                          title: `${cust.id_type || 'ID Proof'} (Back Side) - Full View`,
+                          url: getMediaUrl(cust.id_document_back)
+                        })}
+                        className="position-relative border rounded bg-white overflow-hidden shadow-xs mb-3"
+                        style={{
+                          height: '150px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          cursor: 'pointer',
+                          backgroundColor: '#f8fafc',
+                        }}
+                        title="Click to view full size"
+                      >
+                        <img
+                          src={getMediaUrl(cust.id_document_back)}
+                          alt="Back Document"
+                          onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.style.display = 'none';
+                            const fallback = e.target.nextElementSibling;
+                            if (fallback) fallback.style.display = 'block';
+                          }}
+                          className="img-fluid"
+                          style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }}
+                        />
+                        <div style={{ display: 'none' }} className="py-3 text-center">
+                          <i className="bi bi-file-earmark-medical text-primary display-4 d-block mb-1"></i>
+                          <span className="small text-muted">Back Document Uploaded</span>
+                        </div>
+                        <div
+                          className="position-absolute top-0 start-0 w-100 h-100 d-flex flex-column align-items-center justify-content-center text-white"
+                          style={{
+                            backgroundColor: 'rgba(15, 23, 42, 0.55)',
+                            backdropFilter: 'blur(1px)',
+                            opacity: 0,
+                            transition: 'opacity 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '1')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '0')}
+                        >
+                          <i className="bi bi-zoom-in fs-3 mb-1"></i>
+                          <span className="small fw-bold">Click to Full View</span>
+                        </div>
                       </div>
                     ) : (
                       <div className="alert alert-secondary m-0 py-3">No back document uploaded</div>
@@ -1387,9 +1709,17 @@ const StayDetails = () => {
                   <div className="d-flex justify-content-center gap-1 flex-wrap mt-3">
                     {cust.id_document_back ? (
                       <>
-                        <a href={cust.id_document_back} target="_blank" rel="noreferrer" className="btn btn-sm btn-outline-primary fw-semibold">
+                        <button
+                          type="button"
+                          className="btn btn-sm btn-outline-primary fw-semibold"
+                          onClick={() => setPreviewModalDoc({
+                            show: true,
+                            title: `${cust.id_type || 'ID Proof'} (Back Side) - Full View`,
+                            url: getMediaUrl(cust.id_document_back)
+                          })}
+                        >
                           <i className="bi bi-eye"></i> View
-                        </a>
+                        </button>
                         {canEdit && (
                           <>
                             <button className="btn btn-sm btn-outline-warning fw-semibold" onClick={openEditGuestModal}>
@@ -1429,26 +1759,71 @@ const StayDetails = () => {
                   </div>
                 ) : (
                   <div className="row g-3">
-                    {cust.documents.map((doc) => (
-                      <div key={doc.id} className="col-md-4 col-sm-6">
-                        <div className="p-3 border rounded bg-white shadow-sm d-flex justify-content-between align-items-center">
-                          <div>
-                            <div className="fw-bold text-dark">{doc.title}</div>
-                            <div className="text-muted small">{formatDate(doc.created_at)}</div>
-                          </div>
-                          <div className="btn-group btn-group-sm">
-                            <a href={doc.document_file} target="_blank" rel="noreferrer" className="btn btn-outline-primary" title="View Document">
-                              <i className="bi bi-eye"></i>
-                            </a>
-                            {canEdit && (
-                              <button className="btn btn-outline-danger" onClick={() => requestDeleteExtraDocument(doc.id, doc.title)} title="Delete Document">
-                                <i className="bi bi-trash"></i>
+                    {cust.documents.map((doc) => {
+                      const fullDocUrl = getMediaUrl(doc.document_file);
+                      return (
+                        <div key={doc.id} className="col-md-4 col-sm-6">
+                          <div className="p-3 border rounded bg-white shadow-sm d-flex flex-column justify-content-between h-100">
+                            <div className="d-flex align-items-center gap-3 mb-2">
+                              <div
+                                onClick={() => setPreviewModalDoc({
+                                  show: true,
+                                  title: `${doc.title} - Full View`,
+                                  url: fullDocUrl
+                                })}
+                                className="rounded border overflow-hidden flex-shrink-0 cursor-pointer position-relative d-flex align-items-center justify-content-center bg-light"
+                                style={{ width: '52px', height: '52px', cursor: 'pointer' }}
+                                title="Click to view full size"
+                              >
+                                <img
+                                  src={fullDocUrl}
+                                  alt={doc.title}
+                                  className="w-100 h-100"
+                                  style={{ objectFit: 'cover' }}
+                                  onError={(e) => {
+                                    e.target.onerror = null;
+                                    e.target.style.display = 'none';
+                                    const fb = e.target.nextElementSibling;
+                                    if (fb) fb.style.display = 'flex';
+                                  }}
+                                />
+                                <div style={{ display: 'none', width: '100%', height: '100%' }} className="align-items-center justify-content-center bg-light">
+                                  <i className="bi bi-file-earmark-medical text-primary fs-4"></i>
+                                </div>
+                              </div>
+                              <div className="overflow-hidden">
+                                <div className="fw-bold text-dark text-truncate">{doc.title}</div>
+                                <div className="text-muted small">{formatDate(doc.created_at)}</div>
+                              </div>
+                            </div>
+                            <div className="d-flex justify-content-end gap-1 mt-2">
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-outline-primary fw-semibold"
+                                onClick={() => setPreviewModalDoc({
+                                  show: true,
+                                  title: `${doc.title} - Full View`,
+                                  url: fullDocUrl
+                                })}
+                                title="View Document"
+                              >
+                                <i className="bi bi-eye"></i> View
                               </button>
-                            )}
+                              {canEdit && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-outline-danger fw-semibold"
+                                  onClick={() => requestDeleteExtraDocument(doc.id, doc.title)}
+                                  title="Delete Document"
+                                >
+                                  <i className="bi bi-trash"></i>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1730,6 +2105,22 @@ const StayDetails = () => {
                       </div>
                     </div>
                   </div>
+
+                  {editCheckInDate && editCheckoutDate && (() => {
+                    const d1 = new Date(editCheckInDate);
+                    const d2 = new Date(editCheckoutDate);
+                    const nights = Math.max(1, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+                    return (
+                      <div className="mt-3 p-2.5 bg-primary-subtle border border-primary-subtle rounded-3 d-flex align-items-center justify-content-between">
+                        <span className="small text-primary-emphasis fw-semibold">
+                          <i className="bi bi-moon-stars-fill me-1.5"></i>Calculated Duration:
+                        </span>
+                        <span className="badge bg-primary text-white fs-7 px-2.5 py-1">
+                          {nights} {nights === 1 ? 'Night' : 'Nights'}
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between align-items-center">
@@ -2290,45 +2681,13 @@ const StayDetails = () => {
         </>
       )}
 
-      {/* Document & Photo Fullscreen Preview Modal */}
-      {previewModalDoc && previewModalDoc.show && (
-        <div className="modal fade show d-block modal-backdrop-animated" style={{ backgroundColor: 'rgba(15, 23, 42, 0.75)', zIndex: 1080 }} tabIndex="-1">
-          <div className="modal-dialog modal-dialog-centered modal-lg modal-dialog-animated">
-            <div className="modal-content border-0 shadow-lg rounded-4 overflow-hidden modal-content-animated">
-              <div className="modal-header bg-dark text-white py-3 px-4 d-flex align-items-center justify-content-between">
-                <h5 className="modal-title fw-bold fs-6 d-flex align-items-center gap-2 m-0">
-                  <i className="bi bi-file-earmark-text text-primary"></i> {previewModalDoc.title}
-                </h5>
-                <div className="d-flex align-items-center gap-2">
-                  {previewModalDoc.url && (
-                    <a
-                      href={previewModalDoc.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="btn btn-sm btn-outline-light py-1 px-2.5 extra-small fw-semibold d-inline-flex align-items-center gap-1"
-                    >
-                      <i className="bi bi-box-arrow-up-right"></i> Open in New Tab
-                    </a>
-                  )}
-                  <button type="button" className="btn-close btn-close-white shadow-none" onClick={() => setPreviewModalDoc(null)}></button>
-                </div>
-              </div>
-              <div className="modal-body p-3 bg-light text-center" style={{ maxHeight: '75vh', overflowY: 'auto' }}>
-                {previewModalDoc.isPdf ? (
-                  <iframe src={previewModalDoc.url} title={previewModalDoc.title} className="w-100 rounded border bg-white" style={{ height: '600px' }}></iframe>
-                ) : (
-                  <img
-                    src={previewModalDoc.url}
-                    alt={previewModalDoc.title}
-                    className="img-fluid rounded border shadow-sm"
-                    style={{ maxHeight: '65vh', objectFit: 'contain' }}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* High-Resolution Document & Photo Viewer Modal with Zoom, Rotation & Download */}
+      <DocumentViewerModal
+        isOpen={Boolean(previewModalDoc && previewModalDoc.show)}
+        onClose={() => setPreviewModalDoc(null)}
+        title={previewModalDoc?.title || 'Document Full View'}
+        fileUrl={previewModalDoc?.url}
+      />
 
     </div>
   );

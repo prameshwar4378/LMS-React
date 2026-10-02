@@ -2,18 +2,21 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../context/AuthContext';
+import { useShift } from '../context/ShiftContext';
 import {
   getCurrentShiftApi,
   getShiftsApi,
   getShiftSummaryStatsApi,
   reopenShiftApi,
   acceptShiftHandoverApi,
-  rejectShiftHandoverApi
+  rejectShiftHandoverApi,
+  deleteShiftExpenseApi
 } from '../api/shiftApi';
 import { getSettingsApi } from '../api/settingsApi';
 import { formatCurrency } from '../utils/formatCurrency';
-import { generateShiftThermalHtml, printThermalContent } from '../utils/thermalPrinter';
+import { generateShiftThermalHtml, generateExpenseThermalHtml, printThermalContent } from '../utils/thermalPrinter';
 import { exportShiftsListToExcel, exportShiftsListToPDF } from '../utils/exportUtils';
+import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import PageLoader from '../components/PageLoader';
 import OpenShiftModal from '../components/OpenShiftModal';
 import CloseShiftModal from '../components/CloseShiftModal';
@@ -22,6 +25,7 @@ import ShiftAdjustmentModal from '../components/ShiftAdjustmentModal';
 import ShiftHandoverModal from '../components/ShiftHandoverModal';
 import ShiftApprovalModal from '../components/ShiftApprovalModal';
 import AdminForceCloseModal from '../components/AdminForceCloseModal';
+import ConfirmModal from '../components/ConfirmModal';
 import {
   Clock,
   DollarSign,
@@ -50,11 +54,19 @@ import {
   Activity,
   Printer,
   Sparkles,
-  UserCheck
+  UserCheck,
+  Edit2,
+  Trash2
 } from 'lucide-react';
 
 const Shifts = () => {
   const { user, hasRole, hasPermission, isShiftWise, isSingleOwner } = useAuth();
+  const {
+    shiftData: contextShiftData,
+    hasActiveShift: contextHasActiveShift,
+    activeShift: contextActiveShift,
+    refetchShift
+  } = useShift();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const queryClient = useQueryClient();
@@ -141,8 +153,8 @@ const Shifts = () => {
 
   const loading = currentLoading;
 
-  // Standardized Column Visibility & Table Control States
-  const [columnVisibility, setColumnVisibility] = useState({
+  // Standardized Column Visibility & Table Control States (Persisted in localStorage)
+  const DEFAULT_SHIFT_COLUMNS = {
     shift_number: true,
     user_name: true,
     opened_at: true,
@@ -153,7 +165,15 @@ const Shifts = () => {
     cash_difference: true,
     status: true,
     actions: true,
-  });
+  };
+
+  const {
+    columnVisibility,
+    setColumnVisibility,
+    toggleColumnVisibility,
+    resetColumnVisibility,
+  } = usePersistentColumns('lms_shifts_column_visibility', DEFAULT_SHIFT_COLUMNS);
+
   const [showColumnMenu, setShowColumnMenu] = useState(false);
   const columnMenuRef = useRef(null);
 
@@ -187,16 +207,6 @@ const Shifts = () => {
     { key: 'status', label: 'Status' },
     { key: 'actions', label: 'Actions' },
   ];
-
-  const toggleColumnVisibility = (key) => {
-    setColumnVisibility(prev => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  const resetColumnVisibility = () => {
-    const allVisible = {};
-    columnDefs.forEach(c => { allVisible[c.key] = true; });
-    setColumnVisibility(allVisible);
-  };
 
   const handleSort = (field) => {
     if (sortField === field) {
@@ -287,12 +297,15 @@ const Shifts = () => {
   const loadAllShiftData = () => {
     queryClient.invalidateQueries({ queryKey: ['shifts'] });
     queryClient.invalidateQueries({ queryKey: ['settings'] });
+    refetchShift?.();
   };
 
   // Modal States
   const [showOpenModal, setShowOpenModal] = useState(false);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseToEdit, setExpenseToEdit] = useState(null);
+  const [deleteExpenseConfirm, setDeleteExpenseConfirm] = useState({ show: false, expense: null, loading: false });
   const [showAdjustmentModal, setShowAdjustmentModal] = useState(false);
   const [showHandoverModal, setShowHandoverModal] = useState(false);
   const [showApprovalModal, setShowApprovalModal] = useState(false);
@@ -310,7 +323,31 @@ const Shifts = () => {
 
   const showSuccessToast = (msg) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 5000);
+    setTimeout(() => setToastMessage(null), 2000);
+  };
+
+  const handlePrintExpenseVoucher = (expense) => {
+    try {
+      const html = generateExpenseThermalHtml(expense, currentShift, settings, '80mm');
+      printThermalContent(html, `Voucher_EXP_${expense.id}`);
+    } catch (err) {
+      console.error('Failed to print voucher:', err);
+    }
+  };
+
+  const handleConfirmDeleteExpense = async () => {
+    if (!deleteExpenseConfirm.expense || !currentShift) return;
+    setDeleteExpenseConfirm(prev => ({ ...prev, loading: true }));
+    try {
+      await deleteShiftExpenseApi(currentShift.id, deleteExpenseConfirm.expense.id);
+      showSuccessToast('Cash expense deleted and till cash updated.');
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
+      refetchShift?.();
+      setDeleteExpenseConfirm({ show: false, expense: null, loading: false });
+    } catch (err) {
+      alert(err.response?.data?.message || 'Failed to delete expense.');
+      setDeleteExpenseConfirm(prev => ({ ...prev, loading: false }));
+    }
   };
 
   const handleReopen = async (shiftId) => {
@@ -349,10 +386,11 @@ const Shifts = () => {
     }
   };
 
-  const hasActiveShift = currentData?.has_active_shift;
-  const currentShift = currentData?.shift;
-  const currentFin = currentData?.financials || {};
-  const isSingleOperator = currentData?.operation_mode === 'SINGLE_OPERATOR';
+  const effectiveData = currentData || contextShiftData;
+  const hasActiveShift = Boolean(effectiveData?.has_active_shift || contextHasActiveShift);
+  const currentShift = effectiveData?.shift || contextActiveShift;
+  const currentFin = effectiveData?.financials || {};
+  const isSingleOperator = effectiveData?.operation_mode === 'SINGLE_OPERATOR';
 
   const handlePrintCounterSlip = () => {
     if (!currentShift) return;
@@ -407,7 +445,7 @@ const Shifts = () => {
   }
 
   return (
-    <div className="pb-5 px-1" style={{ backgroundColor: '#F8FAFC' }}>
+    <div data-spotlight-id="shifts" className="pb-5 px-1" style={{ backgroundColor: '#F8FAFC' }}>
       
       {/* Toast Alert */}
       {toastMessage && (
@@ -702,7 +740,7 @@ const Shifts = () => {
           )}
 
           {!hasActiveShift ? (
-            <div className="card border-0 bg-white shadow-xs p-5 rounded-4 text-center my-3" style={{ border: '1px solid #E2E8F0' }}>
+            <div className="card border-0 bg-white shadow-sm p-5 rounded-4 text-center my-3" style={{ border: '1px solid #E2E8F0' }}>
               <div className="p-3 bg-primary-subtle text-primary rounded-circle d-inline-flex mb-3 mx-auto" style={{ width: '60px', height: '60px', alignItems: 'center', justifyContent: 'center' }}>
                 <Clock size={28} />
               </div>
@@ -725,7 +763,7 @@ const Shifts = () => {
             <div>
               {/* Hero Operational Strip */}
               <div
-                className="card border-0 shadow-xs text-white rounded-4 p-4 mb-4 position-relative overflow-hidden"
+                className="card border-0 shadow-sm text-white rounded-4 p-4 mb-4 position-relative overflow-hidden"
                 style={{ background: 'linear-gradient(135deg, #09204c 0%, #1E3A8A 100%)', minHeight: '130px' }}
               >
                 <div className="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
@@ -754,7 +792,7 @@ const Shifts = () => {
                     </div>
                   </div>
 
-                  <div className="text-md-end bg-white bg-opacity-10 p-3 rounded-3 border border-white border-opacity-15 d-flex flex-column align-items-md-end justify-content-center">
+                  <div className="text-md-end bg-white bg-opacity-10 p-3 rounded-3 border border-white border-opacity-15 d-flex flex-column align-items-md-end justify-content-center shadow-xs">
                     <div className="text-white-50 extra-small fw-bold text-uppercase">EXPECTED PHYSICAL CASH IN DRAWER</div>
                     <div className="fs-3 fw-bolder text-white lh-1 mt-1 font-monospace">
                       {formatCurrency(currentFin.expected_cash || 0)}
@@ -775,7 +813,7 @@ const Shifts = () => {
               <div className="row g-3 mb-4">
                 {/* 1. Opening Float */}
                 <div className="col-12 col-sm-6 col-xl-3">
-                  <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <span className="text-secondary extra-small fw-bold text-uppercase">OPENING FLOAT</span>
                       <span className="p-2 rounded-2 bg-light text-secondary"><DollarSign size={16} /></span>
@@ -787,7 +825,7 @@ const Shifts = () => {
 
                 {/* 2. Cash Collected */}
                 <div className="col-12 col-sm-6 col-xl-3">
-                  <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <span className="text-secondary extra-small fw-bold text-uppercase">CASH COLLECTED</span>
                       <span className="p-2 rounded-2 bg-success-subtle text-success"><TrendingUp size={16} /></span>
@@ -799,7 +837,7 @@ const Shifts = () => {
 
                 {/* 3. Expenses & Adjustments */}
                 <div className="col-12 col-sm-6 col-xl-3">
-                  <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <span className="text-secondary extra-small fw-bold text-uppercase">EXPENSES &amp; ADJUSTMENTS</span>
                       <span className="p-2 rounded-2 bg-danger-subtle text-danger"><Receipt size={16} /></span>
@@ -816,7 +854,7 @@ const Shifts = () => {
 
                 {/* 4. Total Collections (Physical + Digital) */}
                 <div className="col-12 col-sm-6 col-xl-3">
-                  <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="d-flex justify-content-between align-items-center mb-2">
                       <span className="text-secondary extra-small fw-bold text-uppercase">TOTAL REVENUE RECORDED</span>
                       <span className="p-2 rounded-2 bg-primary-subtle text-primary"><CreditCard size={16} /></span>
@@ -828,7 +866,7 @@ const Shifts = () => {
               </div>
 
               {/* Digital Payment Breakdown Grid & Channel Bar */}
-              <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 mb-4" style={{ border: '1px solid #E2E8F0' }}>
+              <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 mb-4" style={{ border: '1px solid #E2E8F0' }}>
                 <div className="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
                   <span className="text-secondary extra-small fw-bold text-uppercase tracking-wider">
                     PAYMENT CHANNEL REVENUE BREAKDOWN
@@ -856,41 +894,49 @@ const Shifts = () => {
                   );
                 })()}
 
-                <div className="row g-2 text-center" style={{ fontSize: '0.85rem' }}>
-                  <div className="col-6 col-md-3 border-end">
-                    <div className="text-secondary extra-small d-flex align-items-center justify-content-center gap-1">
-                      <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#16A34A' }}></span>
-                      Cash In Hand
+                <div className="row g-2.5 text-center" style={{ fontSize: '0.85rem' }}>
+                  <div className="col-6 col-md-3">
+                    <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                      <div className="text-secondary extra-small fw-semibold text-uppercase d-flex align-items-center justify-content-center gap-1">
+                        <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#16A34A' }}></span>
+                        Cash In Hand
+                      </div>
+                      <div className="fw-bold text-success fs-5 mt-1 font-monospace">{formatCurrency(currentFin.cash_collections || 0)}</div>
                     </div>
-                    <div className="fw-bold text-success mt-0.5 font-monospace">{formatCurrency(currentFin.cash_collections || 0)}</div>
-                  </div>
-                  <div className="col-6 col-md-3 border-end">
-                    <div className="text-secondary extra-small d-flex align-items-center justify-content-center gap-1">
-                      <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#2563EB' }}></span>
-                      UPI / QR
-                    </div>
-                    <div className="fw-bold text-primary mt-0.5 font-monospace">{formatCurrency(currentFin.upi_collections || 0)}</div>
-                  </div>
-                  <div className="col-6 col-md-3 border-end">
-                    <div className="text-secondary extra-small d-flex align-items-center justify-content-center gap-1">
-                      <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#6366F1' }}></span>
-                      Card
-                    </div>
-                    <div className="fw-bold text-indigo mt-0.5 font-monospace" style={{ color: '#6366F1' }}>{formatCurrency(currentFin.card_collections || 0)}</div>
                   </div>
                   <div className="col-6 col-md-3">
-                    <div className="text-secondary extra-small d-flex align-items-center justify-content-center gap-1">
-                      <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#0F172A' }}></span>
-                      Bank Transfer / Other
+                    <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                      <div className="text-secondary extra-small fw-semibold text-uppercase d-flex align-items-center justify-content-center gap-1">
+                        <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#2563EB' }}></span>
+                        UPI / QR
+                      </div>
+                      <div className="fw-bold text-primary fs-5 mt-1 font-monospace">{formatCurrency(currentFin.upi_collections || 0)}</div>
                     </div>
-                    <div className="fw-bold text-dark mt-0.5 font-monospace">{formatCurrency((currentFin.bank_collections || 0) + (currentFin.other_collections || 0))}</div>
+                  </div>
+                  <div className="col-6 col-md-3">
+                    <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                      <div className="text-secondary extra-small fw-semibold text-uppercase d-flex align-items-center justify-content-center gap-1">
+                        <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#6366F1' }}></span>
+                        Card
+                      </div>
+                      <div className="fw-bold fs-5 mt-1 font-monospace" style={{ color: '#6366F1' }}>{formatCurrency(currentFin.card_collections || 0)}</div>
+                    </div>
+                  </div>
+                  <div className="col-6 col-md-3">
+                    <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                      <div className="text-secondary extra-small fw-semibold text-uppercase d-flex align-items-center justify-content-center gap-1">
+                        <span className="rounded-circle" style={{ width: '6px', height: '6px', backgroundColor: '#0F172A' }}></span>
+                        Bank / Other
+                      </div>
+                      <div className="fw-bold text-dark fs-5 mt-1 font-monospace">{formatCurrency((currentFin.bank_collections || 0) + (currentFin.other_collections || 0))}</div>
+                    </div>
                   </div>
                 </div>
               </div>
 
               {/* Operational Productivity & Front-Desk Counters */}
               {currentShift.operational_metrics && (
-                <div className="card border-0 shadow-xs bg-white p-3.5 rounded-4 mb-4" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="card border-0 shadow-sm bg-white p-3.5 rounded-4 mb-4" style={{ border: '1px solid #E2E8F0' }}>
                   <div className="d-flex justify-content-between align-items-center mb-2.5 pb-2 border-bottom">
                     <div className="d-flex align-items-center gap-2">
                       <div className="p-1 rounded-2 bg-primary text-white">
@@ -905,33 +951,167 @@ const Shifts = () => {
                     </span>
                   </div>
 
-                  <div className="row g-2 text-center" style={{ fontSize: '0.85rem' }}>
-                    <div className="col-6 col-md-3 border-end">
-                      <div className="text-secondary extra-small">Check-ins Processed</div>
-                      <div className="fw-bold text-success fs-5 mt-0.5 font-monospace">{currentShift.operational_metrics.total_checkins}</div>
-                      <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Arrivals recorded</span>
-                    </div>
-                    <div className="col-6 col-md-3 border-end">
-                      <div className="text-secondary extra-small">Check-outs Cleared</div>
-                      <div className="fw-bold text-danger fs-5 mt-0.5 font-monospace">{currentShift.operational_metrics.total_checkouts}</div>
-                      <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Turnovers triggered</span>
-                    </div>
-                    <div className="col-6 col-md-3 border-end">
-                      <div className="text-secondary extra-small">New Bookings</div>
-                      <div className="fw-bold text-primary fs-5 mt-0.5 font-monospace">{currentShift.operational_metrics.total_bookings}</div>
-                      <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Reservations logged</span>
+                  <div className="row g-2.5 text-center" style={{ fontSize: '0.85rem' }}>
+                    <div className="col-6 col-md-3">
+                      <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                        <div className="text-secondary extra-small fw-semibold text-uppercase">Check-ins Processed</div>
+                        <div className="fw-bold text-success fs-5 mt-1 font-monospace">{currentShift.operational_metrics.total_checkins}</div>
+                        <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Arrivals recorded</span>
+                      </div>
                     </div>
                     <div className="col-6 col-md-3">
-                      <div className="text-secondary extra-small">Shift ADR</div>
-                      <div className="fw-bold text-dark fs-5 mt-0.5 font-monospace">{formatCurrency(currentShift.operational_metrics.adr || 0)}</div>
-                      <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Average rate / room</span>
+                      <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                        <div className="text-secondary extra-small fw-semibold text-uppercase">Check-outs Cleared</div>
+                        <div className="fw-bold text-danger fs-5 mt-1 font-monospace">{currentShift.operational_metrics.total_checkouts}</div>
+                        <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Turnovers triggered</span>
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                        <div className="text-secondary extra-small fw-semibold text-uppercase">New Bookings</div>
+                        <div className="fw-bold text-primary fs-5 mt-1 font-monospace">{currentShift.operational_metrics.total_bookings}</div>
+                        <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Reservations logged</span>
+                      </div>
+                    </div>
+                    <div className="col-6 col-md-3">
+                      <div className="p-2.5 bg-light bg-opacity-60 rounded-3 border border-light-subtle shadow-2xs h-100">
+                        <div className="text-secondary extra-small fw-semibold text-uppercase">Shift ADR</div>
+                        <div className="fw-bold text-dark fs-5 mt-1 font-monospace">{formatCurrency(currentShift.operational_metrics.adr || 0)}</div>
+                        <span className="extra-small text-muted" style={{ fontSize: '0.72rem' }}>Average rate / room</span>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
+              {/* Cash Expenses & Petty Cash Vouchers Section */}
+              <div className="card border-0 shadow-sm bg-white rounded-4 overflow-hidden mb-4" style={{ border: '1px solid #E2E8F0' }}>
+                <div className="p-3.5 border-bottom d-flex justify-content-between align-items-center flex-wrap gap-2">
+                  <div className="d-flex align-items-center gap-2.5">
+                    <div className="p-2 rounded-3 bg-danger-subtle text-danger">
+                      <Receipt size={18} />
+                    </div>
+                    <div>
+                      <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.95rem' }}>
+                        Shift Cash Expenses &amp; Petty Cash Vouchers
+                      </h6>
+                      <span className="text-secondary extra-small">
+                        {currentShift.expenses?.length || 0} expense voucher{currentShift.expenses?.length === 1 ? '' : 's'} recorded &bull; Total spent: <strong className="text-danger font-monospace">{formatCurrency(currentFin.cash_expenses || 0)}</strong>
+                      </span>
+                    </div>
+                  </div>
+                  {canRecordExpense && (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger rounded-3 extra-small fw-bold d-flex align-items-center gap-1.5 shadow-xs"
+                      onClick={() => {
+                        setExpenseToEdit(null);
+                        setShowExpenseModal(true);
+                      }}
+                    >
+                      <PlusCircle size={14} /> Record Cash Expense
+                    </button>
+                  )}
+                </div>
+
+                {(!currentShift.expenses || currentShift.expenses.length === 0) ? (
+                  <div className="p-4 text-center text-secondary small">
+                    <div className="text-muted extra-small">No petty cash expenses recorded in this shift session.</div>
+                  </div>
+                ) : (
+                  <div className="table-responsive">
+                    <table className="table table-hover align-middle mb-0" style={{ fontSize: '0.825rem' }}>
+                      <thead className="table-light text-secondary extra-small">
+                        <tr>
+                          <th className="ps-3 py-2.5">Voucher #</th>
+                          <th className="py-2.5">Time</th>
+                          <th className="py-2.5">Category</th>
+                          <th className="py-2.5">Description</th>
+                          <th className="py-2.5">Recorded By</th>
+                          <th className="text-end py-2.5">Amount (₹)</th>
+                          <th className="text-end pe-3 py-2.5">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {currentShift.expenses.map((e) => (
+                          <tr key={e.id}>
+                            <td className="ps-3 fw-bold text-dark font-monospace">EXP-{e.id}</td>
+                            <td className="text-secondary">
+                              {e.created_at ? new Date(e.created_at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—'}
+                            </td>
+                            <td>
+                              <span className="badge bg-light text-dark border extra-small fw-semibold">
+                                {e.category_display || e.category}
+                              </span>
+                            </td>
+                            <td>
+                              <div className="d-flex align-items-center gap-1.5">
+                                <span className="fw-semibold text-dark">{e.description}</span>
+                                {e.receipt && (
+                                  <a
+                                    href={e.receipt}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="badge bg-primary-subtle text-primary border border-primary-subtle extra-small text-decoration-none"
+                                    title="View attached receipt scan"
+                                  >
+                                    Receipt Scan
+                                  </a>
+                                )}
+                              </div>
+                            </td>
+                            <td className="text-secondary extra-small">
+                              <strong>{e.created_by_name || 'Staff'}</strong>
+                              {e.updated_by_name && e.updated_by_name !== e.created_by_name && (
+                                <span className="text-primary ms-1">(Edited by {e.updated_by_name})</span>
+                              )}
+                            </td>
+                            <td className="text-end font-monospace fw-bold text-danger">
+                              -{formatCurrency(e.amount)}
+                            </td>
+                            <td className="text-end pe-3">
+                              <div className="d-inline-flex align-items-center gap-1">
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-secondary p-1 px-2 rounded-2 extra-small d-inline-flex align-items-center gap-1"
+                                  title="Edit Expense"
+                                  onClick={() => {
+                                    setExpenseToEdit(e);
+                                    setShowExpenseModal(true);
+                                  }}
+                                >
+                                  <Edit2 size={12} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-outline-danger p-1 px-2 rounded-2 extra-small d-inline-flex align-items-center gap-1"
+                                  title="Delete Expense"
+                                  onClick={() => {
+                                    setDeleteExpenseConfirm({ show: true, expense: e, loading: false });
+                                  }}
+                                >
+                                  <Trash2 size={12} /> Delete
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-xs btn-light border p-1 px-2 rounded-2 text-secondary extra-small d-inline-flex align-items-center gap-1"
+                                  title="Print Thermal Petty Cash Voucher (80mm)"
+                                  onClick={() => handlePrintExpenseVoucher(e)}
+                                >
+                                  <Printer size={12} /> Voucher
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               {/* Transactions Stream During Shift */}
-              <div className="card border-0 shadow-xs bg-white rounded-4 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+              <div className="card border-0 shadow-sm bg-white rounded-4 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
                 <div className="p-3.5 border-bottom d-flex justify-content-between align-items-center">
                   <div>
                     <h6 className="fw-bold text-dark m-0" style={{ fontSize: '0.95rem' }}>
@@ -1003,7 +1183,7 @@ const Shifts = () => {
         <div>
 
           {(!summaryStats?.active_shifts || summaryStats.active_shifts.length === 0) ? (
-            <div className="card border-0 bg-white shadow-xs p-5 rounded-4 text-center my-3">
+            <div className="card border-0 bg-white shadow-sm p-5 rounded-4 text-center my-3" style={{ border: '1px solid #E2E8F0' }}>
               <Clock size={36} className="text-secondary mx-auto mb-2 opacity-50" />
               <h5 className="fw-bold text-dark mb-1">No Active Staff Tills</h5>
               <p className="text-secondary small m-0">All reception shifts are currently closed and balanced.</p>
@@ -1012,7 +1192,7 @@ const Shifts = () => {
             <div className="row g-3">
               {summaryStats.active_shifts.map((st) => (
                 <div key={st.id} className="col-12 col-md-6 col-xl-4">
-                  <div className="card border-0 shadow-xs bg-white rounded-4 p-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
+                  <div className="card border-0 shadow-sm bg-white rounded-4 p-4 h-100" style={{ border: '1px solid #E2E8F0' }}>
                     <div className="d-flex justify-content-between align-items-start mb-3">
                       <div>
                         <div className="d-flex align-items-center gap-1.5 mb-1">
@@ -1041,7 +1221,7 @@ const Shifts = () => {
                       <span className="p-2 rounded-2 bg-light text-primary"><Clock size={18} /></span>
                     </div>
 
-                    <div className="p-3 bg-light rounded-3 mb-3">
+                    <div className="p-3 bg-light bg-opacity-60 rounded-3 mb-3 border border-light-subtle shadow-2xs">
                       <div className="d-flex justify-content-between align-items-center mb-1">
                         <span className="text-secondary extra-small">Opened:</span>
                         <span className="fw-semibold text-dark extra-small">
@@ -1111,7 +1291,7 @@ const Shifts = () => {
       {activeTab === 'history' && (
         <div>
           {/* Filter Bar */}
-          <div className="card border-0 shadow-xs bg-white p-3 rounded-4 mb-3" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="card border-0 shadow-sm bg-white p-3 rounded-4 mb-3" style={{ border: '1px solid #E2E8F0' }}>
             <div className="row g-2 align-items-center">
               {/* Date Presets */}
               <div className="col-12 col-md-3">
@@ -1195,7 +1375,7 @@ const Shifts = () => {
           </div>
 
           {/* Table */}
-          <div className="card border-0 shadow-xs bg-white rounded-4 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
+          <div className="card border-0 shadow-sm bg-white rounded-4 overflow-hidden" style={{ border: '1px solid #E2E8F0' }}>
             {/* Standardized Card Header: Page Size & Top-Right Action Controls */}
             <div className="card-header bg-white py-2.5 px-3 border-bottom d-flex flex-wrap justify-content-between align-items-center gap-2">
               <div className="d-flex align-items-center gap-2">
@@ -1513,7 +1693,7 @@ const Shifts = () => {
       {activeTab === 'approvals' && (
         <div>
           {(!shiftsList || shiftsList.filter(s => s.status === 'PENDING_APPROVAL').length === 0) ? (
-            <div className="card border-0 bg-white shadow-xs p-5 rounded-4 text-center my-3">
+            <div className="card border-0 bg-white shadow-sm p-5 rounded-4 text-center my-3" style={{ border: '1px solid #E2E8F0' }}>
               <CheckCircle2 size={36} className="text-success mx-auto mb-2 opacity-50" />
               <h5 className="fw-bold text-dark mb-1">No Pending Discrepancy Approvals</h5>
               <p className="text-secondary small m-0">All closed shift reconciliations are fully balanced and approved.</p>
@@ -1526,7 +1706,7 @@ const Shifts = () => {
 
                 return (
                   <div key={s.id} className="col-12 col-md-6 col-xl-4">
-                    <div className="card border-0 shadow-xs bg-white rounded-4 p-4 h-100" style={{ border: '1px solid #FCA5A5' }}>
+                    <div className="card border-0 shadow-sm bg-white rounded-4 p-4 h-100" style={{ border: '1px solid #FCA5A5' }}>
                       <div className="d-flex justify-content-between align-items-start mb-3">
                         <div>
                           <span className={`badge px-2.5 py-1 rounded-pill extra-small fw-bold ${isShort ? 'bg-danger text-white' : 'bg-warning text-dark'}`}>
@@ -1538,7 +1718,7 @@ const Shifts = () => {
                         <span className="p-2 rounded-2 bg-danger-subtle text-danger"><AlertTriangle size={18} /></span>
                       </div>
 
-                      <div className="p-3 bg-light rounded-3 mb-3 small">
+                      <div className="p-3 bg-light bg-opacity-60 rounded-3 mb-3 small border border-light-subtle shadow-2xs">
                         <div className="d-flex justify-content-between align-items-center mb-1">
                           <span className="text-secondary extra-small">Expected Cash:</span>
                           <span className="fw-bold text-dark font-monospace">{formatCurrency(s.financials?.expected_cash ?? s.expected_cash)}</span>
@@ -1584,10 +1764,10 @@ const Shifts = () => {
       {/* MODALS CONTAINER                                          */}
       {/* ========================================================= */}
       <OpenShiftModal
-        isOpen={showOpenModal}
+        isOpen={showOpenModal && !hasActiveShift}
         onClose={() => setShowOpenModal(false)}
-        initialSuggestedBalance={currentData?.suggested_opening_balance || 0}
-        pendingHandovers={currentData?.pending_handovers || []}
+        initialSuggestedBalance={effectiveData?.suggested_opening_balance || 0}
+        pendingHandovers={effectiveData?.pending_handovers || []}
         onSuccess={(newShift) => {
           showSuccessToast(`Shift #${newShift.shift_number} opened successfully.`);
           queryClient.setQueryData(['shifts', 'current'], (old) => ({
@@ -1596,6 +1776,7 @@ const Shifts = () => {
             shift: newShift,
           }));
           queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          refetchShift?.();
         }}
       />
 
@@ -1620,12 +1801,28 @@ const Shifts = () => {
 
       <ShiftExpenseModal
         isOpen={showExpenseModal}
-        onClose={() => setShowExpenseModal(false)}
-        shift={currentShift}
-        onSuccess={() => {
-          showSuccessToast('Petty cash expense recorded.');
-          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+        onClose={() => {
+          setShowExpenseModal(false);
+          setExpenseToEdit(null);
         }}
+        shift={currentShift}
+        expenseToEdit={expenseToEdit}
+        onSuccess={() => {
+          showSuccessToast(expenseToEdit ? 'Petty cash expense updated.' : 'Petty cash expense recorded.');
+          queryClient.invalidateQueries({ queryKey: ['shifts'] });
+          refetchShift?.();
+        }}
+      />
+
+      <ConfirmModal
+        show={deleteExpenseConfirm.show}
+        title="Delete Petty Cash Expense"
+        message={`Are you sure you want to delete expense #${deleteExpenseConfirm.expense?.id} (${formatCurrency(deleteExpenseConfirm.expense?.amount || 0)} - "${deleteExpenseConfirm.expense?.description}")? This amount will be returned to the till drawer expected cash.`}
+        confirmText="Yes, Delete Expense"
+        confirmVariant="danger"
+        loading={deleteExpenseConfirm.loading}
+        onClose={() => setDeleteExpenseConfirm({ show: false, expense: null, loading: false })}
+        onConfirm={handleConfirmDeleteExpense}
       />
 
       <ShiftAdjustmentModal

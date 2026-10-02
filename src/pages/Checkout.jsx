@@ -5,10 +5,12 @@ import { getStayByIdApi, checkoutStayApi } from '../api/stayApi';
 import { createPaymentApi } from '../api/billingApi';
 import InvoicePreviewModal from '../components/InvoicePreviewModal';
 import PaymentFormModal from '../components/PaymentFormModal';
+import WhatsAppButton from '../components/WhatsAppButton';
 import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { useShift } from '../context/ShiftContext';
 import PageLoader from '../components/PageLoader';
 import { extractErrorMessage } from '../utils/errorUtils';
 
@@ -42,6 +44,7 @@ const Checkout = () => {
   const queryClient = useQueryClient();
   const { showError, showSuccess } = useNotification();
   const { hasPermission, getPermissionLimit } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
 
   const canCheckoutWithBalance = hasPermission('stays', 'can_checkout_with_balance');
   const canGiveDiscount = hasPermission('billing', 'can_give_discount');
@@ -117,30 +120,35 @@ const Checkout = () => {
       setDiscountValue(stay.discount_value || 0);
       setDiscountReason(stay.discount_reason || '');
 
-      // Set initial actual checkout date to today
-      const todayStr = new Date().toISOString().split('T')[0];
-      setActualCheckoutDate(todayStr);
+      // Set initial actual checkout date to today (or stay.actual_checkout_date if already checked out)
+      const defaultDate = stay.actual_checkout_date
+        ? stay.actual_checkout_date.split('T')[0].split(' ')[0]
+        : new Date().toISOString().split('T')[0];
+      setActualCheckoutDate(defaultDate);
 
-      if (stay.chargeable_nights) {
-        setCustomNights(stay.chargeable_nights);
-      }
+      // Always reset customNights to null on load so nights strictly follow actualCheckoutDate
+      setCustomNights(null);
     }
   }, [stay?.id]);
 
   // Expected Duration (Nights)
   const expectedNights = (() => {
     if (!stay?.check_in_date || !stay?.expected_checkout_date) return 1;
-    const d1 = new Date(stay.check_in_date);
-    const d2 = new Date(stay.expected_checkout_date);
+    const d1Str = stay.check_in_date.split('T')[0].split(' ')[0];
+    const d2Str = stay.expected_checkout_date.split('T')[0].split(' ')[0];
+    const d1 = new Date(`${d1Str}T00:00:00`);
+    const d2 = new Date(`${d2Str}T00:00:00`);
     const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
     return diff > 0 ? diff : 1;
   })();
 
-  // 1. Calendar Baseline Duration (Nights) based strictly on calendar dates
+  // 1. Calendar Baseline Duration (Nights) based strictly on Departure Schedule Controls Actual Check-Out Date
   const calendarNights = (() => {
     if (!stay?.check_in_date || !actualCheckoutDate) return expectedNights;
-    const d1 = new Date(stay.check_in_date);
-    const d2 = new Date(actualCheckoutDate);
+    const d1Str = stay.check_in_date.split('T')[0].split(' ')[0];
+    const d2Str = actualCheckoutDate.split('T')[0].split(' ')[0];
+    const d1 = new Date(`${d1Str}T00:00:00`);
+    const d2 = new Date(`${d2Str}T00:00:00`);
     const diff = Math.round((d2 - d1) / (1000 * 60 * 60 * 24));
     return diff > 0 ? diff : 1;
   })();
@@ -214,6 +222,14 @@ const Checkout = () => {
     if (e) e.preventDefault();
     setError('');
 
+    if (requiresActiveShift) {
+      const msg = 'Active cashier shift till is required to finalize check-out and settle bills. Please open your shift first.';
+      setError(msg);
+      showError(msg, 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+
     if (actualCheckoutDate < stay.check_in_date) {
       setError(`Checkout Date (${formatDate(actualCheckoutDate)}) cannot be earlier than Check-In Date (${formatDate(stay.check_in_date)}).`);
       return;
@@ -231,6 +247,12 @@ const Checkout = () => {
 
   // Open Return / Refund Excess Amount Modal with Auto-calculated remaining excess
   const openRefundModal = () => {
+    if (requiresActiveShift) {
+      showError('Active cashier shift till is required to refund excess payments. Please open your shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+
     const excess = Math.max(0, totalPaid - liveGrandTotal);
     setRefundAmount(excess > 0 ? excess.toFixed(2) : '0.00');
     setRefundMethod('CASH');
@@ -280,6 +302,7 @@ const Checkout = () => {
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
       queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.error || err.response?.data?.detail || 'Failed to process refund transaction.';
@@ -288,6 +311,16 @@ const Checkout = () => {
     } finally {
       setRefundSubmitting(false);
     }
+  };
+
+  // Open Payment Modal with shift guard
+  const handleOpenPaymentModal = () => {
+    if (requiresActiveShift) {
+      showError('Active cashier shift till is required to collect payments. Please open your shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+    setShowPaymentModal(true);
   };
 
   // Handle Add Received Payment
@@ -299,6 +332,7 @@ const Checkout = () => {
       queryClient.invalidateQueries({ queryKey: ['checkout', id] });
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
       queryClient.invalidateQueries({ queryKey: ['stays'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       const errMsg = err.response?.data?.error || err.response?.data?.payment_method?.[0] || err.response?.data?.detail || 'Error recording payment.';
       showError(errMsg, 'Payment Failed');
@@ -345,8 +379,52 @@ const Checkout = () => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['bookings'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard-report'] });
-      showSuccess(`Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`, 'Checkout Successful');
+      showSuccess(
+        `Checkout for Room ${stay?.room_detail?.room_number || stay?.room} completed successfully!`,
+        'Checkout Successful',
+        {
+          whatsappAction: {
+            eventType: 'CHECK_OUT',
+            customerMobile:
+              stay?.primary_customer_detail?.mobile ||
+              stay?.customer_detail?.mobile ||
+              stay?.customer?.mobile ||
+              stay?.primary_customer?.mobile,
+            customerName:
+              stay?.primary_customer_detail?.full_name ||
+              stay?.customer_detail?.full_name ||
+              stay?.customer?.full_name ||
+              stay?.primary_customer?.full_name,
+            bookingId: stay?.booking_id || stay?.booking?.id || stay?.booking,
+            customerId:
+              stay?.primary_customer_detail?.id ||
+              stay?.primary_customer ||
+              stay?.customer_detail?.id ||
+              stay?.customer?.id,
+            data: {
+              guest_name:
+                stay?.primary_customer_detail?.full_name ||
+                stay?.customer_detail?.full_name ||
+                stay?.customer?.full_name ||
+                'Guest',
+              booking_number: stay?.booking_number || stay?.stay_number || '',
+              room_number: stay?.room_detail?.room_number || stay?.room || '',
+              check_in_date: stay?.check_in_date ? formatDate(stay.check_in_date) : '',
+              check_out_date: actualCheckoutDate ? formatDate(actualCheckoutDate) : '',
+              total_nights: customNights || stay?.chargeable_nights || stay?.total_nights || 1,
+              room_charges: liveRoomAmount || 0,
+              extra_charges: extraCharges || 0,
+              discount: liveDiscountAmount || 0,
+              tax: liveGstAmount || 0,
+              grand_total: liveGrandTotal || 0,
+              total_paid: totalPaid || 0,
+              balance_amount: liveBalance > 0 ? liveBalance : 0,
+              payment_status: liveBalance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+            },
+            customLabel: 'Send Thank You Message on WhatsApp',
+          },
+        }
+      );
       setShowInvoice(true);
     } catch (err) {
       console.error(err);
@@ -414,6 +492,98 @@ const Checkout = () => {
         </div>
       </div>
 
+      {/* 1.1 STAY ALREADY CHECKED OUT EXECUTIVE BANNER */}
+      {stay.status === 'CHECKED_OUT' && (
+        <div className="card border-0 shadow-sm rounded-4 mb-4 overflow-hidden" style={{ backgroundColor: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+          <div className="card-body p-4 d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+            <div className="d-flex align-items-center gap-3">
+              <div
+                className="p-3 bg-success text-white rounded-4 d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+                style={{ width: '56px', height: '56px' }}
+              >
+                <CheckCircle2 size={32} />
+              </div>
+              <div>
+                <div className="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                  <span className="badge bg-success text-white rounded-pill px-2.5 py-1 text-uppercase fw-bold" style={{ fontSize: '0.675rem', letterSpacing: '0.05em' }}>
+                    Checkout Completed &amp; Settled
+                  </span>
+                  <span className="badge bg-white text-success border border-success-subtle rounded-pill px-2.5 py-1" style={{ fontSize: '0.725rem' }}>
+                    Room {stay.room_detail?.room_number || stay.room} Released
+                  </span>
+                  {stay.actual_checkout_date && (
+                    <span className="badge bg-light text-secondary border rounded-pill px-2.5 py-1" style={{ fontSize: '0.725rem' }}>
+                      Departed: {formatDate(stay.actual_checkout_date)}
+                    </span>
+                  )}
+                </div>
+                <h4 className="fw-bold text-dark m-0">Stay Completed &amp; Checked Out</h4>
+                <p className="text-secondary small m-0 mt-0.5">
+                  Guest <strong>{stay.primary_customer_detail?.full_name || 'Guest'}</strong> has successfully checked out. Send checkout summary &amp; bill receipt on WhatsApp below.
+                </p>
+              </div>
+            </div>
+
+            <div className="d-flex align-items-center gap-2 flex-wrap">
+              <WhatsAppButton
+                eventType="CHECK_OUT"
+                customerMobile={
+                  stay?.primary_customer_detail?.mobile ||
+                  stay?.customer_detail?.mobile ||
+                  stay?.customer?.mobile ||
+                  stay?.primary_customer?.mobile
+                }
+                customerName={
+                  stay?.primary_customer_detail?.full_name ||
+                  stay?.customer_detail?.full_name ||
+                  stay?.customer?.full_name
+                }
+                bookingId={stay?.booking_id || stay?.booking?.id || stay?.booking}
+                customerId={stay?.primary_customer_detail?.id || stay?.primary_customer}
+                data={{
+                  guest_name:
+                    stay?.primary_customer_detail?.full_name ||
+                    stay?.customer_detail?.full_name ||
+                    stay?.customer?.full_name ||
+                    'Guest',
+                  booking_number: stay?.booking_number || stay?.stay_number || '',
+                  room_number: stay?.room_detail?.room_number || stay?.room || '',
+                  check_in_date: stay?.check_in_date ? formatDate(stay.check_in_date) : '',
+                  check_out_date: (stay?.actual_checkout_date || actualCheckoutDate) ? formatDate(stay.actual_checkout_date || actualCheckoutDate) : '',
+                  total_nights: customNights || stay?.chargeable_nights || stay?.total_nights || 1,
+                  room_charges: liveRoomAmount || 0,
+                  extra_charges: extraCharges || 0,
+                  discount: liveDiscountAmount || 0,
+                  tax: liveGstAmount || 0,
+                  grand_total: liveGrandTotal || 0,
+                  total_paid: totalPaid || 0,
+                  balance_amount: liveBalance > 0 ? liveBalance : 0,
+                  payment_status: liveBalance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                }}
+                customLabel="Send Thank You on WhatsApp"
+                size="md"
+                variant="solid"
+                className="px-3.5 py-2 shadow-xs"
+              />
+              <button
+                type="button"
+                className="btn btn-outline-primary fw-semibold px-3 py-2 rounded-3 shadow-xs d-flex align-items-center gap-1.5"
+                onClick={() => setShowInvoice(true)}
+              >
+                <Receipt size={16} /> View / Print Invoice
+              </button>
+              <button
+                type="button"
+                className="btn btn-light border fw-semibold px-3 py-2 rounded-3 shadow-xs text-secondary"
+                onClick={() => navigate('/current-stays')}
+              >
+                Back to Stays
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="alert alert-danger shadow-sm rounded-4 mb-4 d-flex align-items-center gap-2 p-3 border-danger">
           <AlertOctagon className="text-danger flex-shrink-0" size={20} />
@@ -464,6 +634,34 @@ const Checkout = () => {
           <div className="small text-dark">
             <strong>On-Schedule Departure:</strong> Scheduled checkout date is <strong>{formatDate(stay.expected_checkout_date)}</strong> ({actualNights} night{actualNights > 1 ? 's' : ''}). Note: Same-day departure time (e.g. 11:00 AM, 2:00 PM, or 8:00 PM) does not alter room billing.
           </div>
+        </div>
+      )}
+
+      {/* SHIFT TILL CLOSED WARNING BANNER */}
+      {requiresActiveShift && (
+        <div
+          className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3.5 rounded-4 shadow-sm mb-4"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+        >
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="p-2.5 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+              style={{ width: '42px', height: '42px' }}
+            >
+              <AlertTriangle size={20} />
+            </div>
+            <div>
+              <div className="fw-bold text-dark fs-6">Cashier Shift Till is Closed</div>
+              <div className="small text-muted">You cannot finalize check-out, settle bills, or process refund payouts until your shift till is opened.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-warning fw-bold px-3.5 py-2 rounded-3 shadow-xs mt-2 mt-md-0 d-flex align-items-center gap-1.5"
+            onClick={openShiftModal}
+          >
+            <Clock size={16} /> Open Shift Till Now
+          </button>
         </div>
       )}
 
@@ -1069,7 +1267,7 @@ const Checkout = () => {
                           <button
                             type="button"
                             className="btn btn-success btn-lg w-100 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2 rounded-3 py-2.5"
-                            onClick={() => setShowPaymentModal(true)}
+                            onClick={handleOpenPaymentModal}
                           >
                             <Wallet size={18} /> Receive Money / Settle Payment
                           </button>
@@ -1092,7 +1290,7 @@ const Checkout = () => {
                           <button
                             type="button"
                             className="btn btn-outline-success btn-sm w-100 fw-semibold rounded-3 py-2 d-flex align-items-center justify-content-center gap-1.5"
-                            onClick={() => setShowPaymentModal(true)}
+                            onClick={handleOpenPaymentModal}
                           >
                             <Wallet size={15} /> + Record Additional Payment
                           </button>
@@ -1110,28 +1308,86 @@ const Checkout = () => {
                     </div>
                   )}
 
-                  {/* MASTER COMPLETE CHECKOUT ACTION BUTTON */}
-                  <button
-                    type="submit"
-                    className="btn btn-danger btn-lg w-100 fw-bold shadow d-flex align-items-center justify-content-center gap-2 rounded-4 py-3 text-uppercase"
-                    style={{ letterSpacing: '0.025em' }}
-                    disabled={submitting || (liveBalance > 0.01 && !canCheckoutWithBalance)}
-                  >
-                    {submitting ? (
-                      <>
-                        <span className="spinner-border spinner-border-sm" role="status"></span>
-                        Finalizing Checkout...
-                      </>
-                    ) : (
-                      <>
-                        <FileCheck2 size={20} /> Finalize Checkout &amp; Print Invoice
-                      </>
-                    )}
-                  </button>
+                  {stay.status === 'CHECKED_OUT' ? (
+                    <div className="p-3.5 bg-success-subtle border border-success-subtle rounded-4 text-center">
+                      <div className="d-flex align-items-center justify-content-center gap-2 text-success fw-bold fs-6 mb-1">
+                        <CheckCircle2 size={22} /> Stay Finalized &amp; Checked Out
+                      </div>
+                      <p className="text-secondary extra-small mb-3">
+                        Room inventory released &bull; Official Tax Invoice generated
+                      </p>
+                      <div className="d-grid gap-2">
+                        <WhatsAppButton
+                          eventType="CHECK_OUT"
+                          customerMobile={
+                            stay?.primary_customer_detail?.mobile ||
+                            stay?.customer_detail?.mobile ||
+                            stay?.customer?.mobile ||
+                            stay?.primary_customer?.mobile
+                          }
+                          customerName={
+                            stay?.primary_customer_detail?.full_name ||
+                            stay?.customer_detail?.full_name ||
+                            stay?.customer?.full_name
+                          }
+                          bookingId={stay?.booking_id || stay?.booking?.id || stay?.booking}
+                          customerId={stay?.primary_customer_detail?.id || stay?.primary_customer}
+                          data={{
+                            guest_name:
+                              stay?.primary_customer_detail?.full_name ||
+                              stay?.customer_detail?.full_name ||
+                              stay?.customer?.full_name ||
+                              'Guest',
+                            booking_number: stay?.booking_number || stay?.stay_number || '',
+                            room_number: stay?.room_detail?.room_number || stay?.room || '',
+                            check_in_date: stay?.check_in_date ? formatDate(stay.check_in_date) : '',
+                            check_out_date: (stay?.actual_checkout_date || actualCheckoutDate) ? formatDate(stay.actual_checkout_date || actualCheckoutDate) : '',
+                            total_nights: customNights || stay?.chargeable_nights || stay?.total_nights || 1,
+                            grand_total: liveGrandTotal || 0,
+                            total_paid: totalPaid || 0,
+                            balance_amount: liveBalance > 0 ? liveBalance : 0,
+                            payment_status: liveBalance <= 0.01 ? 'Fully Paid' : 'Balance Pending',
+                          }}
+                          customLabel="Send Thank You on WhatsApp"
+                          size="lg"
+                          variant="solid"
+                          className="w-100 py-2.5 shadow-sm fw-bold"
+                        />
+                        <button
+                          type="button"
+                          className="btn btn-primary fw-bold py-2.5 rounded-3 d-flex align-items-center justify-content-center gap-2 shadow-xs"
+                          onClick={() => setShowInvoice(true)}
+                        >
+                          <Receipt size={18} /> View &amp; Print Tax Invoice
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {/* MASTER COMPLETE CHECKOUT ACTION BUTTON */}
+                      <button
+                        type="submit"
+                        className="btn btn-danger btn-lg w-100 fw-bold shadow d-flex align-items-center justify-content-center gap-2 rounded-4 py-3 text-uppercase"
+                        style={{ letterSpacing: '0.025em' }}
+                        disabled={submitting || (liveBalance > 0.01 && !canCheckoutWithBalance) || requiresActiveShift}
+                      >
+                        {submitting ? (
+                          <>
+                            <span className="spinner-border spinner-border-sm" role="status"></span>
+                            Finalizing Checkout...
+                          </>
+                        ) : (
+                          <>
+                            <FileCheck2 size={20} /> Finalize Checkout &amp; Print Invoice
+                          </>
+                        )}
+                      </button>
 
-                  <p className="text-secondary extra-small text-center mt-2.5 mb-0">
-                    Completing checkout checks out the stay, unlocks room for cleaning/re-booking, and archives the invoice.
-                  </p>
+                      <p className="text-secondary extra-small text-center mt-2.5 mb-0">
+                        Completing checkout checks out the stay, unlocks room for cleaning/re-booking, and archives the invoice.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { triggerShiftRefresh } from '../utils/shiftEvents';
 
 // Dynamic API Base URL Config:
 // Local Development: http://127.0.0.1:8000/api
@@ -36,9 +37,54 @@ api.interceptors.request.use(
 );
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    try {
+      const method = response.config?.method?.toLowerCase();
+      if (['post', 'put', 'patch', 'delete'].includes(method)) {
+        const url = (response.config?.url || '').toLowerCase();
+        const isShiftRelevant =
+          url.includes('/payments') ||
+          url.includes('/stays') ||
+          url.includes('/bookings') ||
+          url.includes('/shifts') ||
+          url.includes('/checkin') ||
+          url.includes('/checkout') ||
+          url.includes('/orders') ||
+          url.includes('/wallets') ||
+          url.includes('/charges') ||
+          url.includes('/invoices') ||
+          url.includes('/customers') ||
+          url.includes('record_payment') ||
+          url.includes('/billing');
+
+        if (isShiftRelevant) {
+          triggerShiftRefresh();
+        }
+      }
+    } catch {
+      // non-blocking
+    }
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
+    const isInactive = error.response && (
+      error.response.data?.code === 'user_inactive' ||
+      (typeof error.response.data?.detail === 'string' &&
+        (error.response.data.detail.toLowerCase().includes('inactive') || error.response.data.detail.toLowerCase().includes('deactivated')))
+    );
+
+    if (isInactive) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('lms_selected_property_id');
+      localStorage.removeItem('lms_selected_property');
+      sessionStorage.setItem('lms_auth_notice', 'Your account has been deactivated. You are unable to use the software. Please contact your administrator.');
+      window.location.hash = '#/login';
+      return Promise.reject(error);
+    }
+
     if (error.response && error.response.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       const refreshToken = localStorage.getItem('refresh_token');
@@ -52,6 +98,9 @@ api.interceptors.response.use(
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user');
+          if (refreshErr.response?.data?.code === 'user_inactive') {
+            sessionStorage.setItem('lms_auth_notice', 'Your account has been deactivated. You are unable to use the software. Please contact your administrator.');
+          }
           window.location.hash = '#/login';
         }
       }

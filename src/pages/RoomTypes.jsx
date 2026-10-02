@@ -122,7 +122,7 @@ const RoomTypes = () => {
     <div>
       <div className="d-flex justify-content-between align-items-center mb-4">
         <div>
-          <h4 className="fw-bold m-0 text-dark">Room Types Configuration</h4>
+          <h4 data-spotlight-id="room-types" className="fw-bold m-0 text-dark">Room Types Configuration</h4>
           <span className="text-muted small">Configure base pricing, guest capacity, and room amenities</span>
         </div>
         <button className="btn btn-primary fw-semibold shadow-sm" onClick={() => handleOpenModal()}>

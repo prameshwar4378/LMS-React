@@ -79,7 +79,7 @@ const SubscriptionRenewal = () => {
   const isInherited = Boolean(subscription?.is_inherited);
 
   return (
-    <div className="container-fluid px-3 px-md-4 py-4" style={{ maxWidth: '960px' }}>
+    <div data-spotlight-id="subscription" className="container-fluid px-3 px-md-4 py-4" style={{ maxWidth: '960px' }}>
       
       {/* Top Header Navigation */}
       <div className="d-flex align-items-center justify-content-between mb-4">

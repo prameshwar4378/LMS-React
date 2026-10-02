@@ -16,3 +16,13 @@ export const getHotelBranchesApi = async () => {
   return res.data;
 };
 
+export const logWhatsAppMessageApi = async (data) => {
+  const res = await api.post('/whatsapp-logs/', data);
+  return res.data;
+};
+
+export const getWhatsAppLogsApi = async (params = {}) => {
+  const res = await api.get('/whatsapp-logs/', { params });
+  return res.data;
+};
+

@@ -93,6 +93,11 @@ export const resetPlatformStaffPasswordApi = async (propertyId, userId, password
   return response.data;
 };
 
+export const togglePlatformStaffActiveApi = async (propertyId, userId) => {
+  const response = await api.post(`/platform/properties/${propertyId}/toggle_staff_active/`, { user_id: userId });
+  return response.data;
+};
+
 export const recordPropertySubscriptionPaymentApi = async (propertyId, paymentData) => {
   const response = await api.post(`/platform/properties/${propertyId}/record_payment/`, paymentData);
   return response.data;

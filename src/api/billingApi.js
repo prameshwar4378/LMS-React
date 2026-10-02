@@ -1,4 +1,5 @@
 import api from './axios';
+import { triggerShiftRefresh } from '../utils/shiftEvents';
 
 export const getChargeTypesApi = async () => {
   const res = await api.get('/charge-types/');
@@ -42,16 +43,19 @@ export const getPaymentsApi = async (params = {}) => {
 
 export const createPaymentApi = async (data) => {
   const res = await api.post('/payments/', data);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const updatePaymentApi = async (id, data) => {
   const res = await api.patch(`/payments/${id}/`, data);
+  triggerShiftRefresh();
   return res.data;
 };
 
 export const deletePaymentApi = async (id) => {
   const res = await api.delete(`/payments/${id}/`);
+  triggerShiftRefresh();
   return res.data;
 };
 

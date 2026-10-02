@@ -581,16 +581,16 @@ const ActivityLogModal = ({ show, onClose }) => {
                                 </span>
                               </div>
 
-                              <div className="d-flex align-items-center gap-1.5 gap-md-2 flex-wrap" style={{ minWidth: 0 }}>
+                              <div className="d-flex align-items-center gap-1.5 gap-md-2 flex-wrap flex-grow-1" style={{ minWidth: 0 }}>
                                 {/* Entity Category Chip */}
-                                <span className="badge bg-light text-dark border extra-small d-inline-flex align-items-center gap-1 py-1 px-1.5 px-md-2">
+                                <span className="badge bg-light text-dark border extra-small d-inline-flex align-items-center gap-1 py-1 px-1.5 px-md-2 flex-shrink-0">
                                   {renderModelIcon(item.model_icon)}
                                   <span>{item.model_label}</span>
                                 </span>
 
                                 {/* Action Badge */}
                                 <span
-                                  className={`badge rounded-pill extra-small px-2 py-0.5 fw-bold ${
+                                  className={`badge rounded-pill extra-small px-2 py-0.5 fw-bold flex-shrink-0 ${
                                     isCreated
                                       ? 'bg-success-subtle text-success border border-success-subtle'
                                       : isDeleted
@@ -602,17 +602,17 @@ const ActivityLogModal = ({ show, onClose }) => {
                                 </span>
 
                                 {/* Object Representation Name */}
-                                <strong className="fs-6 text-dark text-truncate" style={{ maxWidth: 'min(340px, 100%)' }}>
+                                <strong className="fs-6 text-dark text-break" title={item.object_repr}>
                                   {item.object_repr}
                                 </strong>
                               </div>
 
                               {/* Right: Who did it & Expand/Collapse Toggle Button */}
-                              <div className="d-flex align-items-center justify-content-between justify-content-md-end gap-2 ms-auto flex-wrap flex-sm-nowrap">
+                              <div className="d-flex align-items-center justify-content-between justify-content-md-end gap-2 ms-auto flex-shrink-0 flex-wrap flex-sm-nowrap">
                                 {/* Who did */}
-                                <div className="d-flex align-items-center gap-1.5 bg-light px-2 py-1 rounded-2 border extra-small">
+                                <div className="d-flex align-items-center gap-1.5 bg-light px-2 py-1 rounded-2 border extra-small flex-shrink-0">
                                   <User size={13} className="text-secondary flex-shrink-0" />
-                                  <strong className="text-dark text-truncate" style={{ maxWidth: '120px' }}>
+                                  <strong className="text-dark" title={item.user?.full_name || item.user?.username || 'Staff'}>
                                     {item.user?.full_name || item.user?.username || 'Staff'}
                                   </strong>
                                   <span className="badge bg-secondary-subtle text-secondary rounded-pill extra-small">
