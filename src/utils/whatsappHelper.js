@@ -415,52 +415,54 @@ export const getSamplePreviewData = (eventType, settings = {}) => {
  * 3. Customer has a valid mobile number
  */
 export const isWhatsAppEnabledForEvent = (settings, eventType, customerMobile) => {
-  if (!settings) return false;
-  if (!settings.whatsapp_enabled) return false;
+  // If settings explicitly disables master whatsapp toggle, return false
+  if (settings && settings.whatsapp_enabled === false) return false;
 
-  switch (eventType) {
-    case 'BOOKING':
-      if (settings.whatsapp_booking_enabled === false) return false;
-      break;
-    case 'CHECK_IN':
-      if (settings.whatsapp_checkin_enabled === false) return false;
-      break;
-    case 'PAYMENT':
-      if (settings.whatsapp_payment_enabled === false) return false;
-      break;
-    case 'CHECK_OUT':
-      if (settings.whatsapp_checkout_enabled === false) return false;
-      break;
-    case 'CANCELLATION':
-      if (settings.whatsapp_cancellation_enabled === false) return false;
-      break;
-    case 'EXTRA_CHARGE':
-      if (settings.whatsapp_extra_charge_enabled === false) return false;
-      break;
-    default:
-      return false;
+  if (settings) {
+    switch (eventType) {
+      case 'BOOKING':
+        if (settings.whatsapp_booking_enabled === false) return false;
+        break;
+      case 'CHECK_IN':
+        if (settings.whatsapp_checkin_enabled === false) return false;
+        break;
+      case 'PAYMENT':
+        if (settings.whatsapp_payment_enabled === false) return false;
+        break;
+      case 'CHECK_OUT':
+        if (settings.whatsapp_checkout_enabled === false) return false;
+        break;
+      case 'CANCELLATION':
+        if (settings.whatsapp_cancellation_enabled === false) return false;
+        break;
+      case 'EXTRA_CHARGE':
+        if (settings.whatsapp_extra_charge_enabled === false) return false;
+        break;
+      default:
+        break;
+    }
   }
 
-  const validMobile = formatWhatsAppMobile(customerMobile, settings.whatsapp_default_country_code || '+91');
+  const validMobile = formatWhatsAppMobile(customerMobile, settings?.whatsapp_default_country_code || '+91');
   return Boolean(validMobile);
 };
 
 // Global click lock to prevent duplicate clicks / double submissions
 let lastClickTimestamp = 0;
 
-const VALID_WHATSAPP_MODES = ['app_autoclose', 'app_direct', 'web', 'universal', 'app'];
+const VALID_WHATSAPP_MODES = ['universal', 'web', 'app_autoclose', 'app_direct', 'app'];
 
 /**
  * Builds WhatsApp URLs for various opening modes:
+ * - 'universal': https://wa.me (standard official universal link - works across all devices)
+ * - 'web': https://web.whatsapp.com/send (direct WhatsApp Web in browser)
  * - 'app_autoclose': Dedicated bridge tab that launches WhatsApp App and auto-closes in 2s
  * - 'app_direct': whatsapp://send direct protocol (no tab opened)
- * - 'web': https://web.whatsapp.com/send (direct WhatsApp Web in browser)
- * - 'universal': https://wa.me (standard universal link)
  */
 export const buildWhatsAppUrl = ({
   mobile,
   message = '',
-  mode = 'app_autoclose',
+  mode = 'universal',
   defaultCountryCode = '+91',
   closeDelay = 2,
   autoClose = true,
@@ -478,27 +480,27 @@ export const buildWhatsAppUrl = ({
     case 'app_direct':
     case 'app':
       return `whatsapp://send?phone=${targetMobile}&text=${encodedMessage}`;
-    case 'universal':
-      return `https://wa.me/${targetMobile}?text=${encodedMessage}`;
     case 'app_autoclose':
-    default:
       return `${cleanBase}whatsapp-bridge.html?phone=${targetMobile}&text=${encodedMessage}&delay=${closeDelay}&autoclose=${autoClose ? '1' : '0'}`;
+    case 'universal':
+    default:
+      return `https://wa.me/${targetMobile}?text=${encodedMessage}`;
   }
 };
 
 /**
  * Retrieves the preferred WhatsApp opening mode from local workstation storage or settings.
- * Defaults to 'app_autoclose' for seamless automatic tab closure.
+ * Defaults to 'universal' (wa.me) for maximum reliability across desktop, tablet, and mobile.
  */
 export const getPreferredWhatsAppMode = (settings = null) => {
+  if (settings?.whatsapp_open_mode && VALID_WHATSAPP_MODES.includes(settings.whatsapp_open_mode)) {
+    return settings.whatsapp_open_mode;
+  }
   try {
     const local = localStorage.getItem('lms_whatsapp_open_mode');
     if (local && VALID_WHATSAPP_MODES.includes(local)) return local;
   } catch {}
-  if (settings?.whatsapp_open_mode && VALID_WHATSAPP_MODES.includes(settings.whatsapp_open_mode)) {
-    return settings.whatsapp_open_mode;
-  }
-  return 'app_autoclose';
+  return 'universal';
 };
 
 /**

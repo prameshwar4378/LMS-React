@@ -89,7 +89,7 @@ const Settings = () => {
         whatsapp_cancellation_template: initialSettings.whatsapp_cancellation_template || DEFAULT_WHATSAPP_CANCELLATION_TEMPLATE,
         whatsapp_extra_charge_template: initialSettings.whatsapp_extra_charge_template || DEFAULT_WHATSAPP_EXTRA_CHARGE_TEMPLATE,
         whatsapp_default_country_code: initialSettings.whatsapp_default_country_code || '+91',
-        whatsapp_open_mode: initialSettings.whatsapp_open_mode || 'app_autoclose',
+        whatsapp_open_mode: initialSettings.whatsapp_open_mode || 'universal',
         whatsapp_auto_close_tab: initialSettings.whatsapp_auto_close_tab !== false,
         whatsapp_close_delay_seconds: initialSettings.whatsapp_close_delay_seconds || 2,
       });
@@ -237,7 +237,7 @@ const Settings = () => {
         const compressedLogo = await compressImage(logoFile, { maxWidth: 800, maxHeight: 800 });
         payload = new FormData();
         Object.keys(settings).forEach((k) => {
-          if (settings[k] !== null && settings[k] !== undefined && k !== 'logo' && k !== 'whatsapp_open_mode') {
+          if (settings[k] !== null && settings[k] !== undefined && k !== 'logo') {
             payload.append(k, settings[k]);
           }
         });
@@ -245,7 +245,6 @@ const Settings = () => {
       } else {
         payload = { ...settings };
         delete payload.logo;
-        delete payload.whatsapp_open_mode;
       }
 
       const updated = await updateSettingsApi(payload);
@@ -940,10 +939,10 @@ const Settings = () => {
                             handleChange('whatsapp_open_mode', e.target.value);
                           }}
                         >
-                          <option value="app_autoclose">🚀 WhatsApp App (Auto-Closes Tab) - Recommended</option>
+                          <option value="universal">📱 Universal Link (wa.me) - Recommended (Reliable on all devices)</option>
+                          <option value="web">🌐 WhatsApp Web (web.whatsapp.com) - Direct Browser Tab</option>
+                          <option value="app_autoclose">🚀 WhatsApp App (Auto-Closes Launcher Tab)</option>
                           <option value="app_direct">⚡ Direct App Launch (No Tab Opened)</option>
-                          <option value="web">🌐 WhatsApp Web (web.whatsapp.com) - Best for Browser</option>
-                          <option value="universal">📱 Universal Link (wa.me) - Works on all devices</option>
                         </select>
                       </div>
                     </div>

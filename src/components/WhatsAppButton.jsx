@@ -137,11 +137,12 @@ const WhatsAppButton = ({
       defaultCountryCode: countryCode,
     });
 
-    let primUrl = bUrl;
+    let primUrl = uUrl;
     if (prefMode === 'web') primUrl = wUrl;
     else if (prefMode === 'universal') primUrl = uUrl;
     else if (prefMode === 'app_direct') primUrl = directUrl;
-    else primUrl = bUrl;
+    else if (prefMode === 'app_autoclose') primUrl = bUrl;
+    else primUrl = uUrl;
 
     return {
       finalMessage: msg,
@@ -180,24 +181,11 @@ const WhatsAppButton = ({
       } catch (err) {
         console.warn('Direct app protocol launch exception:', err);
       }
-    } else if (prefMode === 'app_autoclose' || prefMode === 'app' || (!prefMode && settings?.whatsapp_auto_close_tab !== false)) {
-      // Auto-Close Bridge Mode: Open bridge tab and prepare backup auto-close timer from parent
-      e.preventDefault();
-      const childWin = window.open(bridgeUrl || primaryUrl, '_blank');
-      if (childWin && settings?.whatsapp_auto_close_tab !== false) {
-        const delayMs = ((settings?.whatsapp_close_delay_seconds || 2) + 0.6) * 1000;
-        setTimeout(() => {
-          if (childWin && !childWin.closed) {
-            try {
-              childWin.close();
-            } catch (err) {
-              console.warn('Parent auto-close check:', err);
-            }
-          }
-        }, delayMs);
-      }
     }
-    // For 'web' or 'universal', native <a> tag navigation will open the new tab synchronously
+    // For 'universal', 'web', or 'app_autoclose':
+    // Do NOT call e.preventDefault()!
+    // The native <a> tag navigation will open the new tab synchronously without triggering
+    // any browser popup blocker, leaving the current LMS window undisturbed.
 
     // Non-blocking asynchronous message audit log to backend
     try {
@@ -206,7 +194,7 @@ const WhatsAppButton = ({
         mobile: targetMobile,
         recipient_name: customerName || data?.guest_name || 'Guest',
         message: finalMessage || '',
-        status: `Prepared / Opened (${prefMode || 'app_autoclose'})`,
+        status: `Prepared / Opened (${prefMode || 'universal'})`,
         booking: bookingId || null,
         customer: customerId || null,
       }).catch((err) => console.warn('Non-blocking WhatsApp audit log error:', err));
@@ -243,18 +231,8 @@ const WhatsAppButton = ({
     if (mode === 'app_direct') {
       e.preventDefault();
       try { window.location.href = appDirectUrl; } catch {}
-    } else if (mode === 'app_autoclose') {
-      e.preventDefault();
-      const childWin = window.open(bridgeUrl, '_blank');
-      if (childWin && settings?.whatsapp_auto_close_tab !== false) {
-        const delayMs = ((settings?.whatsapp_close_delay_seconds || 2) + 0.6) * 1000;
-        setTimeout(() => {
-          if (childWin && !childWin.closed) {
-            try { childWin.close(); } catch {}
-          }
-        }, delayMs);
-      }
     }
+    // For 'app_autoclose', 'web', and 'universal', the native <a> href opens synchronously in new tab
 
     try {
       logWhatsAppMessageApi({
@@ -275,7 +253,7 @@ const WhatsAppButton = ({
   const handleToggleMode = (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const cycle = ['app_autoclose', 'app_direct', 'web', 'universal'];
+    const cycle = ['universal', 'web', 'app_autoclose', 'app_direct'];
     const idx = cycle.indexOf(prefMode);
     const nextMode = cycle[(idx + 1) % cycle.length];
     setPreferredWhatsAppMode(nextMode);
