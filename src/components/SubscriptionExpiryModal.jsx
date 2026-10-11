@@ -181,11 +181,18 @@ const SubscriptionExpiryModal = () => {
           <button
             type="button"
             onClick={handleQuickClose}
-            className="btn btn-sm btn-light bg-white bg-opacity-20 border-0 rounded-circle text-white position-absolute top-0 end-0 m-3 p-1 d-flex align-items-center justify-content-center hover-scale"
-            style={{ width: '32px', height: '32px' }}
+            className="btn btn-sm border-0 rounded-circle position-absolute top-0 end-0 m-3 p-0 d-flex align-items-center justify-content-center shadow-xs transition-all"
+            style={{
+              width: '32px',
+              height: '32px',
+              backgroundColor: '#ffffff',
+              color: '#334155',
+              cursor: 'pointer',
+            }}
             title="Close for today"
+            aria-label="Close"
           >
-            <X size={18} />
+            <X size={18} color="#334155" strokeWidth={2.5} />
           </button>
 
           <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
@@ -199,17 +206,21 @@ const SubscriptionExpiryModal = () => {
 
           <div className="d-flex align-items-center gap-3 mt-2">
             <div
-              className="rounded-3 p-2.5 bg-white bg-opacity-20 d-flex align-items-center justify-content-center flex-shrink-0 shadow-xs"
-              style={{ width: '48px', height: '48px' }}
+              className="rounded-3 d-flex align-items-center justify-content-center flex-shrink-0 shadow-sm"
+              style={{
+                width: '48px',
+                height: '48px',
+                backgroundColor: '#ffffff',
+              }}
             >
-              <UrgencyIcon size={28} className="text-white" />
+              <UrgencyIcon size={28} style={{ color: urgency.accentColor }} strokeWidth={2.2} />
             </div>
             <div>
               <h4 className="fw-bold m-0 text-white" style={{ letterSpacing: '-0.02em', fontSize: '1.25rem' }}>
                 Subscription Expiring Soon
               </h4>
-              <div className="text-white text-opacity-85 small mt-0.5 d-flex align-items-center gap-1.5">
-                <Building2 size={14} />
+              <div className="text-white text-opacity-90 small mt-0.5 d-flex align-items-center gap-1.5">
+                <Building2 size={14} color="#ffffff" />
                 <span className="fw-semibold text-white">{hotelName}</span>
               </div>
             </div>
@@ -280,7 +291,7 @@ const SubscriptionExpiryModal = () => {
               className="btn btn-success fw-bold rounded-3 py-2.5 px-3.5 d-flex align-items-center justify-content-center gap-2 shadow-xs"
               style={{ backgroundColor: '#16A34A', borderColor: '#16A34A' }}
             >
-              <MessageSquare size={16} />
+              <i className="bi bi-whatsapp fs-6"></i>
               <span>WhatsApp</span>
             </a>
           </div>
