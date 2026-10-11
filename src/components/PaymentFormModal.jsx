@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Clock, Calendar, RefreshCw } from 'lucide-react';
 import { formatDate } from '../utils/dateUtils';
+import { useShift } from '../context/ShiftContext';
 
 const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0, initialData = null, customerWalletCredit = 0 }) => {
+  const { requiresActiveShift, openShiftModal } = useShift();
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
   const [transactionRef, setTransactionRef] = useState('');
@@ -61,6 +63,11 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (requiresActiveShift) {
+      onClose();
+      openShiftModal();
+      return;
+    }
     if (!amount || parseFloat(amount) <= 0) return;
 
     const payload = {
@@ -105,6 +112,29 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
 
           <form onSubmit={handleSubmit}>
             <div className="modal-body p-4 bg-white">
+              {requiresActiveShift && (
+                <div className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 shadow-xs mb-3" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+                  <div className="d-flex align-items-center gap-2.5">
+                    <div className="p-2 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center flex-shrink-0" style={{ width: '32px', height: '32px' }}>
+                      <Clock size={16} />
+                    </div>
+                    <div>
+                      <div className="fw-bold text-dark small">Cashier Shift Till is Closed</div>
+                      <div className="extra-small text-muted">You must open your shift till before you can receive or record payments.</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-warning fw-bold px-3 py-1.5 rounded-2 d-flex align-items-center gap-1 mt-2 mt-sm-0"
+                    onClick={() => {
+                      onClose();
+                      openShiftModal();
+                    }}
+                  >
+                    <Clock size={14} /> Open Shift Till
+                  </button>
+                </div>
+              )}
               {!isEdit && walletCredit > 0 && (
                 <div className="alert alert-success border-success bg-success-subtle py-2.5 px-3 mb-3 rounded-3 d-flex justify-content-between align-items-center">
                   <div>
@@ -233,13 +263,17 @@ const PaymentFormModal = ({ show, onClose, onSubmit, stayId, currentBalance = 0,
               </button>
               <button
                 type="submit"
-                className="btn btn-success fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5"
-                disabled={submitting}
+                className={`btn ${requiresActiveShift ? 'btn-warning' : 'btn-success'} fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5`}
+                disabled={submitting || requiresActiveShift}
               >
                 {submitting ? (
                   <>
                     <span className="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>
                     {isEdit ? 'Saving Changes...' : 'Recording Payment...'}
+                  </>
+                ) : requiresActiveShift ? (
+                  <>
+                    <Clock size={16} /> Shift Till Closed - Open Shift
                   </>
                 ) : (
                   <>

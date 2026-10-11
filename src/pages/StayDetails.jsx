@@ -27,12 +27,14 @@ import { compressImage } from '../utils/imageCompressor';
 import { getMediaUrl } from '../utils/mediaUtils';
 import DocumentViewerModal from '../components/DocumentViewerModal';
 import WhatsAppButton from '../components/WhatsAppButton';
+import { useShift } from '../context/ShiftContext';
 
 const StayDetails = () => {
   const { id } = useParams();
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState('overview');
@@ -589,6 +591,11 @@ const StayDetails = () => {
   // Open Add Payment Modal
   const openRecordPaymentModal = () => {
     if (!canEdit) return;
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before receiving or recording payments.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     setEditPayment(null);
     setShowPaymentModal(true);
   };
@@ -596,6 +603,11 @@ const StayDetails = () => {
   // Open Edit Payment Modal
   const openEditPaymentModal = (payment) => {
     if (!canEdit) return;
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before updating payment records.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     setEditPayment(payment);
     setShowPaymentModal(true);
   };
@@ -603,6 +615,11 @@ const StayDetails = () => {
   // Handle Add or Edit Payment Submit
   const handleAddOrUpdatePayment = async (payData) => {
     if (!canEdit) return;
+    if (requiresActiveShift) {
+      showError('Cannot receive payment because Cashier Shift Till is closed. Please open a shift first.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     try {
       if (editPayment) {
         await updatePaymentApi(editPayment.id, payData);
@@ -653,6 +670,11 @@ const StayDetails = () => {
   // Trigger Professional Delete Payment Modal
   const requestDeletePayment = (paymentId, paymentNumber, amount) => {
     if (!canEdit) return;
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before modifying payments.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     setConfirmModal({
       show: true,
       title: 'Delete Payment Transaction',
@@ -1365,12 +1387,34 @@ const StayDetails = () => {
           <div className="card-header bg-white py-3 d-flex justify-content-between align-items-center border-bottom">
             <h5 className="m-0 fw-bold text-dark"><i className="bi bi-cash-stack me-2 text-success"></i>Payments Ledger</h5>
             {canEdit && (
-              <button className="btn btn-success fw-bold" onClick={openRecordPaymentModal}>
-                <i className="bi bi-plus-circle-fill me-1"></i> Record Payment
+              <button
+                className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-success'} fw-bold`}
+                onClick={openRecordPaymentModal}
+                title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Record Payment'}
+              >
+                <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-plus-circle-fill'} me-1`}></i> Record Payment
               </button>
             )}
           </div>
           <div className="card-body p-0">
+            {requiresActiveShift && (
+              <div className="alert alert-warning border-warning m-3 d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 shadow-xs" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+                <div className="d-flex align-items-center gap-2.5">
+                  <i className="bi bi-exclamation-triangle-fill text-warning fs-4"></i>
+                  <div>
+                    <div className="fw-bold text-dark small">Cashier Shift Till is Closed</div>
+                    <div className="extra-small text-muted">You cannot receive or record payments until your shift till is opened.</div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-warning fw-bold btn-sm d-flex align-items-center gap-1.5 px-3 py-1.5 rounded-2 mt-2 mt-sm-0"
+                  onClick={openShiftModal}
+                >
+                  <i className="bi bi-clock-history"></i> Open Shift Till Now
+                </button>
+              </div>
+            )}
             {!stay.payments || stay.payments.length === 0 ? (
               <div className="text-center py-5 px-3">
                 <i className="bi bi-wallet2 text-muted mb-2 d-block" style={{ fontSize: '3rem' }}></i>

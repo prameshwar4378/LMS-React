@@ -583,8 +583,18 @@ const Bookings = () => {
 
   const handleSaveEdit = async (e) => {
     e.preventDefault();
-    setEditSubmitting(true);
     setEditError('');
+
+    const newAdv = parseFloat(editForm.advance_amount || 0);
+    const oldAdv = parseFloat(editBooking?.advance_amount || 0);
+    if (newAdv > oldAdv && requiresActiveShift) {
+      setEditError('Cashier Shift Till is Closed. You cannot collect additional advance payments without an open shift.');
+      showError('Cashier Shift Till is Closed. You cannot collect additional advance payments without an open shift.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+
+    setEditSubmitting(true);
 
     try {
       const updatedBooking = await updateBookingApi(editBooking.id, {

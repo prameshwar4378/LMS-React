@@ -3,10 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { createPaymentApi } from '../api/billingApi';
 import { formatCurrency } from '../utils/formatCurrency';
 import { useNotification } from '../context/NotificationContext';
+import { useShift } from '../context/ShiftContext';
 
 const CheckoutPendingModal = ({ show, stay, onClose, onPaymentSuccess }) => {
   const navigate = useNavigate();
   const { showSuccess, showError } = useNotification();
+  const { requiresActiveShift, openShiftModal } = useShift();
 
   const [amount, setAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -38,6 +40,14 @@ const CheckoutPendingModal = ({ show, stay, onClose, onPaymentSuccess }) => {
   const handleReceiveAndCheckout = async (e) => {
     e.preventDefault();
     setError('');
+
+    if (requiresActiveShift) {
+      setError('Cashier Shift Till is Closed. You cannot receive payments until a shift is opened.');
+      showError('Cashier Shift Till is Closed. You must open a shift before receiving or recording payments.', 'Shift Till Required');
+      onClose();
+      openShiftModal();
+      return;
+    }
 
     const numericAmount = parseFloat(amount || 0);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -89,6 +99,27 @@ const CheckoutPendingModal = ({ show, stay, onClose, onPaymentSuccess }) => {
 
           <form onSubmit={handleReceiveAndCheckout}>
             <div className="modal-body p-4">
+              {requiresActiveShift && (
+                <div className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 shadow-xs mb-3" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+                  <div className="d-flex align-items-center gap-2">
+                    <i className="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+                    <div>
+                      <div className="fw-bold text-dark small">Cashier Shift Till is Closed</div>
+                      <div className="extra-small text-muted">You cannot receive payment at checkout until your shift till is opened.</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-warning fw-bold px-3 py-1.5 rounded-2 d-flex align-items-center gap-1 mt-2 mt-sm-0"
+                    onClick={() => {
+                      onClose();
+                      openShiftModal();
+                    }}
+                  >
+                    <i className="bi bi-clock-history"></i> Open Shift Till
+                  </button>
+                </div>
+              )}
               {error && <div className="alert alert-danger py-2 px-3 small mb-3">{error}</div>}
 
               {/* Outstanding Balance Banner */}
@@ -185,13 +216,17 @@ const CheckoutPendingModal = ({ show, stay, onClose, onPaymentSuccess }) => {
                 </button>
                 <button
                   type="submit"
-                  className="btn btn-success fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5"
-                  disabled={submitting}
+                  className={`btn ${requiresActiveShift ? 'btn-warning' : 'btn-success'} fw-bold px-4 shadow-sm d-flex align-items-center gap-1.5`}
+                  disabled={submitting || requiresActiveShift}
                 >
                   {submitting ? (
                     <>
                       <span className="spinner-border spinner-border-sm" role="status"></span>
                       Recording Payment...
+                    </>
+                  ) : requiresActiveShift ? (
+                    <>
+                      <i className="bi bi-lock-fill"></i> Shift Closed - Open Shift
                     </>
                   ) : (
                     <>

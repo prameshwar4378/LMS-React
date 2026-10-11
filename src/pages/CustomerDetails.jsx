@@ -13,6 +13,7 @@ import { getMediaUrl } from '../utils/mediaUtils';
 import { exportTransactionsToExcel, exportTransactionsToPDF } from '../utils/exportUtils';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
+import { useShift } from '../context/ShiftContext';
 import { compressImage } from '../utils/imageCompressor';
 import DocumentViewerModal from '../components/DocumentViewerModal';
 
@@ -20,6 +21,7 @@ const CustomerDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
   const { showSuccess, showError } = useNotification();
   const queryClient = useQueryClient();
   const isAdmin = user?.role === 'SUPER_ADMIN' || user?.role === 'ADMIN' || user?.is_superuser;
@@ -385,6 +387,11 @@ const CustomerDetails = () => {
     : (parseFloat(customer?.advance_credit || 0) + (customer?.stays ? customer.stays.reduce((acc, s) => acc + (s.credit_balance || (s.raw_balance < 0 ? Math.abs(s.raw_balance) : 0)), 0) : 0));
 
   const handleOpenRecordPayment = () => {
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before receiving payments or adding advance credit.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     setPayError('');
     setPayAmount(totalPendingBalance > 0 ? totalPendingBalance.toFixed(2) : '');
     setPayMethod('CASH');
@@ -396,6 +403,13 @@ const CustomerDetails = () => {
   const handleRecordPaymentSubmit = async (e) => {
     e.preventDefault();
     setPayError('');
+
+    if (requiresActiveShift) {
+      setPayError('Cashier Shift Till is Closed. You must open a shift before recording payments.');
+      showError('Cashier Shift Till is Closed. You must open a shift before recording payments.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
 
     const numericAmount = parseFloat(payAmount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -417,6 +431,8 @@ const CustomerDetails = () => {
         'Payment Recorded'
       );
       queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || err.response?.data?.detail || 'Failed to record customer payment.';
@@ -427,6 +443,11 @@ const CustomerDetails = () => {
   };
 
   const handleOpenRefundModal = () => {
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before returning or refunding amounts.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     setRefundError('');
     setRefundAmount(totalWalletCredit > 0 ? totalWalletCredit.toFixed(2) : '');
     setRefundMethod('CASH');
@@ -438,6 +459,13 @@ const CustomerDetails = () => {
   const handleRefundSubmit = async (e) => {
     e.preventDefault();
     setRefundError('');
+
+    if (requiresActiveShift) {
+      setRefundError('Cashier Shift Till is Closed. You must open a shift before returning or refunding amounts.');
+      showError('Cashier Shift Till is Closed. You must open a shift before returning amounts.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
 
     const numericAmount = parseFloat(refundAmount);
     if (isNaN(numericAmount) || numericAmount <= 0) {
@@ -463,6 +491,8 @@ const CustomerDetails = () => {
         'Refund Processed'
       );
       queryClient.invalidateQueries({ queryKey: ['customer-details', id] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
+      queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
       console.error(err);
       const errMsg = err.response?.data?.message || err.response?.data?.error || 'Failed to process refund.';
@@ -517,6 +547,34 @@ const CustomerDetails = () => {
         </div>
       </div>
 
+      {/* SHIFT TILL CLOSED WARNING BANNER */}
+      {requiresActiveShift && (
+        <div
+          className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3.5 rounded-4 shadow-sm mb-4"
+          style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}
+        >
+          <div className="d-flex align-items-center gap-3">
+            <div
+              className="p-2.5 bg-warning text-dark rounded-circle d-flex align-items-center justify-content-center shadow-xs flex-shrink-0"
+              style={{ width: '42px', height: '42px' }}
+            >
+              <i className="bi bi-lock-fill fs-5"></i>
+            </div>
+            <div>
+              <div className="fw-bold text-dark fs-6">Cashier Shift Till is Closed</div>
+              <div className="small text-muted">You cannot record advance credit, settle customer balances, or process cash refunds until you open your front desk shift till.</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="btn btn-warning fw-bold px-3.5 py-2 rounded-3 shadow-xs mt-2 mt-md-0 d-flex align-items-center gap-1.5"
+            onClick={openShiftModal}
+          >
+            <i className="bi bi-clock-history"></i> Open Shift Till Now
+          </button>
+        </div>
+      )}
+
       {/* OVERALL ACCOUNT BALANCE STATUS BANNER */}
       {totalPendingBalance > 0 && totalWalletCredit > 0 ? (
         <div className="alert alert-warning border-warning p-3.5 rounded-3 mb-4 shadow-sm">
@@ -545,8 +603,13 @@ const CustomerDetails = () => {
             </div>
             <div className="d-flex flex-wrap gap-2">
               <button
-                className="btn btn-success fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5"
+                className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-success'} fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5`}
                 onClick={() => {
+                  if (requiresActiveShift) {
+                    showError('Cashier Shift Till is Closed. You must open a shift before processing transactions.', 'Shift Till Required');
+                    openShiftModal();
+                    return;
+                  }
                   setPayError('');
                   setPayMethod('WALLET');
                   setPayAmount(Math.min(totalWalletCredit, totalPendingBalance).toString());
@@ -554,14 +617,23 @@ const CustomerDetails = () => {
                   setPayNotes('Paid using Guest Advance Credit Wallet');
                   setShowPaymentModal(true);
                 }}
+                title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Apply Wallet Credit'}
               >
-                <i className="bi bi-check-circle-fill"></i> Apply Wallet Credit ({formatCurrency(Math.min(totalWalletCredit, totalPendingBalance))})
+                <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-check-circle-fill'}`}></i> Apply Wallet Credit ({formatCurrency(Math.min(totalWalletCredit, totalPendingBalance))})
               </button>
-              <button className="btn btn-outline-danger fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5" onClick={handleOpenRefundModal}>
-                <i className="bi bi-arrow-counterclockwise"></i> Return Amount
+              <button
+                className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-danger'} fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5`}
+                onClick={handleOpenRefundModal}
+                title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Return Amount'}
+              >
+                <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-arrow-counterclockwise'}`}></i> Return Amount
               </button>
-              <button className="btn btn-outline-primary fw-bold shadow-sm px-3 py-2" onClick={handleOpenRecordPayment}>
-                <i className="bi bi-cash-stack me-1"></i> Record Payment
+              <button
+                className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-primary'} fw-bold shadow-sm px-3 py-2`}
+                onClick={handleOpenRecordPayment}
+                title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Record Payment'}
+              >
+                <i className={`bi ${requiresActiveShift ? 'bi-lock-fill me-1' : 'bi-cash-stack me-1'}`}></i> Record Payment
               </button>
             </div>
           </div>
@@ -582,8 +654,12 @@ const CustomerDetails = () => {
               </span>
             </div>
           </div>
-          <button className="btn btn-danger fw-bold shadow-sm px-4 py-2" onClick={handleOpenRecordPayment}>
-            <i className="bi bi-cash-stack me-1.5"></i> Settle Pending Balance ({formatCurrency(totalPendingBalance)})
+          <button
+            className={`btn ${requiresActiveShift ? 'btn-warning' : 'btn-danger'} fw-bold shadow-sm px-4 py-2`}
+            onClick={handleOpenRecordPayment}
+            title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Settle Pending Balance'}
+          >
+            <i className={`bi ${requiresActiveShift ? 'bi-lock-fill me-1.5' : 'bi-cash-stack me-1.5'}`}></i> Settle Pending Balance ({formatCurrency(totalPendingBalance)})
           </button>
         </div>
       ) : totalWalletCredit > 0 ? (
@@ -603,11 +679,19 @@ const CustomerDetails = () => {
             </div>
           </div>
           <div className="d-flex align-items-center gap-2">
-            <button className="btn btn-outline-danger fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5" onClick={handleOpenRefundModal}>
-              <i className="bi bi-arrow-counterclockwise"></i> Return Amount
+            <button
+              className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-danger'} fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5`}
+              onClick={handleOpenRefundModal}
+              title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Return Amount'}
+            >
+              <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-arrow-counterclockwise'}`}></i> Return Amount
             </button>
-            <button className="btn btn-outline-success fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5" onClick={handleOpenRecordPayment}>
-              <i className="bi bi-plus-circle"></i> Add Advance Credit
+            <button
+              className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-success'} fw-bold shadow-sm px-3 py-2 d-flex align-items-center gap-1.5`}
+              onClick={handleOpenRecordPayment}
+              title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Add Advance Credit'}
+            >
+              <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-plus-circle'}`}></i> Add Advance Credit
             </button>
           </div>
         </div>
@@ -627,8 +711,12 @@ const CustomerDetails = () => {
               </span>
             </div>
           </div>
-          <button className="btn btn-outline-primary fw-bold shadow-sm px-3 py-2" onClick={handleOpenRecordPayment}>
-            <i className="bi bi-plus-circle me-1"></i> Record Payment / Advance Credit
+          <button
+            className={`btn ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-primary'} fw-bold shadow-sm px-3 py-2`}
+            onClick={handleOpenRecordPayment}
+            title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'Record Payment / Advance Credit'}
+          >
+            <i className={`bi ${requiresActiveShift ? 'bi-lock-fill me-1' : 'bi-plus-circle me-1'}`}></i> Record Payment / Advance Credit
           </button>
         </div>
       )}
@@ -848,18 +936,34 @@ const CustomerDetails = () => {
               {activeHistoryTab === 'bookings' ? (
                 <Link
                   to={`/bookings/create?customer_id=${customer.id}&name=${encodeURIComponent(customer.full_name || '')}&mobile=${encodeURIComponent(customer.mobile || '')}`}
-                  className="btn btn-sm btn-primary fw-semibold px-3 py-1.5 rounded-3 d-flex align-items-center gap-1.5 shadow-xs"
-                  style={{ backgroundColor: '#2563EB', borderColor: '#2563EB', fontSize: '0.825rem' }}
+                  className={`btn btn-sm ${requiresActiveShift ? 'btn-outline-warning' : 'btn-primary'} fw-semibold px-3 py-1.5 rounded-3 d-flex align-items-center gap-1.5 shadow-xs`}
+                  style={{ fontSize: '0.825rem', ...(requiresActiveShift ? {} : { backgroundColor: '#2563EB', borderColor: '#2563EB' }) }}
+                  onClick={(e) => {
+                    if (requiresActiveShift) {
+                      e.preventDefault();
+                      showError('Cashier Shift Till is Closed. You must open a shift before creating bookings.', 'Shift Till Required');
+                      openShiftModal();
+                    }
+                  }}
+                  title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'New Reservation'}
                 >
-                  <i className="bi bi-calendar-plus"></i> New Reservation
+                  <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-calendar-plus'}`}></i> New Reservation
                 </Link>
               ) : (
                 <Link
                   to={`/check-in?customer_id=${customer.id}`}
-                  className="btn btn-sm btn-outline-primary fw-semibold px-3 py-1.5 rounded-3 d-flex align-items-center gap-1.5 shadow-xs"
+                  className={`btn btn-sm ${requiresActiveShift ? 'btn-outline-warning' : 'btn-outline-primary'} fw-semibold px-3 py-1.5 rounded-3 d-flex align-items-center gap-1.5 shadow-xs`}
                   style={{ fontSize: '0.825rem' }}
+                  onClick={(e) => {
+                    if (requiresActiveShift) {
+                      e.preventDefault();
+                      showError('Cashier Shift Till is Closed. You must open a shift before checking in guests.', 'Shift Till Required');
+                      openShiftModal();
+                    }
+                  }}
+                  title={requiresActiveShift ? 'Shift Till Closed - Click to Open Shift' : 'New Check-In'}
                 >
-                  <i className="bi bi-person-check-fill"></i> New Check-In
+                  <i className={`bi ${requiresActiveShift ? 'bi-lock-fill' : 'bi-person-check-fill'}`}></i> New Check-In
                 </Link>
               )}
             </div>
@@ -1835,6 +1939,27 @@ const CustomerDetails = () => {
 
               <form onSubmit={handleRecordPaymentSubmit}>
                 <div className="modal-body p-4 bg-white">
+                  {requiresActiveShift && (
+                    <div className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 shadow-xs mb-3" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+                        <div>
+                          <div className="fw-bold text-dark small">Cashier Shift Till is Closed</div>
+                          <div className="extra-small text-muted">You must open your shift till before you can receive payments or record advance credit.</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-warning fw-bold px-3 py-1.5 rounded-2 d-flex align-items-center gap-1 mt-2 mt-sm-0"
+                        onClick={() => {
+                          setShowPaymentModal(false);
+                          openShiftModal();
+                        }}
+                      >
+                        <i className="bi bi-clock-history"></i> Open Shift Till
+                      </button>
+                    </div>
+                  )}
                   {payError && (
                     <div className="alert alert-danger border-danger py-2 rounded-3 small mb-3">
                       <i className="bi bi-exclamation-triangle-fill me-1.5"></i>{payError}
@@ -1947,11 +2072,19 @@ const CustomerDetails = () => {
                   <button type="button" className="btn btn-light border fw-semibold px-4" onClick={() => setShowPaymentModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-success fw-bold px-4 shadow-sm d-flex align-items-center gap-2" disabled={paySubmitting}>
+                  <button
+                    type="submit"
+                    className={`btn ${requiresActiveShift ? 'btn-warning' : 'btn-success'} fw-bold px-4 shadow-sm d-flex align-items-center gap-2`}
+                    disabled={paySubmitting || requiresActiveShift}
+                  >
                     {paySubmitting ? (
                       <>
                         <span className="spinner-border spinner-border-sm" role="status"></span>
                         Recording Payment...
+                      </>
+                    ) : requiresActiveShift ? (
+                      <>
+                        <i className="bi bi-lock-fill me-1"></i> Shift Till Closed - Open Shift
                       </>
                     ) : (
                       <>
@@ -1979,6 +2112,27 @@ const CustomerDetails = () => {
               </div>
               <form onSubmit={handleRefundSubmit}>
                 <div className="modal-body p-4">
+                  {requiresActiveShift && (
+                    <div className="alert alert-warning border-warning d-flex flex-wrap align-items-center justify-content-between p-3 rounded-3 shadow-xs mb-3" style={{ backgroundColor: '#FFFBEB', borderColor: '#FDE68A' }}>
+                      <div className="d-flex align-items-center gap-2">
+                        <i className="bi bi-exclamation-triangle-fill text-warning fs-5"></i>
+                        <div>
+                          <div className="fw-bold text-dark small">Cashier Shift Till is Closed</div>
+                          <div className="extra-small text-muted">You must open your shift till before you can return or refund cash.</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-warning fw-bold px-3 py-1.5 rounded-2 d-flex align-items-center gap-1 mt-2 mt-sm-0"
+                        onClick={() => {
+                          setShowRefundModal(false);
+                          openShiftModal();
+                        }}
+                      >
+                        <i className="bi bi-clock-history"></i> Open Shift Till
+                      </button>
+                    </div>
+                  )}
                   {refundError && <div className="alert alert-danger py-2 px-3 small mb-3">{refundError}</div>}
 
                   {/* Guest & Wallet Credit Summary Box */}
@@ -2070,11 +2224,19 @@ const CustomerDetails = () => {
                   <button type="button" className="btn btn-light border fw-semibold px-4" onClick={() => setShowRefundModal(false)}>
                     Cancel
                   </button>
-                  <button type="submit" className="btn btn-danger fw-bold px-4 shadow-sm d-flex align-items-center gap-2" disabled={refundSubmitting}>
+                  <button
+                    type="submit"
+                    className={`btn ${requiresActiveShift ? 'btn-warning' : 'btn-danger'} fw-bold px-4 shadow-sm d-flex align-items-center gap-2`}
+                    disabled={refundSubmitting || requiresActiveShift}
+                  >
                     {refundSubmitting ? (
                       <>
                         <span className="spinner-border spinner-border-sm" role="status"></span>
                         Processing Refund...
+                      </>
+                    ) : requiresActiveShift ? (
+                      <>
+                        <i className="bi bi-lock-fill me-1"></i> Shift Till Closed - Open Shift
                       </>
                     ) : (
                       <>

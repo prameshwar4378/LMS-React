@@ -12,6 +12,7 @@ import { formatCurrency } from '../utils/formatCurrency';
 import { formatDate } from '../utils/dateUtils';
 import { useNotification } from '../context/NotificationContext';
 import { useAuth } from '../context/AuthContext';
+import { useShift } from '../context/ShiftContext';
 import { exportStaysToExcel, exportStaysToPDF } from '../utils/exportUtils';
 import { usePersistentColumns } from '../hooks/usePersistentColumns';
 import {
@@ -78,6 +79,7 @@ const CurrentStays = () => {
   const queryClient = useQueryClient();
   const { showError, showSuccess, showWarning, showConfirm } = useNotification();
   const { selectedProperty } = useAuth();
+  const { requiresActiveShift, openShiftModal } = useShift();
 
   // View Mode: 'cards' | 'table'
   const [viewMode, setViewMode] = useState('cards');
@@ -544,15 +546,33 @@ const CurrentStays = () => {
     }
   };
 
+  const handleOpenAddPayment = (stayId, balance) => {
+    if (requiresActiveShift) {
+      showError('Cashier Shift Till is Closed. You must open a shift before receiving or recording payments.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
+    setActiveStayId(stayId);
+    setActiveBalance(balance);
+    setShowPaymentModal(true);
+  };
+
   const handleAddPaymentSubmit = async (data) => {
+    if (requiresActiveShift) {
+      showError('Cannot receive payment because Cashier Shift Till is closed. Please open a shift.', 'Shift Till Required');
+      openShiftModal();
+      return;
+    }
     try {
       await createPaymentApi(data);
       showSuccess('Payment recorded successfully.', 'Payment Recorded');
       setShowPaymentModal(false);
       queryClient.invalidateQueries({ queryKey: ['current-stays'] });
+      queryClient.invalidateQueries({ queryKey: ['payments'] });
       queryClient.invalidateQueries({ queryKey: ['shifts'] });
     } catch (err) {
-      showError('Error adding payment.', 'Failed');
+      const errMsg = err.response?.data?.error || err.response?.data?.message || err.response?.data?.detail || 'Error adding payment.';
+      showError(errMsg, 'Failed');
     }
   };
 
@@ -1089,7 +1109,7 @@ const CurrentStays = () => {
                               </button>
                             </li>
                             <li>
-                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
+                              <button className="dropdown-item py-2 px-3 d-flex align-items-center gap-2" onClick={() => handleOpenAddPayment(s.id, balance)}>
                                 <DollarSign size={15} className="text-success" /> Add Payment
                               </button>
                             </li>
@@ -1406,7 +1426,7 @@ const CurrentStays = () => {
                                           </button>
                                         </li>
                                         <li>
-                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => { setActiveStayId(s.id); setActiveBalance(balance); setShowPaymentModal(true); }}>
+                                          <button className="dropdown-item py-2 d-flex align-items-center gap-2" onClick={() => handleOpenAddPayment(s.id, balance)}>
                                             <DollarSign size={15} className="text-success" /> Add Payment
                                           </button>
                                         </li>
